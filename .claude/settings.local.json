@@ -19,7 +19,10 @@
       "mcp__plugin_supabase_supabase__search_docs",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "mcp__plugin_playwright_playwright__browser_take_screenshot",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(printf:*)",
+      "Bash(npm run:*)",
+      "Bash(git add:*)"
     ]
   }
 }
