@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { config } from '@/store/config'
 import { exportData, importData } from '@/lib/importExport'
+import { subscribeToPush } from '@/lib/pushNotifications'
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -46,6 +47,16 @@ export default function Settings() {
             <Input id="rsu-alert" type="number" value={settings.rsu_alert_days_before}
               onChange={e => setSettings(s => ({ ...s, rsu_alert_days_before: Number(e.target.value) }))} />
           </div>
+          <Button variant="outline" className="w-full" onClick={async () => {
+            try {
+              await subscribeToPush()
+              alert('Push notifications enabled!')
+            } catch (e: any) {
+              alert(e.message)
+            }
+          }}>
+            Enable Push Notifications
+          </Button>
           <Button onClick={handleSave} className="w-full">Save</Button>
         </CardContent>
       </Card>
