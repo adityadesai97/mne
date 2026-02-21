@@ -35,3 +35,14 @@ test('computes unrealized gain', () => {
 test('computes total net worth', () => {
   expect(computeTotalNetWorth([mockStockAsset, mockCashAsset])).toBe(6500)
 })
+
+test('returns 0 for stock asset with no lots', () => {
+  const assetWithNoLots = {
+    asset_type: 'Stock',
+    price: null,
+    ticker: { current_price: 100 },
+    stock_subtypes: null,
+  } as any
+  expect(computeAssetValue(assetWithNoLots)).toBe(0)
+  expect(computeCostBasis(assetWithNoLots)).toBe(0)
+})
