@@ -1,5 +1,4 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { vi } from 'vitest'
 import Onboarding from '../pages/Onboarding'
 
 test('shows all key fields', () => {

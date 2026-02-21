@@ -30,7 +30,7 @@ Rules:
 }
 
 export async function runCommand(query: string): Promise<any> {
-  const [assets, tickers] = await Promise.all([getAllAssets(), getAllTickers()])
+  const [assets] = await Promise.all([getAllAssets(), getAllTickers()])
   const client = new Anthropic({ apiKey: config.claudeApiKey, dangerouslyAllowBrowser: true })
 
   const response = await client.messages.create({
