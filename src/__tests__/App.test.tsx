@@ -1,8 +1,13 @@
 import { render, screen } from '@testing-library/react'
-import App from '../App'
+import { MemoryRouter } from 'react-router-dom'
+import AppLayout from '../layouts/AppLayout'
 
-test('renders app with heading', () => {
-  render(<App />)
-  expect(screen.getByText('mne')).toBeInTheDocument()
-  expect(screen.getByText('Net Worth')).toBeInTheDocument()
+test('renders app layout', () => {
+  render(
+    <MemoryRouter>
+      <AppLayout />
+    </MemoryRouter>
+  )
+  // BottomNav should be present
+  expect(screen.getByText('Home')).toBeInTheDocument()
 })
