@@ -1,13 +1,8 @@
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
-import AppLayout from '../layouts/AppLayout'
+import App from '../App'
 
-test('renders app layout', () => {
-  render(
-    <MemoryRouter>
-      <AppLayout />
-    </MemoryRouter>
-  )
-  // BottomNav should be present
-  expect(screen.getByText('Home')).toBeInTheDocument()
+test('shows onboarding when not configured', () => {
+  // localStorage is empty in test environment, so onboarding shows
+  render(<App />)
+  expect(screen.getByText('Welcome to mne')).toBeInTheDocument()
 })
