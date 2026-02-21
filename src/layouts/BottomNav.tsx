@@ -23,7 +23,7 @@ export default function BottomNav() {
             }`
           }
         >
-          <Icon size={20} />
+          <Icon size={20} aria-hidden="true" />
           <span>{label}</span>
         </NavLink>
       ))}
