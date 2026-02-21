@@ -23,6 +23,10 @@ export default function Onboarding({ onComplete }: Props) {
       setError('All fields are required')
       return
     }
+    try { new URL(form.supabaseUrl) } catch {
+      setError('Supabase URL must be a valid URL (e.g. https://xxxx.supabase.co)')
+      return
+    }
     config.save(form)
     initSupabase(form.supabaseUrl, form.supabaseAnonKey)
     setStep('auth')
@@ -37,8 +41,13 @@ export default function Onboarding({ onComplete }: Props) {
     const fn = mode === 'signup'
       ? supabase.auth.signUp({ email, password })
       : supabase.auth.signInWithPassword({ email, password })
-    const { error } = await fn
-    if (error) { setError(error.message); setLoading(false); return }
+    const { data, error } = await fn
+    setLoading(false)
+    if (error) { setError(error.message); return }
+    if (!data.session) {
+      setError('Check your email to confirm your account, then sign in.')
+      return
+    }
     onComplete()
   }
 
@@ -57,8 +66,9 @@ export default function Onboarding({ onComplete }: Props) {
             { label: 'Finnhub API Key', key: 'finnhubApiKey', placeholder: 'your_key' },
           ].map(({ label, key, placeholder }) => (
             <div key={key} className="space-y-1">
-              <Label>{label}</Label>
+              <Label htmlFor={key}>{label}</Label>
               <Input
+                id={key}
                 type="password"
                 placeholder={placeholder}
                 value={form[key as keyof typeof form]}
@@ -82,12 +92,12 @@ export default function Onboarding({ onComplete }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            <Label>Email</Label>
-            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} />
+            <Label htmlFor="ob-email">Email</Label>
+            <Input id="ob-email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>Password</Label>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} />
+            <Label htmlFor="ob-password">Password</Label>
+            <Input id="ob-password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
           </div>
           {error && <p className="text-destructive text-sm">{error}</p>}
           <Button className="w-full" onClick={() => handleAuth('signin')} disabled={loading}>Sign In</Button>

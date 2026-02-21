@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
 import Onboarding from './pages/Onboarding'
@@ -6,16 +6,15 @@ import { config } from './store/config'
 import { initSupabase } from './lib/supabase'
 
 export default function App() {
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
+  const [ready, setReady] = useState(() => {
     if (config.isConfigured) {
       initSupabase(config.supabaseUrl, config.supabaseAnonKey)
-      setReady(true)
+      return true
     }
-  }, [])
+    return false
+  })
 
-  if (!config.isConfigured || !ready) {
+  if (!ready) {
     return <Onboarding onComplete={() => setReady(true)} />
   }
 
