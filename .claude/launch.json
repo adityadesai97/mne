@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mne-web",
+      "runtimeExecutable": "/Users/adityadesai/.nvm/versions/node/v22.22.0/bin/node",
+      "runtimeArgs": ["/Users/adityadesai/Desktop/mne/node_modules/.bin/expo", "start", "--web", "--port", "8081"],
+      "port": 8081
+    }
+  ]
+}
