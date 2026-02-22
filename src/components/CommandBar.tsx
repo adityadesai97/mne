@@ -20,6 +20,7 @@ export function CommandBar() {
   const [done, setDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   // Fix 3 — Step 2: Add monotonic counter ref
   const msgIdRef = useRef(0)
 
@@ -158,6 +159,7 @@ export function CommandBar() {
               animate={{ height: '70vh', opacity: 1 }}
               transition={{ type: 'spring', stiffness: 280, damping: 28 }}
               className="flex flex-col overflow-hidden"
+              onAnimationComplete={() => inputRef.current?.focus()}
             >
               <div ref={threadRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 <AnimatePresence initial={false}>
@@ -172,15 +174,22 @@ export function CommandBar() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
-                {loading && (
-                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-muted-foreground text-sm">
-                    Thinking...
-                  </motion.p>
-                )}
+                <AnimatePresence>
+                  {loading && (
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                      className="text-muted-foreground text-sm"
+                    >
+                      Thinking...
+                    </motion.p>
+                  )}
+                </AnimatePresence>
               </div>
               <div className="border-t border-border px-4 py-3">
                 <Input
-                  autoFocus
+                  ref={inputRef}
                   placeholder="Reply..."
                   value={query}
                   onChange={e => setQuery(e.target.value)}
