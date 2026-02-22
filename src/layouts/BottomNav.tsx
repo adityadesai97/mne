@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { Home, BarChart2, Receipt, Star, Settings } from 'lucide-react'
+import { Home, BarChart2, PieChart, Star, Settings } from 'lucide-react'
 
 const tabs = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/portfolio', icon: BarChart2, label: 'Portfolio' },
-  { to: '/tax', icon: Receipt, label: 'Tax' },
+  { to: '/charts', icon: PieChart, label: 'Charts' },
   { to: '/watchlist', icon: Star, label: 'Watchlist' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]

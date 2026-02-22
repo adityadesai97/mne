@@ -23,7 +23,31 @@
       "Bash(printf:*)",
       "Bash(npm run:*)",
       "Bash(git add:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_install",
+      "mcp__plugin_playwright_playwright__browser_run_code",
+      "Bash(npx playwright:*)",
+      "mcp__plugin_supabase_supabase__list_organizations",
+      "mcp__plugin_supabase_supabase__get_cost",
+      "mcp__plugin_supabase_supabase__confirm_cost",
+      "mcp__plugin_supabase_supabase__create_project",
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "mcp__plugin_supabase_supabase__get_project_url",
+      "mcp__plugin_supabase_supabase__get_publishable_keys",
+      "mcp__plugin_supabase_supabase__get_advisors",
+      "mcp__plugin_supabase_supabase__generate_typescript_types",
+      "Bash(node:*)",
+      "Bash(tail:*)",
+      "Bash(npm test:*)",
+      "mcp__plugin_supabase_supabase__deploy_edge_function",
+      "Bash(head:*)",
+      "Bash(python3:*)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "Bash(git:*)",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "Bash(npx vitest:*)"
     ]
   }
 }

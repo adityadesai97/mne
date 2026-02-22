@@ -2,7 +2,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import AppLayout from './layouts/AppLayout'
 import Home from './pages/Home'
 import Portfolio from './pages/Portfolio'
-import Tax from './pages/Tax'
+import Charts from './pages/Charts'
 import Watchlist from './pages/Watchlist'
 import Settings from './pages/Settings'
 
@@ -13,7 +13,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: 'portfolio', element: <Portfolio /> },
-      { path: 'tax', element: <Tax /> },
+      { path: 'charts', element: <Charts /> },
       { path: 'watchlist', element: <Watchlist /> },
       { path: 'settings', element: <Settings /> },
     ],

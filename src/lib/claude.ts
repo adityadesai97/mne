@@ -41,7 +41,7 @@ const tools: Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
-        route: { type: 'string', enum: ['/', '/portfolio', '/tax', '/watchlist', '/settings'] },
+        route: { type: 'string', enum: ['/', '/portfolio', '/charts', '/watchlist', '/settings'] },
       },
       required: ['route'],
     },

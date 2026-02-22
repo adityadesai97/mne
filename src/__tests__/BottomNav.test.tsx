@@ -14,7 +14,7 @@ test('renders all nav tabs', () => {
   renderWithRouter()
   expect(screen.getByText('Home')).toBeInTheDocument()
   expect(screen.getByText('Portfolio')).toBeInTheDocument()
-  expect(screen.getByText('Tax')).toBeInTheDocument()
+  expect(screen.getByText('Charts')).toBeInTheDocument()
   expect(screen.getByText('Watchlist')).toBeInTheDocument()
   expect(screen.getByText('Settings')).toBeInTheDocument()
 })
