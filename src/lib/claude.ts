@@ -30,7 +30,6 @@ ${JSON.stringify(assets, null, 2)}
 
 You MUST call one of the provided tools to respond. Never respond with plain text.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
-If a write command does not include a brokerage or account location, ask for it before calling the tool. Do not default to Unknown.
 Today's date is ${new Date().toISOString().split('T')[0]}`
 }
 
@@ -58,11 +57,11 @@ const tools: Anthropic.Tool[] = [
         purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
         subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
         asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-        location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab, defaults to Unknown' },
-        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'], description: 'Default Investment' },
+        location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
         ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
       },
-      required: ['symbol', 'count', 'cost_price', 'purchase_date'],
+      required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
     },
   },
   {
@@ -106,11 +105,11 @@ const tools: Anthropic.Tool[] = [
         vest_end: { type: 'string', description: 'ISO date when vesting ends' },
         cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
         asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-        location_name: { type: 'string', description: 'Brokerage or account, defaults to Unknown' },
-        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'], description: 'Default Investment' },
+        location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
         ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
       },
-      required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end'],
+      required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
     },
   },
   {
@@ -217,11 +216,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     if (existingAsset) {
       assetId = existingAsset.id
     } else {
-      const locationId = await findOrCreateLocation(
-        userId,
-        input.location_name || 'Unknown',
-        input.account_type || 'Investment',
-      )
+      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
       const { data, error } = await supabase.from('assets').insert({
         user_id: userId,
         name: input.asset_name || `${symbol} Stock`,
@@ -288,11 +283,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     if (existingAsset) {
       assetId = existingAsset.id
     } else {
-      const locationId = await findOrCreateLocation(
-        userId,
-        input.location_name || 'Unknown',
-        input.account_type || 'Investment',
-      )
+      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
       const { data, error } = await supabase.from('assets').insert({
         user_id: userId,
         name: input.asset_name || `${symbol} Stock`,
