@@ -5,12 +5,9 @@ export async function getAllAssets() {
     .from('assets')
     .select(`
       *,
+      location:locations(*),
       ticker:tickers(*),
-      stock_subtypes(
-        *,
-        transactions(*),
-        rsu_grants(*)
-      )
+      stock_subtypes(*, transactions(*), rsu_grants(*))
     `)
     .order('name')
   if (error) throw error

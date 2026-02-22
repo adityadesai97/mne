@@ -16,10 +16,9 @@ export type Database = {
     Tables: {
       assets: {
         Row: {
-          account_type: string
           asset_type: string
           id: string
-          location_name: string
+          location_id: string
           name: string
           notes: string | null
           ownership: string
@@ -28,22 +27,20 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          account_type: string
           asset_type: string
           id?: string
-          location_name: string
+          location_id: string
           name: string
           notes?: string | null
-          ownership: string
+          ownership?: string
           price?: number | null
           ticker_id?: string | null
           user_id: string
         }
         Update: {
-          account_type?: string
           asset_type?: string
           id?: string
-          location_name?: string
+          location_id?: string
           name?: string
           notes?: string | null
           ownership?: string
@@ -53,6 +50,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "assets_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "assets_ticker_id_fkey"
             columns: ["ticker_id"]
             isOneToOne: false
@@ -60,6 +64,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      locations: {
+        Row: {
+          account_type: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          account_type: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          account_type?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       push_subscriptions: {
         Row: {
@@ -87,28 +112,31 @@ export type Database = {
       }
       rsu_grants: {
         Row: {
-          cadence_months: number | null
-          first_vest_date: string | null
+          cliff_date: string | null
           grant_date: string
           id: string
-          subtype_id: string | null
-          unvested_count: number | null
+          subtype_id: string
+          total_shares: number
+          vest_end: string
+          vest_start: string
         }
         Insert: {
-          cadence_months?: number | null
-          first_vest_date?: string | null
+          cliff_date?: string | null
           grant_date: string
           id?: string
-          subtype_id?: string | null
-          unvested_count?: number | null
+          subtype_id: string
+          total_shares: number
+          vest_end: string
+          vest_start: string
         }
         Update: {
-          cadence_months?: number | null
-          first_vest_date?: string | null
+          cliff_date?: string | null
           grant_date?: string
           id?: string
-          subtype_id?: string | null
-          unvested_count?: number | null
+          subtype_id?: string
+          total_shares?: number
+          vest_end?: string
+          vest_start?: string
         }
         Relationships: [
           {
@@ -122,17 +150,17 @@ export type Database = {
       }
       stock_subtypes: {
         Row: {
-          asset_id: string | null
+          asset_id: string
           id: string
           subtype: string
         }
         Insert: {
-          asset_id?: string | null
+          asset_id: string
           id?: string
           subtype: string
         }
         Update: {
-          asset_id?: string | null
+          asset_id?: string
           id?: string
           subtype?: string
         }
@@ -217,13 +245,6 @@ export type Database = {
             referencedRelation: "themes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "ticker_themes_ticker_id_fkey"
-            columns: ["ticker_id"]
-            isOneToOne: false
-            referencedRelation: "tickers"
-            referencedColumns: ["id"]
-          },
         ]
       }
       tickers: {
@@ -233,6 +254,7 @@ export type Database = {
           last_updated: string | null
           symbol: string
           user_id: string
+          watchlist_only: boolean | null
         }
         Insert: {
           current_price?: number | null
@@ -240,6 +262,7 @@ export type Database = {
           last_updated?: string | null
           symbol: string
           user_id: string
+          watchlist_only?: boolean | null
         }
         Update: {
           current_price?: number | null
@@ -247,33 +270,34 @@ export type Database = {
           last_updated?: string | null
           symbol?: string
           user_id?: string
+          watchlist_only?: boolean | null
         }
         Relationships: []
       }
       transactions: {
         Row: {
-          capital_gains_status: string
+          capital_gains_status: string | null
           cost_price: number
           count: number
           id: string
           purchase_date: string
-          subtype_id: string | null
+          subtype_id: string
         }
         Insert: {
-          capital_gains_status: string
+          capital_gains_status?: string | null
           cost_price: number
           count: number
           id?: string
           purchase_date: string
-          subtype_id?: string | null
+          subtype_id: string
         }
         Update: {
-          capital_gains_status?: string
+          capital_gains_status?: string | null
           cost_price?: number
           count?: number
           id?: string
           purchase_date?: string
-          subtype_id?: string | null
+          subtype_id?: string
         }
         Relationships: [
           {
@@ -287,30 +311,21 @@ export type Database = {
       }
       user_settings: {
         Row: {
-          claude_api_key: string | null
-          finnhub_api_key: string | null
           id: string
           price_alert_threshold: number | null
           rsu_alert_days_before: number | null
-          tax_harvest_threshold: number | null
           user_id: string
         }
         Insert: {
-          claude_api_key?: string | null
-          finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
-          tax_harvest_threshold?: number | null
           user_id: string
         }
         Update: {
-          claude_api_key?: string | null
-          finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
-          tax_harvest_threshold?: number | null
           user_id?: string
         }
         Relationships: []

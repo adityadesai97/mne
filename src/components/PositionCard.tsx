@@ -7,6 +7,7 @@ import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/li
 
 export function PositionCard({ asset }: { asset: any }) {
   const [expanded, setExpanded] = useState(false)
+  const noPriceData = asset.asset_type === 'Stock' && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
   const gain = computeUnrealizedGain(asset)
   const basis = computeCostBasis(asset)
@@ -20,13 +21,22 @@ export function PositionCard({ asset }: { asset: any }) {
           <div className="flex justify-between items-start">
             <div className="text-left">
               <p className="font-medium">{asset.name}</p>
-              <p className="text-muted-foreground text-xs">{asset.location_name} · {asset.asset_type}</p>
+              <p className="text-muted-foreground text-xs">{asset.location?.name} · {asset.asset_type}</p>
             </div>
             <div className="text-right">
-              <p className="font-medium">{fmt(value)}</p>
-              <p className={`text-sm ${isGain ? 'text-gain' : 'text-loss'}`}>
-                {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
-              </p>
+              {noPriceData ? (
+                <>
+                  <p className="font-medium text-muted-foreground">—</p>
+                  <p className="text-xs text-muted-foreground">Price pending</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">{fmt(value)}</p>
+                  <p className={`text-sm ${isGain ? 'text-gain' : 'text-loss'}`}>
+                    {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                  </p>
+                </>
+              )}
             </div>
           </div>
           <div className="flex justify-end mt-1">
