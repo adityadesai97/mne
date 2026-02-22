@@ -30,6 +30,7 @@ ${JSON.stringify(assets, null, 2)}
 
 You MUST call one of the provided tools to respond. Never respond with plain text.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
+If a write command does not include a brokerage or account location, ask for it before calling the tool. Do not default to Unknown.
 Today's date is ${new Date().toISOString().split('T')[0]}`
 }
 
