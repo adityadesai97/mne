@@ -30,6 +30,7 @@ ${JSON.stringify(assets, null, 2)}
 
 You MUST call one of the provided tools to respond. Never respond with plain text.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
+Never infer location_name or account_type from existing portfolio data — always ask the user explicitly.
 Today's date is ${new Date().toISOString().split('T')[0]}`
 }
 
@@ -209,14 +210,14 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     // Fetch live price if ticker is new (best effort, don't block on failure)
     if (!existingTicker) await fetchAndStorePrice(tickerId, symbol)
 
-    // 2. Find or create asset linked to this ticker
+    // 2. Find or create asset linked to this ticker at the given location
+    const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
     const { data: existingAsset } = await supabase.from('assets')
-      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).maybeSingle()
+      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).eq('location_id', locationId).maybeSingle()
     let assetId: string
     if (existingAsset) {
       assetId = existingAsset.id
     } else {
-      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
       const { data, error } = await supabase.from('assets').insert({
         user_id: userId,
         name: input.asset_name || `${symbol} Stock`,
@@ -276,14 +277,14 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       await fetchAndStorePrice(tickerId, symbol)
     }
 
-    // 2. Find or create asset
+    // 2. Find or create asset linked to this ticker at the given location
+    const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
     const { data: existingAsset } = await supabase.from('assets')
-      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).maybeSingle()
+      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).eq('location_id', locationId).maybeSingle()
     let assetId: string
     if (existingAsset) {
       assetId = existingAsset.id
     } else {
-      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
       const { data, error } = await supabase.from('assets').insert({
         user_id: userId,
         name: input.asset_name || `${symbol} Stock`,
