@@ -53,11 +53,13 @@ export function computeCapitalGainsExposure(assets: any[]) {
   let shortTerm = 0
   let longTerm = 0
   for (const a of assets) {
+    if (a.asset_type !== 'Stock') continue
     const price = a.ticker?.current_price ?? 0
     for (const st of a.stock_subtypes ?? []) {
       for (const t of st.transactions ?? []) {
         const gain = Number(t.count) * (price - Number(t.cost_price))
         if (t.capital_gains_status === 'Short Term') shortTerm += gain
+        // Transactions with any status other than 'Short Term' (including Long Term) count as long-term
         else longTerm += gain
       }
     }
