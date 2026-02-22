@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Input } from '@/components/ui/input'
@@ -123,53 +124,73 @@ export function CommandBar() {
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); else setOpen(true) }}>
       <DialogContent className="p-0 gap-0 max-w-lg overflow-hidden">
         <VisuallyHidden><DialogTitle>Command Bar</DialogTitle></VisuallyHidden>
-        {/* COMPACT — unchanged layout */}
-        {!isExpanded && (
-          <div>
-            <div className="flex items-center border-b border-border px-4 py-3">
-              <Input
-                autoFocus
-                placeholder="Ask anything or issue a command..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                className="border-0 focus-visible:ring-0 text-base"
-              />
-            </div>
-            {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
-            {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
-            {compactResult && !loading && !done && (
-              <CommandResult action={compactResult} onDone={() => setDone(true)} onClose={handleClose} />
-            )}
-            {!compactResult && !loading && !done && (
-              <p className="p-4 text-muted-foreground text-xs">
-                Try: "What's my AI theme total?" or "Add 10 AAPL shares at $220 bought today" · Use "mock:write" to test without API credits
-              </p>
-            )}
-          </div>
-        )}
-        {/* EXPANDED — thread + input at bottom */}
-        {isExpanded && (
-          <div className="flex flex-col h-[70vh]">
-            <div ref={threadRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-              {/* Fix 3 — Step 5: use stable key={m.id} instead of index */}
-              {displayMessages.map(m => (
-                <MessageBubble key={m.id} message={m} onDone={() => setDone(true)} onClose={handleClose} />
-              ))}
-              {loading && <p className="text-muted-foreground text-sm">Thinking...</p>}
-            </div>
-            <div className="border-t border-border px-4 py-3">
-              <Input
-                autoFocus
-                placeholder="Reply..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                className="border-0 focus-visible:ring-0 text-base"
-              />
-            </div>
-          </div>
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          {!isExpanded ? (
+            <motion.div
+              key="compact"
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+            >
+              <div className="flex items-center border-b border-border px-4 py-3">
+                <Input
+                  autoFocus
+                  placeholder="Ask anything or issue a command..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                  className="border-0 focus-visible:ring-0 text-base"
+                />
+              </div>
+              {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
+              {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
+              {compactResult && !loading && !done && (
+                <CommandResult action={compactResult} onDone={() => setDone(true)} onClose={handleClose} />
+              )}
+              {!compactResult && !loading && !done && (
+                <p className="p-4 text-muted-foreground text-xs">
+                  Try: "What's my AI theme total?" or "Add 10 AAPL shares at $220 bought today" · Use "mock:write" to test without API credits
+                </p>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="expanded"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: '70vh', opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+              className="flex flex-col overflow-hidden"
+            >
+              <div ref={threadRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                <AnimatePresence initial={false}>
+                  {displayMessages.map(m => (
+                    <motion.div
+                      key={m.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    >
+                      <MessageBubble message={m} onDone={() => setDone(true)} onClose={handleClose} />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {loading && (
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-muted-foreground text-sm">
+                    Thinking...
+                  </motion.p>
+                )}
+              </div>
+              <div className="border-t border-border px-4 py-3">
+                <Input
+                  autoFocus
+                  placeholder="Reply..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                  className="border-0 focus-visible:ring-0 text-base"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   )
