@@ -4,10 +4,11 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Input } from '@/components/ui/input'
 import { runCommand, type Message } from '@/lib/claude'
 
+// Fix 3 — Step 1: Add id field to DisplayMessage type
 type DisplayMessage =
-  | { role: 'user'; content: string }
-  | { role: 'assistant'; kind: 'text'; content: string }
-  | { role: 'assistant'; kind: 'action'; action: any }
+  | { id: number; role: 'user'; content: string }
+  | { id: number; role: 'assistant'; kind: 'text'; content: string }
+  | { id: number; role: 'assistant'; kind: 'action'; action: any }
 
 export function CommandBar() {
   const [open, setOpen] = useState(false)
@@ -18,13 +19,18 @@ export function CommandBar() {
   const [done, setDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  // Fix 3 — Step 2: Add monotonic counter ref
+  const msgIdRef = useRef(0)
+
+  // Fix 3 — Step 3: Helper to create a new ID
+  function nextId() { return ++msgIdRef.current }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
+        // Fix 1 — remove reset() here; onOpenChange → handleClose() → reset() handles it on close
         setOpen(o => !o)
-        reset()
       }
     }
     document.addEventListener('keydown', handler)
@@ -43,6 +49,8 @@ export function CommandBar() {
     setIsExpanded(false)
     setCompactResult(null)
     setDone(false)
+    // Fix 3 — Step 6: reset the ID counter
+    msgIdRef.current = 0
   }
 
   function buildHistory(newUserContent: string): Message[] {
@@ -54,38 +62,49 @@ export function CommandBar() {
     return [...history, { role: 'user', content: newUserContent }]
   }
 
+  // Fix 2 — rewritten handleSubmit
   async function handleSubmit() {
     if (!query.trim()) return
     const userContent = query.trim()
+    // Capture isExpanded before any setState so the closure is consistent throughout
+    const wasExpanded = isExpanded
     setQuery('')
     setLoading(true)
     setDone(false)
     setCompactResult(null)
+
+    // Fix 2 — show the user message immediately when already in a conversation
+    if (wasExpanded) {
+      setDisplayMessages(prev => [...prev, { id: nextId(), role: 'user', content: userContent }])
+    }
+
     try {
       const action = await runCommand(buildHistory(userContent))
       if (action.type === 'text') {
         setDisplayMessages(prev => [
           ...prev,
-          { role: 'user', content: userContent },
-          { role: 'assistant', kind: 'text', content: action.message },
+          // Fix 2 — only add user message here on the first turn (not yet expanded)
+          // Fix 3 — Step 4: add id to every constructed DisplayMessage
+          ...(!wasExpanded ? [{ id: nextId(), role: 'user' as const, content: userContent }] : []),
+          { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message },
         ])
         setIsExpanded(true)
-      } else if (isExpanded) {
+      } else if (wasExpanded) {
         setDisplayMessages(prev => [
           ...prev,
-          { role: 'user', content: userContent },
-          { role: 'assistant', kind: 'action', action },
+          // Fix 2 — user message already appended above
+          { id: nextId(), role: 'assistant' as const, kind: 'action', action },
         ])
       } else {
         setCompactResult(action)
       }
     } catch (e: any) {
       const errAction = { type: 'error', message: e.message || 'Something went wrong' }
-      if (isExpanded) {
+      if (wasExpanded) {
         setDisplayMessages(prev => [
           ...prev,
-          { role: 'user', content: userContent },
-          { role: 'assistant', kind: 'action', action: errAction },
+          // Fix 2 — user message already appended above
+          { id: nextId(), role: 'assistant' as const, kind: 'action', action: errAction },
         ])
       } else {
         setCompactResult(errAction)
@@ -133,8 +152,9 @@ export function CommandBar() {
         {isExpanded && (
           <div className="flex flex-col h-[70vh]">
             <div ref={threadRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-              {displayMessages.map((m, i) => (
-                <MessageBubble key={i} message={m} onDone={() => setDone(true)} onClose={handleClose} />
+              {/* Fix 3 — Step 5: use stable key={m.id} instead of index */}
+              {displayMessages.map(m => (
+                <MessageBubble key={m.id} message={m} onDone={() => setDone(true)} onClose={handleClose} />
               ))}
               {loading && <p className="text-muted-foreground text-sm">Thinking...</p>}
             </div>
