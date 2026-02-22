@@ -72,6 +72,7 @@ export default function Charts() {
           <div className="flex gap-2 flex-wrap mt-1">
             {ALL_SUBTYPES.map(s => (
               <button
+                type="button"
                 key={s}
                 onClick={() => toggleSubtype(s)}
                 className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
@@ -276,6 +277,7 @@ export default function Charts() {
                 <Bar dataKey="unvestedShares" name="Unvested" stackId="vest" fill={MUTED_COLOR} radius={[0, 4, 4, 0]}>
                   <LabelList
                     content={({ x, y, width, height, index }: any) => {
+                      if (index == null || !rsuData[index]) return null
                       const row = rsuData[index]
                       const pct = Math.round((row.vestedShares / row.totalShares) * 100)
                       return (
