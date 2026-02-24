@@ -143,7 +143,7 @@ export default function Settings() {
   async function handleSignOut() {
     await getSupabaseClient().auth.signOut()
     config.markSignedOut()
-    window.location.reload()
+    window.location.href = '/'
   }
 
   return (
