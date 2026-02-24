@@ -62,7 +62,10 @@
       "mcp__plugin_playwright_playwright__browser_tabs",
       "mcp__plugin_playwright_playwright__browser_close",
       "mcp__plugin_supabase_supabase__get_edge_function",
-      "Bash(which convert:*)"
+      "Bash(which convert:*)",
+      "Bash(vercel --version 2>&1 && vercel whoami 2>&1)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel:*)"
     ]
   }
 }
