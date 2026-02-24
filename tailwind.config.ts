@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        syne: ['Syne', 'sans-serif'],
+      },
       colors: {
         gain: 'hsl(var(--gain))',
         loss: 'hsl(var(--loss))',
@@ -49,6 +52,10 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      boxShadow: {
+        card: 'inset 0 0 0 1px rgba(255,255,255,0.06)',
+        'card-hover': 'inset 0 0 0 1px rgba(255,255,255,0.10), 0 0 0 1px hsl(217 91% 60% / 0.15)',
       },
     },
   },

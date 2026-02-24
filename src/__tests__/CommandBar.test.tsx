@@ -6,7 +6,7 @@ vi.mock('../lib/claude', () => ({
   runCommand: vi.fn(),
 }))
 
-test('CommandBar is not visible initially', () => {
-  render(<CommandBar />)
+test('CommandBar is not visible when closed', () => {
+  render(<CommandBar open={false} onClose={() => {}} />)
   expect(screen.queryByPlaceholderText(/ask anything/i)).not.toBeInTheDocument()
 })

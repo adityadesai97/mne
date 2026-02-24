@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import ReactECharts from 'echarts-for-react'
+import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
+import { getSnapshots } from '@/lib/db/snapshots'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  ResponsiveContainer,
-  PieChart, Pie, Cell, Tooltip,
-  BarChart, Bar, XAxis, YAxis, LabelList,
-} from 'recharts'
 import {
   groupByAssetType,
   groupByLocation,
@@ -18,14 +16,27 @@ import {
 type Subtype = 'Market' | 'ESPP' | 'RSU'
 const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
 
-const PALETTE = ['#00ff80', '#7c3aed', '#0ea5e9', '#f59e0b', '#ec4899', '#14b8a6']
-const GAIN_COLOR = 'hsl(153, 100%, 50%)'
+const PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
+const GAIN_COLOR = 'hsl(158, 64%, 52%)'
 const LOSS_COLOR = 'hsl(0, 84%, 60%)'
-const MUTED_COLOR = 'hsl(0, 0%, 30%)'
+const MUTED_COLOR = 'hsl(224, 13%, 25%)'
+const GRID_COLOR = 'hsl(224,13%,16%)'
+const AXIS_COLOR = 'hsl(215,14%,55%)'
+const TEXT_COLOR = 'hsl(215,20%,96%)'
+const TOOLTIP_BG = 'hsl(224,13%,9%)'
+
+const tooltipBase = {
+  backgroundColor: TOOLTIP_BG,
+  borderColor: 'rgba(255,255,255,0.08)',
+  borderWidth: 1,
+  textStyle: { color: TEXT_COLOR, fontSize: 12 },
+}
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD', minimumFractionDigits: 0,
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
   }).format(n)
 }
 
@@ -35,19 +46,56 @@ function fmtShort(n: number) {
   return String(Math.round(n))
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const fmtLabel = (v: any) => fmt(v as number)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const fmtShortLabel = (v: any) => fmtShort(v as number)
+function formatDateShort(date: string) {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return date
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
+}
+
+function donutOption(
+  data: { name: string; value: number; color: string }[],
+): EChartsOption {
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'item',
+      formatter: (params: unknown) => {
+        const p = params as { name: string; value: number; percent: number }
+        return `${p.name}<br/>${fmt(Number(p.value))} (${Math.round(Number(p.percent))}%)`
+      },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['50%', '82%'],
+        label: { show: false },
+        labelLine: { show: false },
+        avoidLabelOverlap: true,
+        itemStyle: {
+          borderColor: GRID_COLOR,
+          borderWidth: 2,
+        },
+        data: data.map((slice) => ({
+          name: slice.name,
+          value: slice.value,
+          itemStyle: { color: slice.color },
+        })),
+      },
+    ],
+  }
+}
 
 export default function Charts() {
   const [assets, setAssets] = useState<any[]>([])
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
+  const [snapshots, setSnapshots] = useState<any[]>([])
 
   useEffect(() => { getAllAssets().then(setAssets).catch(console.error) }, [])
+  useEffect(() => { getSnapshots().then(setSnapshots).catch(console.error) }, [])
 
   function toggleSubtype(s: Subtype) {
-    setActiveSubtypes(prev => {
+    setActiveSubtypes((prev) => {
       const next = new Set(prev)
       next.has(s) ? next.delete(s) : next.add(s)
       return next
@@ -55,247 +103,438 @@ export default function Charts() {
   }
 
   const allocationData = groupByAssetType(assets, activeSubtypes)
+  const allocationColorData = allocationData.map((group, index) => ({
+    name: group.type,
+    value: group.value,
+    color: PALETTE[index % PALETTE.length],
+  }))
   const locationData = groupByLocation(assets)
+  const locationColorData = locationData.map((group, index) => ({
+    name: group.name,
+    value: group.value,
+    color: PALETTE[index % PALETTE.length],
+  }))
   const pnlData = computeUnrealizedPnLByPosition(assets)
   const { shortTerm, longTerm } = computeCapitalGainsExposure(assets)
   const cvvData = computeCostVsValue(assets)
   const rsuData = computeRsuVesting(assets)
 
+  const netWorthOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'axis',
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; value: number | [string, number] }>
+        if (!rows.length) return ''
+        const first = rows[0]
+        const raw = first.value
+        const value = Array.isArray(raw) ? Number(raw[1]) : Number(raw)
+        return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
+      },
+    },
+    grid: { left: 8, right: 8, top: 12, bottom: 30, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: snapshots.map((point) => point.date),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: AXIS_COLOR,
+        fontSize: 10,
+        formatter: (value: string) => formatDateShort(value),
+      },
+    },
+    yAxis: {
+      type: 'value',
+      show: false,
+      splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } },
+    },
+    series: [
+      {
+        name: 'Net Worth',
+        type: 'line',
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { width: 2, color: 'hsl(217,91%,60%)' },
+        areaStyle: { opacity: 0.08, color: 'hsl(217,91%,60%)' },
+        data: snapshots.map((point) => Number(point.value)),
+      },
+    ],
+  }), [snapshots])
+
+  const allocationOption = useMemo<EChartsOption>(
+    () => donutOption(allocationColorData),
+    [allocationColorData],
+  )
+
+  const locationOption = useMemo<EChartsOption>(
+    () => donutOption(locationColorData),
+    [locationColorData],
+  )
+
+  const pnlOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; value: number }>
+        if (!rows.length) return ''
+        return `${rows[0].axisValue}<br/>${fmt(Number(rows[0].value))}`
+      },
+    },
+    grid: { left: 120, right: 48, top: 6, bottom: 6 },
+    xAxis: { type: 'value', show: false },
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: pnlData.map((point) => point.name),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: AXIS_COLOR,
+        fontSize: 11,
+        width: 108,
+        overflow: 'truncate',
+      },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: pnlData.map((point) => ({
+          value: point.gain,
+          itemStyle: { color: point.gain >= 0 ? GAIN_COLOR : LOSS_COLOR },
+        })),
+        barWidth: 20,
+        itemStyle: { borderRadius: [0, 4, 4, 0] },
+        label: {
+          show: true,
+          position: 'right',
+          color: AXIS_COLOR,
+          fontSize: 11,
+          formatter: (params) => fmt(Number(params.value)),
+        },
+      },
+    ],
+  }), [pnlData])
+
+  const capitalGainsData = useMemo(
+    () => [
+      { label: 'Short-Term', value: shortTerm },
+      { label: 'Long-Term', value: longTerm },
+    ],
+    [shortTerm, longTerm],
+  )
+
+  const capitalGainsAxisBounds = useMemo(() => {
+    const values = capitalGainsData.map((point) => Number(point.value))
+    const max = Math.max(0, ...values)
+    const min = Math.min(0, ...values)
+    return {
+      max: max > 0 ? max * 1.15 : 0,
+      min: min < 0 ? min * 1.15 : 0,
+    }
+  }, [capitalGainsData])
+
+  const capitalGainsOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; value: number }>
+        if (!rows.length) return ''
+        return `${rows[0].axisValue}<br/>${fmt(Number(rows[0].value))}`
+      },
+    },
+    grid: { left: 8, right: 16, top: 20, bottom: 16 },
+    xAxis: {
+      type: 'category',
+      data: capitalGainsData.map((point) => point.label),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: AXIS_COLOR, fontSize: 12 },
+    },
+    yAxis: {
+      type: 'value',
+      show: false,
+      min: capitalGainsAxisBounds.min,
+      max: capitalGainsAxisBounds.max,
+    },
+    series: [
+      {
+        type: 'bar',
+        data: capitalGainsData.map((point) => ({
+          value: point.value,
+          itemStyle: { color: point.value >= 0 ? GAIN_COLOR : LOSS_COLOR },
+        })),
+        barWidth: 34,
+        itemStyle: { borderRadius: [4, 4, 0, 0] },
+        label: {
+          show: true,
+          position: 'top',
+          color: AXIS_COLOR,
+          fontSize: 11,
+          formatter: (params) => fmt(Number(params.value)),
+        },
+      },
+    ],
+  }), [capitalGainsAxisBounds.max, capitalGainsAxisBounds.min, capitalGainsData])
+
+  const cvvOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; seriesName: string; value: number }>
+        if (!rows.length) return ''
+        return `${rows[0].axisValue}<br/>${rows.map((row) => `${row.seriesName}: ${fmt(Number(row.value))}`).join('<br/>')}`
+      },
+    },
+    legend: { show: false },
+    grid: { left: 120, right: 48, top: 6, bottom: 6 },
+    xAxis: { type: 'value', show: false },
+    yAxis: {
+      type: 'category',
+      data: cvvData.map((point) => point.name),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: AXIS_COLOR,
+        fontSize: 11,
+        width: 108,
+        overflow: 'truncate',
+      },
+    },
+    series: [
+      {
+        name: 'Cost Basis',
+        type: 'bar',
+        data: cvvData.map((point) => point.costBasis),
+        barWidth: 14,
+        itemStyle: { color: MUTED_COLOR },
+        label: {
+          show: true,
+          position: 'right',
+          color: AXIS_COLOR,
+          fontSize: 10,
+          formatter: (params) => fmtShort(Number(params.value)),
+        },
+      },
+      {
+        name: 'Current Value',
+        type: 'bar',
+        data: cvvData.map((point) => point.currentValue),
+        barWidth: 14,
+        itemStyle: { color: GAIN_COLOR, borderRadius: [0, 4, 4, 0] },
+        label: {
+          show: true,
+          position: 'right',
+          color: AXIS_COLOR,
+          fontSize: 10,
+          formatter: (params) => fmtShort(Number(params.value)),
+        },
+      },
+    ],
+  }), [cvvData])
+
+  const rsuOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      ...tooltipBase,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; seriesName: string; value: number; dataIndex: number }>
+        if (!rows.length) return ''
+        const idx = rows[0].dataIndex
+        const row = rsuData[idx]
+        const pct = row ? Math.round((row.vestedShares / row.totalShares) * 100) : 0
+        return `${rows[0].axisValue}<br/>${rows.map((r) => `${r.seriesName}: ${r.value}`).join('<br/>')}<br/>Vested: ${pct}%`
+      },
+    },
+    legend: { show: false },
+    grid: { left: 140, right: 48, top: 6, bottom: 6 },
+    xAxis: { type: 'value', show: false },
+    yAxis: {
+      type: 'category',
+      data: rsuData.map((point) => point.label),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: AXIS_COLOR,
+        fontSize: 11,
+        width: 128,
+        overflow: 'truncate',
+      },
+    },
+    series: [
+      {
+        name: 'Vested',
+        type: 'bar',
+        stack: 'vest',
+        data: rsuData.map((point) => point.vestedShares),
+        barWidth: 18,
+        itemStyle: { color: GAIN_COLOR },
+      },
+      {
+        name: 'Unvested',
+        type: 'bar',
+        stack: 'vest',
+        data: rsuData.map((point) => point.unvestedShares),
+        barWidth: 18,
+        itemStyle: { color: MUTED_COLOR, borderRadius: [0, 4, 4, 0] },
+        label: {
+          show: true,
+          position: 'right',
+          color: AXIS_COLOR,
+          fontSize: 11,
+          formatter: (params) => {
+            const row = rsuData[params.dataIndex]
+            if (!row || row.totalShares <= 0) return ''
+            return `${Math.round((row.vestedShares / row.totalShares) * 100)}%`
+          },
+        },
+      },
+    ],
+  }), [rsuData])
+
   return (
     <div className="pt-6 pb-24 px-4 space-y-4">
       <h1 className="text-xl font-bold">Charts</h1>
 
-      {/* ── 1. Portfolio Allocation ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground">Portfolio Allocation</CardTitle>
-          <div className="flex gap-2 flex-wrap mt-1">
-            {ALL_SUBTYPES.map(s => (
-              <button
-                type="button"
-                key={s}
-                onClick={() => toggleSubtype(s)}
-                className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                  activeSubtypes.has(s)
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-transparent text-muted-foreground border-border'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {allocationData.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-8">No data</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={allocationData}
-                  dataKey="value"
-                  nameKey="type"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={90}
-                  paddingAngle={2}
-                >
-                  {allocationData.map((_, i) => (
-                    <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: 'hsl(0,0%,9%)', border: '1px solid hsl(0,0%,14%)', borderRadius: 8 }}
-                  formatter={fmtLabel}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-            {allocationData.map((g, i) => (
-              <div key={g.type} className="flex items-center gap-1.5 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: PALETTE[i % PALETTE.length] }} />
-                <span className="text-muted-foreground">{g.type}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 2. By Account ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground">By Account</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {locationData.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-8">No data</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={locationData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={90}
-                  paddingAngle={2}
-                >
-                  {locationData.map((_, i) => (
-                    <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: 'hsl(0,0%,9%)', border: '1px solid hsl(0,0%,14%)', borderRadius: 8 }}
-                  formatter={fmtLabel}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-            {locationData.map((g, i) => (
-              <div key={g.name} className="flex items-center gap-1.5 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: PALETTE[i % PALETTE.length] }} />
-                <span className="text-muted-foreground">{g.name}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 3. Unrealized P&L by Position ── */}
-      {pnlData.length > 0 && (
+      {snapshots.length > 1 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Unrealized P&L by Position</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Net Worth Over Time</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(180, pnlData.length * 44)}>
-              <BarChart data={pnlData} layout="vertical" margin={{ left: 8, right: 48, top: 4, bottom: 4 }}>
-                <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: 'hsl(0,0%,60%)' }} />
-                <XAxis type="number" hide />
-                <Bar dataKey="gain" radius={[0, 4, 4, 0]}>
-                  <LabelList
-                    dataKey="gain"
-                    position="right"
-                    formatter={fmtLabel}
-                    style={{ fontSize: 11, fill: 'hsl(0,0%,60%)' }}
-                  />
-                  {pnlData.map((d, i) => (
-                    <Cell key={i} fill={d.gain >= 0 ? GAIN_COLOR : LOSS_COLOR} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ReactECharts option={netWorthOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
           </CardContent>
         </Card>
       )}
 
-      {/* ── 4. Capital Gains Exposure ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Portfolio Allocation</CardTitle>
+            <div className="flex gap-2 flex-wrap mt-1">
+              {ALL_SUBTYPES.map((s) => (
+                <button
+                  type="button"
+                  key={s}
+                  onClick={() => toggleSubtype(s)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                    activeSubtypes.has(s)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-transparent text-muted-foreground border-border'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {allocationData.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-8">No data</p>
+            ) : (
+              <ReactECharts option={allocationOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
+            )}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+              {allocationColorData.map((slice) => (
+                <div key={slice.name} className="flex items-center gap-1.5 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
+                  <span className="text-muted-foreground">{slice.name}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">By Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {locationData.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-8">No data</p>
+            ) : (
+              <ReactECharts option={locationOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
+            )}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+              {locationColorData.map((slice) => (
+                <div key={slice.name} className="flex items-center gap-1.5 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
+                  <span className="text-muted-foreground">{slice.name}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {pnlData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Unrealized P&amp;L by Position</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ReactECharts
+              option={pnlOption}
+              style={{ width: '100%', height: Math.max(180, pnlData.length * 44) }}
+              notMerge
+              opts={{ renderer: 'svg' }}
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {(shortTerm !== 0 || longTerm !== 0) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Capital Gains Exposure</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart
-                data={[
-                  { label: 'Short-Term', value: shortTerm },
-                  { label: 'Long-Term', value: longTerm },
-                ]}
-                margin={{ top: 8, right: 16, bottom: 0, left: 8 }}
-              >
-                <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(0,0%,60%)' }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  <LabelList
-                    dataKey="value"
-                    position="top"
-                    formatter={fmtLabel}
-                    style={{ fontSize: 11, fill: 'hsl(0,0%,60%)' }}
-                  />
-                  {[shortTerm, longTerm].map((v, i) => (
-                    <Cell key={i} fill={v >= 0 ? GAIN_COLOR : LOSS_COLOR} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 160 }} notMerge opts={{ renderer: 'svg' }} />
           </CardContent>
         </Card>
       )}
 
-      {/* ── 5. Cost Basis vs Current Value ── */}
       {cvvData.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Cost Basis vs Current Value</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(180, cvvData.length * 60)}>
-              <BarChart data={cvvData} layout="vertical" margin={{ left: 8, right: 48, top: 4, bottom: 4 }}>
-                <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fill: 'hsl(0,0%,60%)' }} />
-                <XAxis type="number" hide />
-                <Bar dataKey="costBasis" name="Cost Basis" fill={MUTED_COLOR} radius={[0, 0, 0, 0]}>
-                  <LabelList
-                    dataKey="costBasis"
-                    position="right"
-                    formatter={fmtShortLabel}
-                    style={{ fontSize: 10, fill: 'hsl(0,0%,60%)' }}
-                  />
-                </Bar>
-                <Bar dataKey="currentValue" name="Current Value" fill={GAIN_COLOR} radius={[0, 4, 4, 0]}>
-                  <LabelList
-                    dataKey="currentValue"
-                    position="right"
-                    formatter={fmtShortLabel}
-                    style={{ fontSize: 10, fill: 'hsl(0,0%,60%)' }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ReactECharts
+              option={cvvOption}
+              style={{ width: '100%', height: Math.max(180, cvvData.length * 60) }}
+              notMerge
+              opts={{ renderer: 'svg' }}
+            />
           </CardContent>
         </Card>
       )}
 
-      {/* ── 6. RSU Vesting Progress ── */}
       {rsuData.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">RSU Vesting Progress</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(180, rsuData.length * 52)}>
-              <BarChart data={rsuData} layout="vertical" margin={{ left: 8, right: 48, top: 4, bottom: 4 }}>
-                <YAxis dataKey="label" type="category" width={130} tick={{ fontSize: 11, fill: 'hsl(0,0%,60%)' }} />
-                <XAxis type="number" hide />
-                <Bar dataKey="vestedShares" name="Vested" stackId="vest" fill={GAIN_COLOR} />
-                <Bar dataKey="unvestedShares" name="Unvested" stackId="vest" fill={MUTED_COLOR} radius={[0, 4, 4, 0]}>
-                  <LabelList
-                    content={({ x, y, width, height, index }: any) => {
-                      if (index == null || !rsuData[index]) return null
-                      const row = rsuData[index]
-                      const pct = Math.round((row.vestedShares / row.totalShares) * 100)
-                      return (
-                        <text
-                          x={Number(x) + Number(width) + 6}
-                          y={Number(y) + Number(height) / 2}
-                          dy={4}
-                          fontSize={11}
-                          fill="hsl(0,0%,60%)"
-                        >
-                          {pct}%
-                        </text>
-                      )
-                    }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ReactECharts
+              option={rsuOption}
+              style={{ width: '100%', height: Math.max(180, rsuData.length * 52) }}
+              notMerge
+              opts={{ renderer: 'svg' }}
+            />
           </CardContent>
         </Card>
       )}

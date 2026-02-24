@@ -4,28 +4,53 @@
 
 @layer base {
   :root {
-    --background: 0 0% 5%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 153 100% 50%;
-    --primary-foreground: 0 0% 5%;
-    --secondary: 0 0% 14%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 153 100% 50%;
-    --accent-foreground: 0 0% 5%;
+    /* Extracted from the cobalt M logo: hue 220°, pure saturated blue */
+    --background: 222 22% 4%;
+    --foreground: 210 20% 94%;
+    --card: 222 16% 7%;
+    --card-foreground: 210 20% 94%;
+    --popover: 222 16% 7%;
+    --popover-foreground: 210 20% 94%;
+    --primary: 220 100% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 14% 11%;
+    --secondary-foreground: 210 20% 94%;
+    --muted: 222 14% 11%;
+    --muted-foreground: 222 8% 44%;
+    --accent: 220 100% 56%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14%;
-    --input: 0 0% 14%;
-    --ring: 153 100% 50%;
-    --radius: 0.75rem;
-    --gain: 153 100% 50%;
+    --border: 222 16% 12%;
+    --input: 222 14% 11%;
+    --ring: 220 100% 56%;
+    --radius: 0.875rem;
+    --gain: 142 71% 45%;
     --loss: 0 84% 60%;
+  }
+
+  html.light {
+    --background: 210 20% 97%;
+    --foreground: 222 22% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 22% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 22% 10%;
+    --primary: 220 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 16% 93%;
+    --secondary-foreground: 222 22% 10%;
+    --muted: 210 16% 93%;
+    --muted-foreground: 222 10% 46%;
+    --accent: 220 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 88%;
+    --input: 210 16% 93%;
+    --ring: 220 100% 50%;
+    --gain: 142 60% 36%;
+    --loss: 0 72% 51%;
   }
 }
 
@@ -36,5 +61,71 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-feature-settings: "rlig" 1, "calt" 1;
+  font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
 }
+
+.font-syne {
+  font-family: 'Syne', sans-serif;
+}
+
+/* Brand spectrum — extracted from the cobalt M logo */
+:root {
+  --grad: linear-gradient(135deg, #002FCC 0%, #0050F5 38%, #2878FF 72%, #5099FF 100%);
+  --grad-subtle: linear-gradient(135deg, rgba(0,47,204,0.18) 0%, rgba(0,80,245,0.12) 50%, rgba(80,153,255,0.07) 100%);
+  --grad-glow: 0 0 24px rgba(0,80,245,0.18), 0 0 48px rgba(40,120,255,0.09);
+}
+
+.bg-brand {
+  background: var(--grad);
+}
+.bg-brand-subtle {
+  background: var(--grad-subtle);
+}
+.shadow-brand {
+  box-shadow: var(--grad-glow);
+}
+.border-brand {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    var(--grad) border-box;
+}
+
+/* Spinning comet border — used on the ⌘K pill */
+@property --cmdk-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* Spin once on load (3 rotations, ease-out), then pulse glow forever */
+@keyframes cmdkSpin {
+  from { --cmdk-angle: 0deg; }
+  to   { --cmdk-angle: 1080deg; }
+}
+
+@keyframes cmdkPulse {
+  from { box-shadow: none; }
+  to   { box-shadow: 0 0 16px rgba(0,80,245,0.55), 0 0 32px rgba(40,120,255,0.30); }
+}
+
+.border-spin {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+    conic-gradient(from var(--cmdk-angle), #002FCC, #0050F5, #2878FF, #5099FF, #002FCC) border-box;
+  animation:
+    cmdkSpin 4.5s cubic-bezier(0.16, 1, 0.3, 1) 1 forwards,
+    cmdkPulse 0.8s ease-out 4.5s 1 forwards;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Logo variant — in light mode render a black (inverted) logo */
+html.light .logo-adaptive { filter: brightness(0); }
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }

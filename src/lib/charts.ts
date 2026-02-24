@@ -15,12 +15,15 @@ export function groupByAssetType(assets: any[], activeSubtypes: Set<string>) {
 
 function filteredStockValue(asset: any, activeSubtypes: Set<string>): number {
   if (asset.asset_type !== 'Stock') return asset.price ?? 0
-  if (!asset.ticker?.current_price) return 0
-  const price = asset.ticker.current_price
-  const shares = (asset.stock_subtypes ?? [])
+  const lots = (asset.stock_subtypes ?? [])
     .filter((st: any) => activeSubtypes.has(st.subtype))
     .flatMap((st: any) => st.transactions ?? [])
-    .reduce((sum: number, t: any) => sum + Number(t.count), 0)
+  const price = asset.ticker?.current_price
+  if (!price) {
+    // No live price yet — show cost basis so stocks still appear in charts
+    return lots.reduce((sum: number, t: any) => sum + Number(t.count) * Number(t.cost_price), 0)
+  }
+  const shares = lots.reduce((sum: number, t: any) => sum + Number(t.count), 0)
   return Math.round(price * shares * 100) / 100
 }
 
@@ -71,7 +74,7 @@ export function computeCapitalGainsExposure(assets: any[]) {
 
 export function computeCostVsValue(assets: any[]) {
   return assets
-    .filter(a => a.asset_type === 'Stock' && computeAssetValue(a) > 0)
+    .filter(a => a.asset_type === 'Stock' && computeCostBasis(a) > 0)
     .map(a => ({
       name: a.name,
       costBasis: computeCostBasis(a),
@@ -98,20 +101,26 @@ export function computeRsuVesting(assets: any[], today: Date = new Date()): RsuV
         const vestEnd = new Date(grant.vest_end)
         const cliffDate = grant.cliff_date ? new Date(grant.cliff_date) : null
         const total = Number(grant.total_shares)
+        const endedAt = grant.ended_at ? new Date(grant.ended_at) : null
+
+        // Use the earlier of today and ended_at as the effective date for vesting calculation
+        const effectiveToday = endedAt && endedAt < today ? endedAt : today
 
         let vested = 0
-        if (today >= vestEnd) {
+        if (effectiveToday >= vestEnd) {
           vested = total
-        } else if (today >= vestStart && (!cliffDate || today >= cliffDate)) {
-          const elapsed = today.getTime() - vestStart.getTime()
+        } else if (effectiveToday >= vestStart && (!cliffDate || effectiveToday >= cliffDate)) {
+          const elapsed = effectiveToday.getTime() - vestStart.getTime()
           const duration = vestEnd.getTime() - vestStart.getTime()
           vested = Math.floor((elapsed / duration) * total)
         }
 
+        const label = `${a.ticker?.symbol ?? a.name} · ${grant.grant_date}${endedAt ? ' (Ended)' : ''}`
+
         rows.push({
-          label: `${a.ticker?.symbol ?? a.name} · ${grant.grant_date}`,
+          label,
           vestedShares: vested,
-          unvestedShares: total - vested,
+          unvestedShares: endedAt ? 0 : total - vested,
           totalShares: total,
         })
       }

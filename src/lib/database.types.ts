@@ -86,6 +86,27 @@ export type Database = {
         }
         Relationships: []
       }
+      net_worth_snapshots: {
+        Row: {
+          date: string
+          id: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          date: string
+          id?: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          date?: string
+          id?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: []
+      }
       push_subscriptions: {
         Row: {
           auth: string
@@ -113,6 +134,7 @@ export type Database = {
       rsu_grants: {
         Row: {
           cliff_date: string | null
+          ended_at: string | null
           grant_date: string
           id: string
           subtype_id: string
@@ -122,6 +144,7 @@ export type Database = {
         }
         Insert: {
           cliff_date?: string | null
+          ended_at?: string | null
           grant_date: string
           id?: string
           subtype_id: string
@@ -131,6 +154,7 @@ export type Database = {
         }
         Update: {
           cliff_date?: string | null
+          ended_at?: string | null
           grant_date?: string
           id?: string
           subtype_id?: string
@@ -245,6 +269,13 @@ export type Database = {
             referencedRelation: "themes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ticker_themes_ticker_id_fkey"
+            columns: ["ticker_id"]
+            isOneToOne: false
+            referencedRelation: "tickers"
+            referencedColumns: ["id"]
+          },
         ]
       }
       tickers: {
@@ -252,6 +283,7 @@ export type Database = {
           current_price: number | null
           id: string
           last_updated: string | null
+          logo: string | null
           symbol: string
           user_id: string
           watchlist_only: boolean | null
@@ -260,6 +292,7 @@ export type Database = {
           current_price?: number | null
           id?: string
           last_updated?: string | null
+          logo?: string | null
           symbol: string
           user_id: string
           watchlist_only?: boolean | null
@@ -268,6 +301,7 @@ export type Database = {
           current_price?: number | null
           id?: string
           last_updated?: string | null
+          logo?: string | null
           symbol?: string
           user_id?: string
           watchlist_only?: boolean | null
@@ -311,18 +345,24 @@ export type Database = {
       }
       user_settings: {
         Row: {
+          claude_api_key: string | null
+          finnhub_api_key: string | null
           id: string
           price_alert_threshold: number | null
           rsu_alert_days_before: number | null
           user_id: string
         }
         Insert: {
+          claude_api_key?: string | null
+          finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
           user_id: string
         }
         Update: {
+          claude_api_key?: string | null
+          finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null

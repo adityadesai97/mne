@@ -1,26 +1,22 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import Onboarding from '../pages/Onboarding'
 
-test('shows all key fields', () => {
-  render(<Onboarding onComplete={() => {}} />)
-  expect(screen.getByText('Supabase Project URL')).toBeInTheDocument()
-  expect(screen.getByText('Supabase Anon Key')).toBeInTheDocument()
-  expect(screen.getByText('Claude API Key')).toBeInTheDocument()
-  expect(screen.getByText('Finnhub API Key')).toBeInTheDocument()
-})
+// Default: Supabase not ready -> requires env vars
+vi.mock('../lib/supabase', () => ({
+  isSupabaseReady: () => false,
+  getSupabaseClient: () => ({
+    auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      signInWithOAuth: () => Promise.resolve({ data: {}, error: null }),
+    },
+  }),
+}))
 
-test('shows error when fields are empty', async () => {
-  render(<Onboarding onComplete={() => {}} />)
-  fireEvent.click(screen.getByText('Continue'))
-  expect(await screen.findByText('All fields are required')).toBeInTheDocument()
-})
+beforeEach(() => localStorage.clear())
 
-test('shows error for invalid Supabase URL', async () => {
+test('shows env setup instructions when Supabase is not configured', () => {
   render(<Onboarding onComplete={() => {}} />)
-  fireEvent.change(screen.getByLabelText('Supabase Project URL'), { target: { value: 'not-a-url' } })
-  fireEvent.change(screen.getByLabelText('Supabase Anon Key'), { target: { value: 'eyJ...' } })
-  fireEvent.change(screen.getByLabelText('Claude API Key'), { target: { value: 'sk-ant-...' } })
-  fireEvent.change(screen.getByLabelText('Finnhub API Key'), { target: { value: 'key' } })
-  fireEvent.click(screen.getByText('Continue'))
-  expect(await screen.findByText(/Supabase URL must be a valid URL/)).toBeInTheDocument()
+  expect(screen.getByText('Supabase not configured')).toBeInTheDocument()
+  expect(screen.getByText(/VITE_SUPABASE_URL=/)).toBeInTheDocument()
+  expect(screen.getByText(/VITE_SUPABASE_ANON_KEY=/)).toBeInTheDocument()
 })

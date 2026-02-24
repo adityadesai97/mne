@@ -9,6 +9,7 @@ type Ticker = { current_price: number | null }
 export type AssetTyped = {
   asset_type: string
   price: number | null
+  initial_price?: number | null
   ticker: Ticker | null
   stock_subtypes: StockSubtype[] | null
 }
@@ -34,4 +35,14 @@ export function computeUnrealizedGain(asset: AssetTyped): number {
 
 export function computeTotalNetWorth(assets: AssetTyped[]): number {
   return assets.reduce((sum, a) => sum + computeAssetValue(a), 0)
+}
+
+export function computeCashGain(asset: AssetTyped): number {
+  if (asset.asset_type === 'Stock' || asset.initial_price == null) return 0
+  return (asset.price ?? 0) - asset.initial_price
+}
+
+export function computeCashGainPct(asset: AssetTyped): number {
+  if (asset.asset_type === 'Stock' || !asset.initial_price) return 0
+  return (computeCashGain(asset) / asset.initial_price) * 100
 }

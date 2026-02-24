@@ -11,7 +11,7 @@ const tabs = [
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border flex justify-around py-2 z-50" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-card/75 border-t border-white/5 flex justify-around py-2 z-50" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
       {tabs.map(({ to, icon: Icon, label }) => (
         <NavLink
           key={to}

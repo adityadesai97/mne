@@ -1,19 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
-// These are provided by the user during onboarding, never hardcoded
-export function createSupabaseClient(url: string, anonKey: string) {
-  return createClient(url, anonKey)
-}
+// Supabase credentials must be provided via env vars.
+const ENV_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const ENV_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-// Singleton after onboarding
-let client: ReturnType<typeof createSupabaseClient> | null = null
+const client = ENV_URL && ENV_KEY ? createClient(ENV_URL, ENV_KEY) : null
+
+export function isSupabaseReady(): boolean {
+  return client !== null
+}
 
 export function getSupabaseClient() {
-  if (!client) throw new Error('Supabase not configured. Complete onboarding first.')
-  return client
-}
-
-export function initSupabase(url: string, anonKey: string) {
-  client = createSupabaseClient(url, anonKey)
+  if (!client) throw new Error('Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
   return client
 }

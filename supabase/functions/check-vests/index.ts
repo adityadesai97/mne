@@ -10,8 +10,12 @@ Deno.serve(async () => {
 
   for (const userSettings of settings ?? []) {
     const daysAhead = userSettings.rsu_alert_days_before ?? 7
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() + daysAhead)
+    const today = new Date()
+    const cutoff = new Date(today)
+    cutoff.setDate(today.getDate() + daysAhead)
+
+    const cutoffStr = cutoff.toISOString().split('T')[0]
+    const todayStr = today.toISOString().split('T')[0]
 
     const { data: grants } = await supabase
       .from('rsu_grants')
@@ -21,39 +25,26 @@ Deno.serve(async () => {
           asset:assets!inner(user_id, name)
         )
       `)
-      .eq('stock_subtypes.asset.user_id', userSettings.user_id)
-      .gt('unvested_count', 0)
+      .is('ended_at', null)
+      .lte('vest_end', cutoffStr)
+      .gte('vest_end', todayStr)
 
     for (const grant of grants ?? []) {
-      const nextVest = computeNextVestDate(grant)
-      if (!nextVest) continue
-      if (nextVest <= cutoff && nextVest >= new Date()) {
-        await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-push`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
-          },
-          body: JSON.stringify({
-            user_id: userSettings.user_id,
-            title: `RSU Vesting Soon`,
-            body: `${grant.stock_subtypes.asset.name}: ${grant.unvested_count} shares vest on ${nextVest.toDateString()}`,
-          }),
-        })
-      }
+      if (grant.stock_subtypes.asset.user_id !== userSettings.user_id) continue
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+        },
+        body: JSON.stringify({
+          user_id: userSettings.user_id,
+          title: 'RSU Grant Vesting Soon',
+          body: `${grant.stock_subtypes.asset.name}: ${Number(grant.total_shares).toLocaleString()} shares vest on ${grant.vest_end}`,
+        }),
+      })
     }
   }
 
   return new Response(JSON.stringify({ ok: true }))
 })
-
-function computeNextVestDate(grant: any): Date | null {
-  if (!grant.first_vest_date || !grant.cadence_months) return null
-  const first = new Date(grant.first_vest_date)
-  const now = new Date()
-  let vest = new Date(first)
-  while (vest < now) {
-    vest.setMonth(vest.getMonth() + grant.cadence_months)
-  }
-  return vest
-}
