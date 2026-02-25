@@ -211,9 +211,9 @@ export function CommandBar({ open, onClose }: Props) {
             style={{
               height: `${viewportHeight}px`,
               paddingTop: isMobileViewport
-                ? 'calc(env(safe-area-inset-top) + 0.5rem)'
-                : 'max(4rem, calc(env(safe-area-inset-top) + 1rem))',
-              paddingBottom: 'calc(min(env(safe-area-inset-bottom), 34px) + 0.75rem)',
+                ? 'calc(var(--app-safe-top, 0px) + 0.5rem)'
+                : 'max(4rem, calc(var(--app-safe-top, 0px) + 1rem))',
+              paddingBottom: 'calc(var(--app-safe-bottom, 0px) + 0.75rem)',
             }}
           >
             <motion.div

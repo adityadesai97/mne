@@ -13,6 +13,38 @@ import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 
+const MAX_SAFE_TOP_PX = 64
+const MAX_SAFE_BOTTOM_PX = 34
+
+function clampInset(value: number, max: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(max, Math.round(value)))
+}
+
+function readSafeAreaInsets() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return { top: 0, bottom: 0 }
+  }
+
+  const probe = document.createElement('div')
+  probe.style.cssText = [
+    'position: fixed',
+    'inset: 0',
+    'pointer-events: none',
+    'visibility: hidden',
+    'padding-top: env(safe-area-inset-top)',
+    'padding-bottom: env(safe-area-inset-bottom)',
+  ].join(';')
+
+  document.body.appendChild(probe)
+  const styles = window.getComputedStyle(probe)
+  const top = clampInset(parseFloat(styles.paddingTop) || 0, MAX_SAFE_TOP_PX)
+  const bottom = clampInset(parseFloat(styles.paddingBottom) || 0, MAX_SAFE_BOTTOM_PX)
+  probe.remove()
+
+  return { top, bottom }
+}
+
 function CmdKFab({ onOpen }: { onOpen: () => void }) {
   return (
     <motion.button
@@ -22,7 +54,7 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
       aria-label="Open command bar"
       style={{
         borderRadius: 999,
-        ['--fab-bottom' as string]: 'calc(4.5rem + min(env(safe-area-inset-bottom), 34px))',
+        ['--fab-bottom' as string]: 'calc(4.5rem + var(--app-safe-bottom, 0px))',
       }}
     >
       <span className="inline-flex items-center md:hidden" aria-hidden="true">
@@ -37,6 +69,7 @@ export default function AppLayout() {
   const location = useLocation()
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -85,24 +118,54 @@ export default function AppLayout() {
     })()
   }, [])
 
+  useEffect(() => {
+    const updateInsets = () => setSafeInsets(readSafeAreaInsets())
+    const vv = window.visualViewport
+
+    updateInsets()
+    window.addEventListener('resize', updateInsets)
+    window.addEventListener('orientationchange', updateInsets)
+    vv?.addEventListener('resize', updateInsets)
+    vv?.addEventListener('scroll', updateInsets)
+
+    return () => {
+      window.removeEventListener('resize', updateInsets)
+      window.removeEventListener('orientationchange', updateInsets)
+      vv?.removeEventListener('resize', updateInsets)
+      vv?.removeEventListener('scroll', updateInsets)
+    }
+  }, [])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setSafeInsets(readSafeAreaInsets()), 80)
+    return () => window.clearTimeout(id)
+  }, [cmdOpen, location.pathname])
+
   return (
-    <div className="min-h-screen bg-background flex" style={{ minHeight: '100svh' }}>
+    <div
+      className="min-h-screen bg-background flex"
+      style={{
+        minHeight: '100dvh',
+        ['--app-safe-top' as string]: `${safeInsets.top}px`,
+        ['--app-safe-bottom' as string]: `${safeInsets.bottom}px`,
+      }}
+    >
       <Sidebar />
 
       {/* Main content — offset by sidebar on desktop */}
       <div
         className="flex-1 md:ml-16 min-h-screen flex flex-col"
         style={{
-          minHeight: '100svh',
-          paddingTop: 'env(safe-area-inset-top)',
-          paddingBottom: 'calc(4rem + min(env(safe-area-inset-bottom), 34px))',
+          minHeight: '100dvh',
+          paddingTop: 'var(--app-safe-top, 0px)',
+          paddingBottom: 'calc(4rem + var(--app-safe-bottom, 0px))',
         }}
       >
         <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
         {cgAlert && (
           <div
             className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
-            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}
+            style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)' }}
           >
             <span>{cgAlert}</span>
             <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>

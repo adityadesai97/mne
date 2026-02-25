@@ -17,7 +17,7 @@ export default function BottomNav() {
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-card/75 border-t border-white/5 flex justify-around py-2 z-50"
-      style={{ paddingBottom: 'calc(0.5rem + min(env(safe-area-inset-bottom), 34px))' }}
+      style={{ paddingBottom: 'calc(0.5rem + var(--app-safe-bottom, 0px))' }}
     >
       {visibleTabs.map(({ to, icon: Icon, label }) => (
         <NavLink
