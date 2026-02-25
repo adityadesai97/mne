@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Sparkles } from 'lucide-react'
 import BottomNav from './BottomNav'
 import Sidebar from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
@@ -21,7 +22,10 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
       aria-label="Open command bar"
       style={{ borderRadius: 999 }}
     >
-      ⌘K
+      <span className="inline-flex items-center md:hidden" aria-hidden="true">
+        <Sparkles size={14} />
+      </span>
+      <span className="hidden md:inline">⌘K</span>
     </motion.button>
   )
 }
