@@ -192,7 +192,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
       <header className="fixed left-0 right-0 top-4 z-50 px-4 sm:px-6 lg:px-8">
         <nav className="mx-auto flex w-full max-w-[1220px] items-center justify-between rounded-full border border-white/70 bg-white/90 px-4 py-3 shadow-[0_20px_40px_rgba(16,21,33,0.08)] backdrop-blur">
           <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="mne" className="h-7 w-auto shrink-0 object-contain logo-adaptive" />
+            <img src="/logo.png" alt="mne" className="h-7 w-auto shrink-0 object-contain [filter:brightness(0)]" />
             <span className="text-sm font-semibold leading-none tracking-[0.01em]">mne</span>
           </div>
 
@@ -220,6 +220,12 @@ export default function Landing({ onSignIn, loading, error }: Props) {
       </header>
 
       <main className="mx-auto w-full max-w-[1260px] space-y-6 px-4 pb-8 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:px-8">
+        {error && (
+          <section role="alert" className="rounded-xl border border-[#f3b6b6] bg-[#fff1f1] px-4 py-3">
+            <p className="text-sm font-medium text-[#a81d1d]">{error}</p>
+          </section>
+        )}
+
         <section className="relative overflow-hidden rounded-[2rem] border border-[#c7dbff] bg-[linear-gradient(150deg,#d8e7ff_0%,#e9f2ff_45%,#f0f8ff_100%)] px-6 py-10 sm:px-9 sm:py-12">
           <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <motion.div

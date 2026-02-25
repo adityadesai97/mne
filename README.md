@@ -25,8 +25,6 @@ This setup is intentionally scoped to:
 - Claude and Finnhub user API keys
 - Running the app locally
 
-It does **not** include Vercel/GitHub deployment or push notifications.
-
 ### 1. Prerequisites
 
 - Node.js `22.x` and npm

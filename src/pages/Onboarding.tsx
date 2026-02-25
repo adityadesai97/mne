@@ -6,6 +6,7 @@ import { loadApiKeys, saveSettings } from '@/lib/db/settings'
 import Landing from './Landing'
 
 interface Props { onComplete: () => void }
+const UNAUTHORIZED_MESSAGE = 'User is not authorized to use this app.'
 
 function isFlagEnabled(value?: string) {
   if (!value) return false
@@ -111,7 +112,7 @@ export default function Onboarding({ onComplete }: Props) {
           .maybeSingle()
         if (!data) {
           await getSupabaseClient().auth.signOut()
-          setError('Your email is not authorized to access this app.')
+          setError(UNAUTHORIZED_MESSAGE)
           setStep('auth')
           return
         }
