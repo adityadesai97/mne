@@ -50,15 +50,15 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
     <motion.button
       layoutId="cmdk"
       onClick={onOpen}
-      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40 border-spin text-muted-foreground text-xs px-3 py-1.5 rounded-full hover:text-foreground transition-colors"
+      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40 border-spin text-muted-foreground text-xs p-2.5 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors"
       aria-label="Open command bar"
       style={{
         borderRadius: 999,
-        ['--fab-bottom' as string]: 'calc(4.5rem + var(--app-safe-bottom, 0px))',
+        ['--fab-bottom' as string]: 'calc(5rem + var(--app-safe-bottom, 0px))',
       }}
     >
       <span className="inline-flex items-center md:hidden" aria-hidden="true">
-        <Sparkles size={14} />
+        <Sparkles size={16} />
       </span>
       <span className="hidden md:inline">⌘K</span>
     </motion.button>
