@@ -96,9 +96,15 @@ export default function Charts() {
   const [assets, setAssets] = useState<any[]>([])
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
   const [snapshots, setSnapshots] = useState<any[]>([])
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
 
   useEffect(() => { getAllAssets().then(setAssets).catch(console.error) }, [])
   useEffect(() => { getSnapshots().then(setSnapshots).catch(console.error) }, [])
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   function toggleSubtype(s: Subtype) {
     setActiveSubtypes((prev) => {
@@ -156,11 +162,11 @@ export default function Charts() {
         return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
       },
     },
-    grid: { left: 8, right: 8, top: 12, bottom: 30, containLabel: true },
+    grid: { left: 8, right: isMobile ? 12 : 8, top: 12, bottom: 30, containLabel: true },
     xAxis: {
       type: 'category',
       // Center very short histories so 1-2 points don't feel edge-skewed.
-      boundaryGap: netWorthCount <= 2,
+      boundaryGap: isMobile && netWorthCount <= 2,
       data: snapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
@@ -192,7 +198,7 @@ export default function Charts() {
         data: netWorthValues,
       },
     ],
-  }), [netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues, snapshots])
+  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues, snapshots])
 
   const allocationOption = useMemo<EChartsOption>(
     () => donutOption(allocationColorData),
