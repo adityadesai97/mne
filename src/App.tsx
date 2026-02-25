@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { router } from './router'
 import Onboarding from './pages/Onboarding'
 import { config } from './store/config'
@@ -17,6 +18,7 @@ export default function App() {
       <>
         <Onboarding onComplete={() => setReady(true)} />
         <Analytics />
+        <SpeedInsights />
       </>
     )
   }
@@ -25,6 +27,7 @@ export default function App() {
     <>
       <RouterProvider router={router} />
       <Analytics />
+      <SpeedInsights />
     </>
   )
 }
