@@ -2,6 +2,8 @@
 
 A personal finance tracker with AI-powered portfolio management. Built with React, Vite, Supabase, and Claude.
 
+---
+
 ## Using the hosted version
 
 1. **Get access** — the app owner must add your email to the `allowed_emails` table in Supabase:
@@ -18,70 +20,78 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 
 ## Self-hosting from scratch
 
-### 1. Create a Supabase project
+This setup is intentionally scoped to:
+- Supabase auth + database
+- Claude and Finnhub user API keys
+- Running the app locally
 
-1. Create a new project at [supabase.com](https://supabase.com).
-2. Note the **Project URL** and **anon key** from **Project Settings → API**.
+It does **not** include Vercel/GitHub deployment or push notifications.
 
-### 2. Apply the database schema
+### 1. Prerequisites
 
-In the Supabase dashboard, open **SQL Editor** and run the contents of:
+- Node.js `22.x` and npm
+- A Supabase project
+- A Google OAuth client (for Supabase Auth)
+- Claude API key ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
+- Finnhub API key ([finnhub.io/dashboard](https://finnhub.io/dashboard))
 
-```
-supabase/migrations/20260220000001_initial_schema.sql
-```
-
-### 3. Enable Google OAuth
-
-1. In Supabase: **Authentication → Providers → Google** → enable it.
-2. In [Google Cloud Console](https://console.cloud.google.com), create an OAuth 2.0 Web client ID:
-   - **Authorized JavaScript origins**: your app URL (e.g. `http://localhost:5173`)
-   - **Authorized redirect URIs**: `https://<your-project>.supabase.co/auth/v1/callback`
-3. Paste the Google **Client ID** and **Client Secret** into Supabase.
-
-### 4. Configure environment variables
-
-Create `.env.local` in the project root:
-
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-
-# Optional: restrict sign-ups to an allowlist (see Managing access below)
-VITE_RESTRICT_SIGNUPS=true
-
-# Optional: show landing page as auth home (unset = classic sign-in page)
-VITE_LANDING_AS_HOME=true
-```
-
-### 5. Install and run
+### 2. Install dependencies
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173
 ```
 
-### 6. (Optional) Push notifications
-
-Generate VAPID keys once:
+### 3. Create `.env.local`
 
 ```bash
-npx web-push generate-vapid-keys
+cp .env.example .env.local
 ```
 
-Add to `.env.local`:
+Then fill:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-```env
-VITE_VAPID_PUBLIC_KEY=<your public key>
+Optional flags:
+- `VITE_RESTRICT_SIGNUPS=true` to require email allowlist
+- `VITE_LANDING_AS_HOME=true` to show landing page before sign-in
+
+`VITE_LANDING_AS_HOME` accepts boolean-like values:
+- enabled: `true`, `1`, `yes`, `on`
+- disabled: unset, `false`, `0`, `no`, `off`
+
+### 4. Apply the app schema in Supabase
+
+In Supabase Dashboard -> **SQL Editor**, run:
+
+```
+supabase/sql/self_host_bootstrap.sql
 ```
 
-Set these secrets in **Supabase Dashboard → Settings → Edge Functions → Secrets**:
+This bootstrap script is idempotent and aligns with the current app schema.
 
-| Secret | Value |
-|--------|-------|
-| `VAPID_PUBLIC_KEY` | your public key |
-| `VAPID_PRIVATE_KEY` | your private key |
-| `VAPID_SUBJECT` | `mailto:you@example.com` |
+### 5. Enable Google sign-in in Supabase Auth
+
+1. In Supabase: **Authentication -> Providers -> Google** -> enable it.
+2. In [Google Cloud Console](https://console.cloud.google.com), create an OAuth 2.0 Web client:
+   - Authorized JavaScript origin: `http://localhost:5173`
+   - Authorized redirect URI: `https://<your-project-ref>.supabase.co/auth/v1/callback`
+3. Paste the Google client ID/secret into Supabase.
+
+### 6. Run the app
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173`, sign in with Google, then enter your Claude and Finnhub keys in-app when prompted.
+
+### 7. Optional allowlist (only if `VITE_RESTRICT_SIGNUPS=true`)
+
+In Supabase SQL Editor:
+
+```sql
+insert into allowed_emails (email) values ('you@example.com');
+```
 
 ---
 
@@ -111,18 +121,6 @@ npm run build    # production build
 npm test         # run tests
 npm run lint     # lint
 ```
-
-## GitHub Auto Deploy (main -> Vercel)
-
-This repo includes `.github/workflows/main-test-and-deploy.yml`.
-On every push to `main`, it:
-1. runs `npm test -- --run`
-2. deploys to Vercel production only if tests pass
-
-Set these GitHub repository secrets for the workflow:
-- `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
 
 ## Command Bar
 
