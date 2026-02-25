@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Input } from '@/components/ui/input'
@@ -44,6 +44,14 @@ export function CommandBar({ open, onClose }: Props) {
   const msgIdRef = useRef(0)
 
   function nextId() { return ++msgIdRef.current }
+  const focusInput = useCallback(() => {
+    if (!inputRef.current) return
+    try {
+      inputRef.current.focus({ preventScroll: true })
+    } catch {
+      inputRef.current.focus()
+    }
+  }, [])
 
   useEffect(() => {
     if (threadRef.current) {
@@ -55,8 +63,40 @@ export function CommandBar({ open, onClose }: Props) {
   useEffect(() => {
     if (open && !isExpanded) {
       // Small delay to let the layout animation start first
-      const t = setTimeout(() => inputRef.current?.focus(), 80)
+      const t = setTimeout(() => focusInput(), 80)
       return () => clearTimeout(t)
+    }
+  }, [open, isExpanded, focusInput])
+
+  // Lock body scroll while modal is open (prevents iOS keyboard viewport jump)
+  useEffect(() => {
+    if (!open) return
+    const scrollY = window.scrollY
+    const { style } = document.body
+    const prev = {
+      overflow: style.overflow,
+      position: style.position,
+      top: style.top,
+      left: style.left,
+      right: style.right,
+      width: style.width,
+    }
+
+    style.overflow = 'hidden'
+    style.position = 'fixed'
+    style.top = `-${scrollY}px`
+    style.left = '0'
+    style.right = '0'
+    style.width = '100%'
+
+    return () => {
+      style.overflow = prev.overflow
+      style.position = prev.position
+      style.top = prev.top
+      style.left = prev.left
+      style.right = prev.right
+      style.width = prev.width
+      window.scrollTo(0, scrollY)
     }
   }, [open])
 
@@ -142,7 +182,13 @@ export function CommandBar({ open, onClose }: Props) {
           />
 
           {/* Panel — shares layoutId with CmdKFab pill */}
-          <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4 pointer-events-none">
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center px-4 pointer-events-none"
+            style={{
+              paddingTop: 'max(4rem, calc(env(safe-area-inset-top) + 1rem))',
+              paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)',
+            }}
+          >
             <motion.div
               layoutId="cmdk"
               layout
@@ -187,8 +233,11 @@ export function CommandBar({ open, onClose }: Props) {
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.15 }}
                   className="flex flex-col overflow-hidden"
-                  style={{ height: '70vh' }}
-                  onAnimationComplete={() => inputRef.current?.focus()}
+                  style={{
+                    height: '70vh',
+                    maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1.5rem)',
+                  }}
+                  onAnimationComplete={focusInput}
                 >
                   {/* Header with close button */}
                   <div className="flex items-center justify-end px-3 pt-2 pb-1 flex-shrink-0">

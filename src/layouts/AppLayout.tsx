@@ -79,17 +79,24 @@ export default function AppLayout() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex" style={{ minHeight: '100dvh' }}>
       <Sidebar />
 
       {/* Main content — offset by sidebar on desktop */}
       <div
         className="flex-1 md:ml-16 min-h-screen flex flex-col"
-        style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+        style={{
+          minHeight: '100dvh',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'calc(4rem + env(safe-area-inset-bottom))',
+        }}
       >
         <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
         {cgAlert && (
-          <div className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 py-2 text-sm flex justify-between items-center">
+          <div
+            className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}
+          >
             <span>{cgAlert}</span>
             <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
           </div>
@@ -109,7 +116,7 @@ export default function AppLayout() {
         <AnimatePresence>
           {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
         </AnimatePresence>
-        <BottomNav />
+        {!cmdOpen && <BottomNav />}
       </div>
     </div>
   )

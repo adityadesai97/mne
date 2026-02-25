@@ -133,16 +133,19 @@ export default function Charts() {
         return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
       },
     },
-    grid: { left: 8, right: 8, top: 12, bottom: 30, containLabel: true },
+    grid: { left: 14, right: 26, top: 12, bottom: 32, containLabel: true },
     xAxis: {
       type: 'category',
-      boundaryGap: false,
+      boundaryGap: true,
       data: snapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
         color: AXIS_COLOR,
         fontSize: 10,
+        margin: 10,
+        showMinLabel: true,
+        showMaxLabel: true,
         formatter: (value: string) => formatDateShort(value),
       },
     },
