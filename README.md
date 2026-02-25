@@ -49,6 +49,9 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 # Optional: restrict sign-ups to an allowlist (see Managing access below)
 VITE_RESTRICT_SIGNUPS=true
+
+# Optional: show landing page as auth home (unset = classic sign-in page)
+VITE_LANDING_AS_HOME=true
 ```
 
 ### 5. Install and run
@@ -108,6 +111,18 @@ npm run build    # production build
 npm test         # run tests
 npm run lint     # lint
 ```
+
+## GitHub Auto Deploy (main -> Vercel)
+
+This repo includes `.github/workflows/main-test-and-deploy.yml`.
+On every push to `main`, it:
+1. runs `npm test -- --run`
+2. deploys to Vercel production only if tests pass
+
+Set these GitHub repository secrets for the workflow:
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
 
 ## Command Bar
 
