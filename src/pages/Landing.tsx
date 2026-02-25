@@ -178,7 +178,9 @@ export default function Landing({ onSignIn, loading, error }: Props) {
   const scrollToSection = (id: string) => {
     const section = document.getElementById(id)
     if (!section) return
-    const top = section.getBoundingClientRect().top + window.scrollY - 110
+    const header = document.getElementById('landing-header')
+    const headerBottom = header?.getBoundingClientRect().bottom ?? 110
+    const top = section.getBoundingClientRect().top + window.scrollY - headerBottom - 16
     window.scrollTo({ top, behavior: 'smooth' })
   }
 
@@ -189,7 +191,11 @@ export default function Landing({ onSignIn, loading, error }: Props) {
         <div className="absolute bottom-[-10rem] right-[-8rem] h-[30rem] w-[30rem] rounded-full bg-[#9fe8d1]/35 blur-[100px]" />
       </div>
 
-      <header className="fixed left-0 right-0 top-4 z-50 px-4 sm:px-6 lg:px-8">
+      <header
+        id="landing-header"
+        className="fixed left-0 right-0 z-50 px-4 sm:px-6 lg:px-8"
+        style={{ top: 'calc(env(safe-area-inset-top) + 0.5rem)' }}
+      >
         <nav className="mx-auto flex w-full max-w-[1220px] items-center justify-between rounded-full border border-white/70 bg-white/90 px-4 py-3 shadow-[0_20px_40px_rgba(16,21,33,0.08)] backdrop-blur">
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="mne" className="h-7 w-auto shrink-0 object-contain [filter:brightness(0)]" />
@@ -219,7 +225,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[1260px] space-y-6 px-4 pb-8 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:px-8">
+      <main className="mx-auto w-full max-w-[1260px] space-y-6 px-4 pb-8 pt-[calc(env(safe-area-inset-top)+6rem)] sm:px-6 sm:pb-10 sm:pt-[calc(env(safe-area-inset-top)+7rem)] lg:px-8">
         {error && (
           <section role="alert" className="rounded-xl border border-[#f3b6b6] bg-[#fff1f1] px-4 py-3">
             <p className="text-sm font-medium text-[#a81d1d]">{error}</p>
