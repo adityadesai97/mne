@@ -140,13 +140,13 @@ export default function Charts() {
     const min = Math.min(...netWorthValues)
     const max = Math.max(...netWorthValues)
     const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
-    const pad = range * 0.2
+    const pad = range * (netWorthCount <= 2 ? 0.1 : 0.2)
 
     return {
       min: min - pad,
       max: max + pad,
     }
-  }, [netWorthValues])
+  }, [netWorthCount, netWorthValues])
 
   const netWorthOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
@@ -163,16 +163,15 @@ export default function Charts() {
       },
     },
     grid: {
-      left: isMobile ? 8 : 0,
-      right: isMobile ? 12 : 0,
+      left: isMobile ? 10 : 8,
+      right: isMobile ? 14 : 8,
       top: 12,
       bottom: isMobile ? 30 : 24,
       containLabel: isMobile,
     },
     xAxis: {
       type: 'category',
-      // Center very short histories so 1-2 points don't feel edge-skewed.
-      boundaryGap: isMobile && netWorthCount <= 2,
+      boundaryGap: false,
       data: snapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
@@ -182,6 +181,7 @@ export default function Charts() {
         margin: isMobile ? 8 : 10,
         showMinLabel: isMobile,
         showMaxLabel: isMobile,
+        hideOverlap: false,
         formatter: (value: string) => formatDateCompact(value),
       },
     },
@@ -197,8 +197,9 @@ export default function Charts() {
         name: 'Net Worth',
         type: 'line',
         smooth: netWorthCount > 2,
-        symbol: netWorthCount <= 2 ? 'circle' : 'none',
+        symbol: netWorthCount <= 2 && isMobile ? 'circle' : 'none',
         symbolSize: 6,
+        clip: false,
         lineStyle: { width: 2, color: 'hsl(217,91%,60%)' },
         areaStyle: { opacity: netWorthCount <= 2 ? 0.05 : 0.08, color: 'hsl(217,91%,60%)', origin: 'start' },
         data: netWorthValues,
