@@ -124,6 +124,23 @@ export default function Charts() {
   const { shortTerm, longTerm } = computeCapitalGainsExposure(assets)
   const cvvData = computeCostVsValue(assets)
   const rsuData = computeRsuVesting(assets)
+  const netWorthValues = useMemo(() => snapshots.map((point) => Number(point.value)), [snapshots])
+  const netWorthCount = netWorthValues.length
+  const netWorthBounds = useMemo(() => {
+    if (!netWorthValues.length) {
+      return { min: 0, max: 0 }
+    }
+
+    const min = Math.min(...netWorthValues)
+    const max = Math.max(...netWorthValues)
+    const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
+    const pad = range * 0.2
+
+    return {
+      min: min - pad,
+      max: max + pad,
+    }
+  }, [netWorthValues])
 
   const netWorthOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
@@ -139,10 +156,11 @@ export default function Charts() {
         return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
       },
     },
-    grid: { left: 8, right: 12, top: 12, bottom: 30, containLabel: true },
+    grid: { left: 8, right: 8, top: 12, bottom: 30, containLabel: true },
     xAxis: {
       type: 'category',
-      boundaryGap: false,
+      // Center very short histories so 1-2 points don't feel edge-skewed.
+      boundaryGap: netWorthCount <= 2,
       data: snapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
@@ -158,20 +176,23 @@ export default function Charts() {
     yAxis: {
       type: 'value',
       show: false,
+      min: netWorthBounds.min,
+      max: netWorthBounds.max,
       splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } },
     },
     series: [
       {
         name: 'Net Worth',
         type: 'line',
-        smooth: true,
-        symbol: 'none',
+        smooth: netWorthCount > 2,
+        symbol: netWorthCount <= 2 ? 'circle' : 'none',
+        symbolSize: 6,
         lineStyle: { width: 2, color: 'hsl(217,91%,60%)' },
-        areaStyle: { opacity: 0.08, color: 'hsl(217,91%,60%)' },
-        data: snapshots.map((point) => Number(point.value)),
+        areaStyle: { opacity: netWorthCount <= 2 ? 0.05 : 0.08, color: 'hsl(217,91%,60%)', origin: 'start' },
+        data: netWorthValues,
       },
     ],
-  }), [snapshots])
+  }), [netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues, snapshots])
 
   const allocationOption = useMemo<EChartsOption>(
     () => donutOption(allocationColorData),
