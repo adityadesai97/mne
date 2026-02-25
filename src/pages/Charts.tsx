@@ -140,7 +140,7 @@ export default function Charts() {
     const min = Math.min(...netWorthValues)
     const max = Math.max(...netWorthValues)
     const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
-    const pad = range * (netWorthCount <= 2 ? 0.1 : 0.2)
+    const pad = range * (netWorthCount <= 2 ? 0.4 : 0.2)
 
     return {
       min: min - pad,
@@ -163,11 +163,11 @@ export default function Charts() {
       },
     },
     grid: {
-      left: isMobile ? 10 : 8,
-      right: isMobile ? 14 : 8,
+      left: isMobile ? 14 : 12,
+      right: isMobile ? 14 : 12,
       top: 12,
-      bottom: isMobile ? 30 : 24,
-      containLabel: isMobile,
+      bottom: isMobile ? 30 : 26,
+      containLabel: false,
     },
     xAxis: {
       type: 'category',
@@ -179,8 +179,8 @@ export default function Charts() {
         color: AXIS_COLOR,
         fontSize: 10,
         margin: isMobile ? 8 : 10,
-        showMinLabel: isMobile,
-        showMaxLabel: isMobile,
+        showMinLabel: true,
+        showMaxLabel: true,
         hideOverlap: false,
         formatter: (value: string) => formatDateCompact(value),
       },
@@ -199,7 +199,7 @@ export default function Charts() {
         smooth: netWorthCount > 2,
         symbol: netWorthCount <= 2 && isMobile ? 'circle' : 'none',
         symbolSize: 6,
-        clip: false,
+        clip: true,
         lineStyle: { width: 2, color: 'hsl(217,91%,60%)' },
         areaStyle: { opacity: netWorthCount <= 2 ? 0.05 : 0.08, color: 'hsl(217,91%,60%)', origin: 'start' },
         data: netWorthValues,
