@@ -162,7 +162,13 @@ export default function Charts() {
         return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
       },
     },
-    grid: { left: 8, right: isMobile ? 12 : 8, top: 12, bottom: 30, containLabel: true },
+    grid: {
+      left: isMobile ? 8 : 0,
+      right: isMobile ? 12 : 0,
+      top: 12,
+      bottom: isMobile ? 30 : 24,
+      containLabel: isMobile,
+    },
     xAxis: {
       type: 'category',
       // Center very short histories so 1-2 points don't feel edge-skewed.
@@ -173,9 +179,9 @@ export default function Charts() {
       axisLabel: {
         color: AXIS_COLOR,
         fontSize: 10,
-        margin: 8,
-        showMinLabel: true,
-        showMaxLabel: true,
+        margin: isMobile ? 8 : 10,
+        showMinLabel: isMobile,
+        showMaxLabel: isMobile,
         formatter: (value: string) => formatDateCompact(value),
       },
     },
