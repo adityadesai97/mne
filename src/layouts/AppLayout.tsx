@@ -18,9 +18,12 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
     <motion.button
       layoutId="cmdk"
       onClick={onOpen}
-      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 md:bottom-6 md:right-6 z-40 border-spin text-muted-foreground text-xs px-3 py-1.5 rounded-full hover:text-foreground transition-colors"
+      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40 border-spin text-muted-foreground text-xs px-3 py-1.5 rounded-full hover:text-foreground transition-colors"
       aria-label="Open command bar"
-      style={{ borderRadius: 999 }}
+      style={{
+        borderRadius: 999,
+        ['--fab-bottom' as string]: 'calc(4.5rem + min(env(safe-area-inset-bottom), 34px))',
+      }}
     >
       <span className="inline-flex items-center md:hidden" aria-hidden="true">
         <Sparkles size={14} />
@@ -83,16 +86,16 @@ export default function AppLayout() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-background flex" style={{ minHeight: '100dvh' }}>
+    <div className="min-h-screen bg-background flex" style={{ minHeight: '100svh' }}>
       <Sidebar />
 
       {/* Main content — offset by sidebar on desktop */}
       <div
         className="flex-1 md:ml-16 min-h-screen flex flex-col"
         style={{
-          minHeight: '100dvh',
+          minHeight: '100svh',
           paddingTop: 'env(safe-area-inset-top)',
-          paddingBottom: 'calc(4rem + env(safe-area-inset-bottom))',
+          paddingBottom: 'calc(4rem + min(env(safe-area-inset-bottom), 34px))',
         }}
       >
         <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />

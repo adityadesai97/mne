@@ -96,32 +96,25 @@ export function CommandBar({ open, onClose }: Props) {
   // Lock body scroll while modal is open (prevents iOS keyboard viewport jump)
   useEffect(() => {
     if (!open) return
-    const scrollY = window.scrollY
-    const { style } = document.body
+    const bodyStyle = document.body.style
+    const htmlStyle = document.documentElement.style
     const prev = {
-      overflow: style.overflow,
-      position: style.position,
-      top: style.top,
-      left: style.left,
-      right: style.right,
-      width: style.width,
+      bodyOverflow: bodyStyle.overflow,
+      bodyTouchAction: bodyStyle.touchAction,
+      htmlOverflow: htmlStyle.overflow,
+      htmlOverscrollBehaviorY: htmlStyle.overscrollBehaviorY,
     }
 
-    style.overflow = 'hidden'
-    style.position = 'fixed'
-    style.top = `-${scrollY}px`
-    style.left = '0'
-    style.right = '0'
-    style.width = '100%'
+    bodyStyle.overflow = 'hidden'
+    bodyStyle.touchAction = 'none'
+    htmlStyle.overflow = 'hidden'
+    htmlStyle.overscrollBehaviorY = 'none'
 
     return () => {
-      style.overflow = prev.overflow
-      style.position = prev.position
-      style.top = prev.top
-      style.left = prev.left
-      style.right = prev.right
-      style.width = prev.width
-      window.scrollTo(0, scrollY)
+      bodyStyle.overflow = prev.bodyOverflow
+      bodyStyle.touchAction = prev.bodyTouchAction
+      htmlStyle.overflow = prev.htmlOverflow
+      htmlStyle.overscrollBehaviorY = prev.htmlOverscrollBehaviorY
     }
   }, [open])
 
@@ -220,7 +213,7 @@ export function CommandBar({ open, onClose }: Props) {
               paddingTop: isMobileViewport
                 ? 'calc(env(safe-area-inset-top) + 0.5rem)'
                 : 'max(4rem, calc(env(safe-area-inset-top) + 1rem))',
-              paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)',
+              paddingBottom: 'calc(min(env(safe-area-inset-bottom), 34px) + 0.75rem)',
             }}
           >
             <motion.div

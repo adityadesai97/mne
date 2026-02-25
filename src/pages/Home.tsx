@@ -41,6 +41,7 @@ const fadeUp = (delay: number) => ({
 
 export default function Home() {
   const [assets, setAssets] = useState<any[]>([])
+  const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [firstName, setFirstName] = useState<string | null>(null)
   const heroRef = useRef<HTMLParagraphElement>(null)
 
@@ -48,6 +49,7 @@ export default function Home() {
     getAllAssets()
       .then(setAssets)
       .catch(console.error)
+      .finally(() => setAssetsLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -94,6 +96,37 @@ export default function Home() {
     .map(([name, value]) => ({ name, value, pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
     .sort((a, b) => b.value - a.value)
   const uniqueAssetTypes = typeEntries.length
+
+  if (!assetsLoaded) {
+    return (
+      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
+        <div className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70">
+          <p className="text-sm text-muted-foreground">Loading portfolio...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (assetsLoaded && assets.length === 0) {
+    return (
+      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
+        <motion.div
+          {...fadeUp(0)}
+          className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70"
+        >
+          <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">
+            {firstName ? `${firstName}'s Workspace` : 'Workspace'}
+          </p>
+          <h1 className="font-syne text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
+            Add your first asset to get started.
+          </h1>
+          <p className="mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
+            Portfolio and Charts unlock after your first asset is added. Use the command button to record a position.
+          </p>
+        </motion.div>
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">

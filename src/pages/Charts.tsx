@@ -94,12 +94,24 @@ function donutOption(
 
 export default function Charts() {
   const [assets, setAssets] = useState<any[]>([])
+  const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
   const [snapshots, setSnapshots] = useState<any[]>([])
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
 
-  useEffect(() => { getAllAssets().then(setAssets).catch(console.error) }, [])
-  useEffect(() => { getSnapshots().then(setSnapshots).catch(console.error) }, [])
+  useEffect(() => {
+    getAllAssets()
+      .then(setAssets)
+      .catch(console.error)
+      .finally(() => setAssetsLoaded(true))
+  }, [])
+  useEffect(() => {
+    if (!assetsLoaded || assets.length === 0) {
+      setSnapshots([])
+      return
+    }
+    getSnapshots().then(setSnapshots).catch(console.error)
+  }, [assetsLoaded, assets.length])
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', onResize)
@@ -447,6 +459,31 @@ export default function Charts() {
       },
     ],
   }), [rsuData])
+
+  if (!assetsLoaded) {
+    return (
+      <div className="pt-6 pb-24 px-4 space-y-4">
+        <h1 className="text-xl font-bold">Charts</h1>
+        <p className="text-sm text-muted-foreground">Loading charts...</p>
+      </div>
+    )
+  }
+
+  if (assetsLoaded && assets.length === 0) {
+    return (
+      <div className="pt-6 pb-24 px-4 space-y-4">
+        <h1 className="text-xl font-bold">Charts</h1>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Charts become available after your first asset is added.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="pt-6 pb-24 px-4 space-y-4">

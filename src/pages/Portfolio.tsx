@@ -8,12 +8,16 @@ type SortOption = 'name' | 'value' | 'gain'
 
 export default function Portfolio() {
   const [assets, setAssets] = useState<any[]>([])
+  const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
 
   useEffect(() => {
-    getAllAssets().then(setAssets).catch(console.error)
+    getAllAssets()
+      .then(setAssets)
+      .catch(console.error)
+      .finally(() => setAssetsLoaded(true))
   }, [])
 
   const assetTypes = useMemo(() => {
@@ -50,6 +54,29 @@ export default function Portfolio() {
 
     return result
   }, [assets, search, activeType, sort])
+
+  if (!assetsLoaded) {
+    return (
+      <div className="pt-6 pb-4 px-4">
+        <h1 className="text-xl font-bold">Portfolio</h1>
+        <p className="mt-4 text-sm text-muted-foreground">Loading portfolio...</p>
+      </div>
+    )
+  }
+
+  if (assetsLoaded && assets.length === 0) {
+    return (
+      <div className="pt-6 pb-4 px-4">
+        <h1 className="text-xl font-bold">Portfolio</h1>
+        <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+          <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Portfolio data appears after your first asset is added.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="pt-6 pb-4">
@@ -98,12 +125,6 @@ export default function Portfolio() {
       {displayed.map((a) => (
         <PositionCard key={a.id} asset={a} />
       ))}
-
-      {assets.length === 0 && (
-        <p className="text-muted-foreground text-center mt-16">
-          No positions yet. Use ⌘K to add one.
-        </p>
-      )}
 
       {assets.length > 0 && displayed.length === 0 && (
         <p className="text-muted-foreground text-center mt-16">
