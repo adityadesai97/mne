@@ -97,7 +97,6 @@ export default function Home() {
 
   return (
     <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
-
       {/* TOP GRID: Net Worth Hero + Allocation */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 
