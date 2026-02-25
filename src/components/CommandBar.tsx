@@ -39,6 +39,8 @@ export function CommandBar({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth < 768)
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const msgIdRef = useRef(0)
@@ -59,6 +61,12 @@ export function CommandBar({ open, onClose }: Props) {
     }
   }, [displayMessages])
 
+  useEffect(() => {
+    const updateViewportClass = () => setIsMobileViewport(window.innerWidth < 768)
+    window.addEventListener('resize', updateViewportClass)
+    return () => window.removeEventListener('resize', updateViewportClass)
+  }, [])
+
   // Focus input when panel opens
   useEffect(() => {
     if (open && !isExpanded) {
@@ -67,6 +75,23 @@ export function CommandBar({ open, onClose }: Props) {
       return () => clearTimeout(t)
     }
   }, [open, isExpanded, focusInput])
+
+  useEffect(() => {
+    if (!open) return
+    const vv = window.visualViewport
+    const updateHeight = () => setViewportHeight(Math.round(vv?.height ?? window.innerHeight))
+
+    updateHeight()
+    vv?.addEventListener('resize', updateHeight)
+    vv?.addEventListener('scroll', updateHeight)
+    window.addEventListener('resize', updateHeight)
+
+    return () => {
+      vv?.removeEventListener('resize', updateHeight)
+      vv?.removeEventListener('scroll', updateHeight)
+      window.removeEventListener('resize', updateHeight)
+    }
+  }, [open])
 
   // Lock body scroll while modal is open (prevents iOS keyboard viewport jump)
   useEffect(() => {
@@ -166,6 +191,12 @@ export function CommandBar({ open, onClose }: Props) {
     }
   }
 
+  const expandedMinHeight = isMobileViewport ? 160 : 240
+  const expandedMaxHeight = Math.max(
+    expandedMinHeight,
+    Math.min(isMobileViewport ? 420 : 560, Math.floor(viewportHeight - (isMobileViewport ? 92 : 140))),
+  )
+
   return (
     <AnimatePresence>
       {open && (
@@ -183,9 +214,12 @@ export function CommandBar({ open, onClose }: Props) {
 
           {/* Panel — shares layoutId with CmdKFab pill */}
           <div
-            className="fixed inset-0 z-50 flex items-start justify-center px-4 pointer-events-none"
+            className="fixed left-0 right-0 top-0 z-50 flex items-start justify-center px-4 pointer-events-none"
             style={{
-              paddingTop: 'max(4rem, calc(env(safe-area-inset-top) + 1rem))',
+              height: `${viewportHeight}px`,
+              paddingTop: isMobileViewport
+                ? 'calc(env(safe-area-inset-top) + 0.5rem)'
+                : 'max(4rem, calc(env(safe-area-inset-top) + 1rem))',
               paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)',
             }}
           >
@@ -234,8 +268,8 @@ export function CommandBar({ open, onClose }: Props) {
                   transition={{ duration: 0.15 }}
                   className="flex flex-col overflow-hidden"
                   style={{
-                    height: '70vh',
-                    maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1.5rem)',
+                    minHeight: `${expandedMinHeight}px`,
+                    maxHeight: `${expandedMaxHeight}px`,
                   }}
                   onAnimationComplete={focusInput}
                 >

@@ -52,6 +52,12 @@ function formatDateShort(date: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
 }
 
+function formatDateCompact(date: string) {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return date
+  return new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric' }).format(parsed)
+}
+
 function donutOption(
   data: { name: string; value: number; color: string }[],
 ): EChartsOption {
@@ -133,20 +139,20 @@ export default function Charts() {
         return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
       },
     },
-    grid: { left: 14, right: 26, top: 12, bottom: 32, containLabel: true },
+    grid: { left: 8, right: 12, top: 12, bottom: 30, containLabel: true },
     xAxis: {
       type: 'category',
-      boundaryGap: true,
+      boundaryGap: false,
       data: snapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
         color: AXIS_COLOR,
         fontSize: 10,
-        margin: 10,
+        margin: 8,
         showMinLabel: true,
         showMaxLabel: true,
-        formatter: (value: string) => formatDateShort(value),
+        formatter: (value: string) => formatDateCompact(value),
       },
     },
     yAxis: {

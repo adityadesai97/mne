@@ -9,7 +9,7 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(title ?? 'mne', {
       body,
-      icon: '/icon-192.png',
+      icon: '/icon-192-v2.png',
     })
   )
 })
