@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
 import { Input } from '@/components/ui/input'
 import { config } from '@/store/config'
-import { exportData, importData } from '@/lib/importExport'
+import { exportData, importData, setActiveImportController } from '@/lib/importExport'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
-import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink } from 'lucide-react'
+import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles } from 'lucide-react'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -17,16 +17,17 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Row({ label, hint, right, onClick, destructive }: {
+function Row({ label, hint, right, onClick, destructive, disabled }: {
   label: string
   hint?: string
   right?: React.ReactNode
   onClick?: () => void
   destructive?: boolean
+  disabled?: boolean
 }) {
-  const cls = `flex items-center gap-3 px-4 py-4 bg-card rounded-xl ${onClick ? 'cursor-pointer hover:bg-muted/40 active:bg-muted/60 transition-colors' : ''}`
+  const cls = `flex items-center gap-3 px-4 py-4 bg-card rounded-xl ${onClick && !disabled ? 'cursor-pointer hover:bg-muted/40 active:bg-muted/60 transition-colors' : ''} ${disabled ? 'opacity-80' : ''}`
   return (
-    <div className={cls} onClick={onClick}>
+    <div className={cls} onClick={onClick && !disabled ? onClick : undefined}>
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium ${destructive ? 'text-destructive' : ''}`}>{label}</p>
         {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
@@ -101,6 +102,7 @@ export default function Settings() {
     price_alert_threshold: 5,
     tax_harvest_threshold: 1000,
     rsu_alert_days_before: 7,
+    auto_theme_assignment_enabled: true,
   })
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
@@ -109,18 +111,53 @@ export default function Settings() {
   const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', finnhubApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const importAbortRef = useRef<AbortController | null>(null)
+  const isMountedRef = useRef(true)
   const settingsRef = useRef(settings)
   useEffect(() => { settingsRef.current = settings }, [settings])
 
   useEffect(() => {
-    getSettings().then(s => { if (s) setSettings(s as any) }).catch(console.error)
+    getSettings()
+      .then(s => {
+        if (!s) return
+        setSettings(prev => ({
+          ...prev,
+          ...(s as any),
+          auto_theme_assignment_enabled: (s as any).auto_theme_assignment_enabled !== false,
+        }))
+      })
+      .catch(console.error)
     getPushEnabled().then(setPushEnabled)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+      importAbortRef.current?.abort()
+      setActiveImportController(null)
+    }
   }, [])
 
   function handleThemeChange(v: 'light' | 'dark' | 'system') {
     config.setTheme(v)
     applyTheme(v)
     setThemeState(v)
+  }
+
+  async function setAutoThemeAssignmentEnabled(enabled: boolean) {
+    const next = { ...settingsRef.current, auto_theme_assignment_enabled: enabled }
+    setSettings(next)
+    settingsRef.current = next
+    try {
+      await saveSettings(next)
+    } catch (error) {
+      console.error('Failed to save auto-theme setting', error)
+      const rollback = { ...next, auto_theme_assignment_enabled: !enabled }
+      setSettings(rollback)
+      settingsRef.current = rollback
+    }
   }
 
   async function handleSaveKeys() {
@@ -146,6 +183,41 @@ export default function Settings() {
     window.location.href = '/'
   }
 
+  async function handleImportFile(file: File) {
+    if (!file || importLoading) return
+
+    const controller = new AbortController()
+    importAbortRef.current = controller
+    setActiveImportController(controller)
+    setImportLoading(true)
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    const handlePageHide = () => {
+      controller.abort()
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handlePageHide)
+
+    try {
+      await importData(file, { signal: controller.signal })
+    } finally {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageHide)
+      importAbortRef.current = null
+      setActiveImportController(null)
+      if (isMountedRef.current) {
+        setImportLoading(false)
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   return (
     <div className="pt-6 pb-8 px-4 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold mb-5">Settings</h1>
@@ -155,6 +227,24 @@ export default function Settings() {
       <div className="bg-card rounded-xl px-4 py-4 space-y-2">
         <p className="text-sm font-medium">Theme</p>
         <ThemePicker value={theme} onChange={handleThemeChange} />
+      </div>
+
+      {/* AI */}
+      <SectionHeader><Sparkles size={10} className="inline mr-1.5 mb-0.5" />AI</SectionHeader>
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Auto-assign themes</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Use Claude to suggest themes when new tickers are created
+            </p>
+          </div>
+          <Toggle
+            enabled={settings.auto_theme_assignment_enabled !== false}
+            onEnable={() => { void setAutoThemeAssignmentEnabled(true) }}
+            onDisable={() => { void setAutoThemeAssignmentEnabled(false) }}
+          />
+        </div>
       </div>
 
       {/* Notifications */}
@@ -232,11 +322,23 @@ export default function Settings() {
       <div className="space-y-2">
         <Row label="Export data as JSON" onClick={exportData} />
         <Row
-          label="Import from JSON"
-          onClick={() => document.getElementById('import-file')?.click()}
+          label={importLoading ? 'Importing JSON…' : 'Import from JSON'}
+          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : undefined}
+          right={importLoading ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
+          disabled={importLoading}
+          onClick={() => fileInputRef.current?.click()}
         />
-        <input id="import-file" type="file" accept=".json" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) importData(f) }} />
+        <input
+          id="import-file"
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) void handleImportFile(f)
+          }}
+        />
       </div>
 
       {/* API Keys */}

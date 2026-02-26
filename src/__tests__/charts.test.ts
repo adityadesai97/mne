@@ -6,6 +6,7 @@ import {
   computeCapitalGainsExposure,
   computeCostVsValue,
   computeRsuVesting,
+  computeThemeDistribution,
 } from '../lib/charts'
 
 // ── Shared fixture ────────────────────────────────────────────
@@ -13,7 +14,14 @@ const stockAsset = {
   asset_type: 'Stock',
   name: 'Apple Stock',
   price: null,
-  ticker: { symbol: 'AAPL', current_price: 200 },
+  ticker: {
+    symbol: 'AAPL',
+    current_price: 200,
+    ticker_themes: [
+      { theme: { name: 'AI' } },
+      { theme: { name: 'Cloud' } },
+    ],
+  },
   location: { name: 'Fidelity' },
   stock_subtypes: [
     {
@@ -177,5 +185,32 @@ describe('computeRsuVesting', () => {
   test('returns empty array if no RSU grants', () => {
     const result = computeRsuVesting([cashAsset])
     expect(result).toHaveLength(0)
+  })
+})
+
+describe('computeThemeDistribution', () => {
+  test('splits stock value equally across assigned themes', () => {
+    const result = computeThemeDistribution([stockAsset], false)
+    expect(result).toHaveLength(2)
+    expect(result.find((row) => row.name === 'AI')?.value).toBe(1500)
+    expect(result.find((row) => row.name === 'Cloud')?.value).toBe(1500)
+  })
+
+  test('adds cash bucket only when includeCash is enabled', () => {
+    const withoutCash = computeThemeDistribution([stockAsset, cashAsset], false)
+    expect(withoutCash.find((row) => row.name === 'Cash')).toBeUndefined()
+
+    const withCash = computeThemeDistribution([stockAsset, cashAsset], true)
+    expect(withCash.find((row) => row.name === 'Cash')?.value).toBe(5000)
+  })
+
+  test('uses Uncategorized when stock ticker has no themes', () => {
+    const unthemedStock = {
+      ...stockAsset,
+      ticker: { symbol: 'MSFT', current_price: 100, ticker_themes: [] },
+    }
+    const result = computeThemeDistribution([unthemedStock], false)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('Uncategorized')
   })
 })

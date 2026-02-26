@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Input } from '@/components/ui/input'
-import { runCommand, type Message } from '@/lib/claude'
+import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 
 function normalizeErrorMessage(message: string): string {
   if (/Cannot coerce the result to a single JSON object|JSON object requested, multiple \(or no\) rows returned/i.test(message)) {
@@ -11,20 +11,150 @@ function normalizeErrorMessage(message: string): string {
   return message
 }
 
-function parseMd(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|[–—])/g)
+function parseInlineMd(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
   return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**'))
+    if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i}>{part.slice(2, -2)}</strong>
-    if (part === '–' || part === '—')
-      return <span key={i} className="text-muted-foreground mx-0.5">·</span>
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={i} className="px-1 py-0.5 rounded bg-muted text-[0.92em] font-mono">
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
     return <Fragment key={i}>{part}</Fragment>
   })
 }
 
+function splitTableRow(line: string): string[] {
+  const raw = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return raw.split('|').map((cell) => cell.trim())
+}
+
+function isTableDivider(line: string): boolean {
+  const raw = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return raw.length > 0 && raw.split('|').every((cell) => /^:?-{2,}:?$/.test(cell.trim()))
+}
+
+function isTableLine(line: string): boolean {
+  return line.includes('|') && splitTableRow(line).length >= 2
+}
+
+function renderAssistantMarkdown(content: string): React.ReactNode {
+  const lines = content.split('\n')
+  const blocks: React.ReactNode[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    if (!trimmed) {
+      i += 1
+      continue
+    }
+
+    if (isTableLine(trimmed) && i + 1 < lines.length && isTableDivider(lines[i + 1].trim())) {
+      const headers = splitTableRow(trimmed)
+      const rows: string[][] = []
+      i += 2
+      while (i < lines.length && isTableLine(lines[i].trim())) {
+        rows.push(splitTableRow(lines[i].trim()))
+        i += 1
+      }
+      blocks.push(
+        <div key={`table-${i}`} className="overflow-x-auto rounded-md border border-border/70">
+          <table className="min-w-full text-xs">
+            <thead className="bg-muted/40">
+              <tr>
+                {headers.map((header, idx) => (
+                  <th key={idx} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                    {parseInlineMd(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIdx) => (
+                <tr key={rowIdx} className="border-t border-border/60">
+                  {headers.map((_, colIdx) => (
+                    <td key={colIdx} className="px-2 py-1.5 align-top">
+                      {parseInlineMd(row[colIdx] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      )
+      continue
+    }
+
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      const level = Math.min(3, trimmed.match(/^#+/)?.[0].length ?? 1)
+      const text = trimmed.replace(/^#{1,6}\s+/, '')
+      const className =
+        level === 1 ? 'text-base font-semibold' :
+        level === 2 ? 'text-sm font-semibold' :
+        'text-sm font-medium'
+      blocks.push(
+        <p key={`h-${i}`} className={className}>
+          {parseInlineMd(text)}
+        </p>,
+      )
+      i += 1
+      continue
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: string[] = []
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ''))
+        i += 1
+      }
+      blocks.push(
+        <ul key={`ul-${i}`} className="list-disc pl-5 space-y-1">
+          {items.map((item, idx) => <li key={idx}>{parseInlineMd(item)}</li>)}
+        </ul>,
+      )
+      continue
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''))
+        i += 1
+      }
+      blocks.push(
+        <ol key={`ol-${i}`} className="list-decimal pl-5 space-y-1">
+          {items.map((item, idx) => <li key={idx}>{parseInlineMd(item)}</li>)}
+        </ol>,
+      )
+      continue
+    }
+
+    if (/^-{3,}$/.test(trimmed)) {
+      blocks.push(<hr key={`hr-${i}`} className="border-border/70" />)
+      i += 1
+      continue
+    }
+
+    blocks.push(
+      <p key={`p-${i}`}>{parseInlineMd(trimmed)}</p>,
+    )
+    i += 1
+  }
+
+  if (blocks.length === 0) return <p>{content}</p>
+  return <div className="space-y-2">{blocks}</div>
+}
+
 type DisplayMessage =
   | { id: number; role: 'user'; content: string }
-  | { id: number; role: 'assistant'; kind: 'text'; content: string }
+  | { id: number; role: 'assistant'; kind: 'text'; content: string; trace?: AgentTrace }
   | { id: number; role: 'assistant'; kind: 'action'; action: any }
 
 interface Props {
@@ -158,7 +288,7 @@ export function CommandBar({ open, onClose }: Props) {
         setDisplayMessages(prev => [
           ...prev,
           ...(!wasExpanded ? [{ id: nextId(), role: 'user' as const, content: userContent }] : []),
-          { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message },
+          { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message, trace: action.trace },
         ])
         setIsExpanded(true)
       } else if (wasExpanded) {
@@ -325,9 +455,59 @@ export function CommandBar({ open, onClose }: Props) {
 function CommandResult({ action, onDone, onClose }: { action: any; onDone: () => void; onClose: () => void }) {
   const [executing, setExecuting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [queueIndex, setQueueIndex] = useState(0)
 
   if (action.type === 'navigate') {
     return <p className="p-4 text-sm text-gain">Navigating to {action.route}...</p>
+  }
+
+  if (action.type === 'write_confirm_queue') {
+    const confirmations = Array.isArray(action.confirmations) ? action.confirmations : []
+    if (confirmations.length === 0) {
+      return <p className="p-4 text-sm text-muted-foreground">Nothing to confirm.</p>
+    }
+
+    const current = confirmations[Math.min(queueIndex, confirmations.length - 1)]
+    const progress = `${Math.min(queueIndex + 1, confirmations.length)} of ${confirmations.length}`
+
+    return (
+      <div className="p-4 space-y-3">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Confirm Action {progress}</p>
+        <p className="text-sm">{current.confirmationMessage}</p>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className="flex gap-2">
+          <button
+            disabled={executing}
+            className="flex-1 bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium disabled:opacity-50"
+            onClick={async () => {
+              setExecuting(true)
+              setError(null)
+              try {
+                await current.execute()
+                if (queueIndex < confirmations.length - 1) {
+                  setQueueIndex((prev) => prev + 1)
+                  setExecuting(false)
+                  return
+                }
+                onDone()
+                setTimeout(() => window.location.reload(), 800)
+              } catch (e: any) {
+                setError(normalizeErrorMessage(e.message || 'Write failed'))
+                setExecuting(false)
+              }
+            }}
+          >
+            {executing ? 'Saving...' : queueIndex < confirmations.length - 1 ? 'Confirm & next' : 'Confirm'}
+          </button>
+          <button
+            className="flex-1 bg-muted text-muted-foreground rounded-md py-2 text-sm hover:bg-muted/80 transition-colors"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (action.type === 'write_confirm') {
@@ -369,6 +549,8 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
 }
 
 function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; onDone: () => void; onClose: () => void }) {
+  const [showTrace, setShowTrace] = useState(false)
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -379,12 +561,38 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
     )
   }
   if (message.kind === 'text') {
+    const traceSteps = message.trace?.steps ?? []
+
     return (
       <div className="flex justify-start">
-        <div className="text-sm text-foreground max-w-[80%] space-y-1">
-          {message.content.split('\n').filter(l => l.trim()).map((line, i) => (
-            <p key={i}>{parseMd(line)}</p>
-          ))}
+        <div className="text-sm text-foreground max-w-[80%] space-y-2">
+          {renderAssistantMarkdown(message.content)}
+          {traceSteps.length > 0 && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowTrace((prev) => !prev)}
+                className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showTrace ? 'Hide trace' : 'Show trace'}
+              </button>
+              {showTrace && (
+                <div className="mt-2 rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Agent Trace</p>
+                  {traceSteps.map((step, idx) => (
+                    <div key={`${idx}-${step.label}`} className="text-xs leading-relaxed">
+                      <p className="font-medium text-foreground">
+                        {idx + 1}. {step.label}
+                      </p>
+                      {step.detail && (
+                        <p className="text-muted-foreground">{step.detail}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )

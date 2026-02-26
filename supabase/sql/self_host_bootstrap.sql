@@ -207,7 +207,8 @@ create table if not exists public.user_settings (
   finnhub_api_key text,
   price_alert_threshold numeric(5,2) default 5.0,
   tax_harvest_threshold numeric(12,2) default 1000.0,
-  rsu_alert_days_before int default 7
+  rsu_alert_days_before int default 7,
+  auto_theme_assignment_enabled boolean not null default true
 );
 create unique index if not exists user_settings_user_id_key
   on public.user_settings (user_id);
@@ -216,6 +217,7 @@ alter table public.user_settings add column if not exists price_alert_threshold 
 alter table public.user_settings add column if not exists rsu_alert_days_before int default 7;
 alter table public.user_settings add column if not exists claude_api_key text;
 alter table public.user_settings add column if not exists finnhub_api_key text;
+alter table public.user_settings add column if not exists auto_theme_assignment_enabled boolean not null default true;
 
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),

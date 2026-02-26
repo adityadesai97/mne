@@ -345,27 +345,33 @@ export type Database = {
       }
       user_settings: {
         Row: {
+          auto_theme_assignment_enabled: boolean
           claude_api_key: string | null
           finnhub_api_key: string | null
           id: string
           price_alert_threshold: number | null
           rsu_alert_days_before: number | null
+          tax_harvest_threshold: number | null
           user_id: string
         }
         Insert: {
+          auto_theme_assignment_enabled?: boolean
           claude_api_key?: string | null
           finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
+          tax_harvest_threshold?: number | null
           user_id: string
         }
         Update: {
+          auto_theme_assignment_enabled?: boolean
           claude_api_key?: string | null
           finnhub_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
+          tax_harvest_threshold?: number | null
           user_id?: string
         }
         Relationships: []

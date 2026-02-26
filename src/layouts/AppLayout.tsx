@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-react'
 import BottomNav from './BottomNav'
 import Sidebar from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
+import { AppAlertsHost } from '@/components/AppAlertsHost'
 import { getAllAssets } from '@/lib/db/assets'
 import { computeTotalNetWorth } from '@/lib/portfolio'
 import { recordDailySnapshot, backfillHistoricalSnapshots } from '@/lib/db/snapshots'
@@ -12,6 +13,7 @@ import { promoteStaleShortTermLots } from '@/lib/db/transactions'
 import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
+import { abortActiveImport } from '@/lib/importExport'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -141,6 +143,12 @@ export default function AppLayout() {
     return () => window.clearTimeout(id)
   }, [cmdOpen, location.pathname])
 
+  useEffect(() => {
+    if (location.pathname !== '/settings') {
+      abortActiveImport()
+    }
+  }, [location.pathname])
+
   return (
     <div
       className="min-h-screen bg-background flex"
@@ -161,6 +169,7 @@ export default function AppLayout() {
           paddingBottom: 'calc(4rem + var(--app-safe-bottom, 0px))',
         }}
       >
+        <AppAlertsHost />
         <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
         {cgAlert && (
           <div

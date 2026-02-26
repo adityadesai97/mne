@@ -128,3 +128,38 @@ export function computeRsuVesting(assets: any[], today: Date = new Date()): RsuV
   }
   return rows
 }
+
+// ── Stock Distribution by Theme ───────────────────────────────
+
+export function computeThemeDistribution(assets: any[], includeCash = false) {
+  const map: Record<string, number> = {}
+
+  for (const asset of assets) {
+    if (asset.asset_type === 'Stock') {
+      const value = computeAssetValue(asset)
+      if (value <= 0) continue
+
+      const rawNames = (asset.ticker?.ticker_themes ?? [])
+        .map((tt: any) => String(tt?.theme?.name ?? '').trim())
+        .filter((name: string) => name.length > 0)
+      const names = Array.from(new Set<string>(rawNames))
+
+      const bucketNames = names.length > 0 ? names : ['Uncategorized']
+      const share = value / bucketNames.length
+      for (const name of bucketNames) {
+        map[name] = (map[name] ?? 0) + share
+      }
+      continue
+    }
+
+    if (includeCash && asset.asset_type === 'Cash') {
+      const cashValue = Number(asset.price ?? 0)
+      if (cashValue > 0) map.Cash = (map.Cash ?? 0) + cashValue
+    }
+  }
+
+  return Object.entries(map)
+    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)
+}

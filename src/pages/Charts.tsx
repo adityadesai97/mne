@@ -11,10 +11,13 @@ import {
   computeCapitalGainsExposure,
   computeCostVsValue,
   computeRsuVesting,
+  computeThemeDistribution,
 } from '@/lib/charts'
 
 type Subtype = 'Market' | 'ESPP' | 'RSU'
 const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
+type NetWorthRange = '1M' | '3M' | '6M' | '1Y' | 'ALL'
+const NET_WORTH_RANGES: NetWorthRange[] = ['1M', '3M', '6M', '1Y', 'ALL']
 
 const PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
 const GAIN_COLOR = 'hsl(158, 64%, 52%)'
@@ -98,6 +101,8 @@ export default function Charts() {
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
   const [snapshots, setSnapshots] = useState<any[]>([])
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [netWorthRange, setNetWorthRange] = useState<NetWorthRange>('1Y')
+  const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
 
   useEffect(() => {
     getAllAssets()
@@ -142,7 +147,41 @@ export default function Charts() {
   const { shortTerm, longTerm } = computeCapitalGainsExposure(assets)
   const cvvData = computeCostVsValue(assets)
   const rsuData = computeRsuVesting(assets)
-  const netWorthValues = useMemo(() => snapshots.map((point) => Number(point.value)), [snapshots])
+  const themeDistributionData = computeThemeDistribution(assets, includeCashInThemeDistribution)
+  const themeDistributionColorData = themeDistributionData.map((group, index) => ({
+    name: group.name,
+    value: group.value,
+    color: PALETTE[index % PALETTE.length],
+  }))
+  const themeDistributionOption = useMemo<EChartsOption>(
+    () => donutOption(themeDistributionColorData),
+    [themeDistributionColorData],
+  )
+  const filteredSnapshots = useMemo(() => {
+    if (snapshots.length <= 1 || netWorthRange === 'ALL') return snapshots
+    const latest = snapshots[snapshots.length - 1]
+    if (!latest?.date) return snapshots
+
+    const endDate = new Date(`${latest.date}T00:00:00`)
+    if (Number.isNaN(endDate.getTime())) return snapshots
+
+    const startDate = new Date(endDate)
+    if (netWorthRange === '1M') startDate.setMonth(startDate.getMonth() - 1)
+    if (netWorthRange === '3M') startDate.setMonth(startDate.getMonth() - 3)
+    if (netWorthRange === '6M') startDate.setMonth(startDate.getMonth() - 6)
+    if (netWorthRange === '1Y') startDate.setFullYear(startDate.getFullYear() - 1)
+
+    const filtered = snapshots.filter((point) => {
+      if (!point?.date) return false
+      const date = new Date(`${point.date}T00:00:00`)
+      if (Number.isNaN(date.getTime())) return false
+      return date >= startDate
+    })
+
+    if (filtered.length >= 2) return filtered
+    return snapshots.slice(Math.max(0, snapshots.length - 2))
+  }, [netWorthRange, snapshots])
+  const netWorthValues = useMemo(() => filteredSnapshots.map((point) => Number(point.value)), [filteredSnapshots])
   const netWorthCount = netWorthValues.length
   const netWorthBounds = useMemo(() => {
     if (!netWorthValues.length) {
@@ -184,7 +223,7 @@ export default function Charts() {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: snapshots.map((point) => point.date),
+      data: filteredSnapshots.map((point) => point.date),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
@@ -217,7 +256,7 @@ export default function Charts() {
         data: netWorthValues,
       },
     ],
-  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues, snapshots])
+  }), [filteredSnapshots, isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues])
 
   const allocationOption = useMemo<EChartsOption>(
     () => donutOption(allocationColorData),
@@ -489,10 +528,28 @@ export default function Charts() {
     <div className="pt-6 pb-24 px-4 space-y-4">
       <h1 className="text-xl font-bold">Charts</h1>
 
-      {snapshots.length > 1 && (
+      {filteredSnapshots.length > 1 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Net Worth Over Time</CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="text-sm text-muted-foreground">Net Worth Over Time</CardTitle>
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                {NET_WORTH_RANGES.map((range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    onClick={() => setNetWorthRange(range)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                      netWorthRange === range
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-transparent text-muted-foreground border-border'
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ReactECharts option={netWorthOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
@@ -559,6 +616,40 @@ export default function Charts() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="text-sm text-muted-foreground">Stock Distribution by Theme</CardTitle>
+            <button
+              type="button"
+              onClick={() => setIncludeCashInThemeDistribution((prev) => !prev)}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                includeCashInThemeDistribution
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-transparent text-muted-foreground border-border'
+              }`}
+            >
+              {includeCashInThemeDistribution ? 'Cash Included' : 'Include Cash'}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {themeDistributionData.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-8">No themed stock data yet</p>
+          ) : (
+            <ReactECharts option={themeDistributionOption} style={{ width: '100%', height: 240 }} notMerge opts={{ renderer: 'svg' }} />
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+            {themeDistributionColorData.map((slice) => (
+              <div key={slice.name} className="flex items-center gap-1.5 text-xs">
+                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
+                <span className="text-muted-foreground">{slice.name}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {pnlData.length > 0 && (
         <Card>

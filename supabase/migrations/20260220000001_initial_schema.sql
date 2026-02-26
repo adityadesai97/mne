@@ -81,7 +81,8 @@ create table user_settings (
   finnhub_api_key text,
   price_alert_threshold numeric(5,2) default 5.0,
   tax_harvest_threshold numeric(12,2) default 1000.0,
-  rsu_alert_days_before int default 7
+  rsu_alert_days_before int default 7,
+  auto_theme_assignment_enabled boolean not null default true
 );
 
 -- Push notification subscriptions

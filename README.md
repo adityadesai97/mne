@@ -120,6 +120,50 @@ npm test         # run tests
 npm run lint     # lint
 ```
 
+## Import/Export JSON
+
+`mne` now uses a canonical export format designed for round-trippable imports.
+
+- `schema`: `mne.export.v2`
+- `version`: `2.0`
+- `exportedAt`: ISO timestamp
+- `data`: normalized arrays keyed by IDs
+  - `locations`
+  - `themes`
+  - `tickers`
+  - `tickerThemes`
+  - `themeTargets`
+  - `assets`
+  - `stockSubtypes`
+  - `transactions`
+  - `rsuGrants`
+
+Minimal shape:
+
+```json
+{
+  "schema": "mne.export.v2",
+  "version": "2.0",
+  "exportedAt": "2026-02-25T00:00:00.000Z",
+  "data": {
+    "locations": [],
+    "themes": [],
+    "tickers": [],
+    "tickerThemes": [],
+    "themeTargets": [],
+    "assets": [],
+    "stockSubtypes": [],
+    "transactions": [],
+    "rsuGrants": []
+  }
+}
+```
+
+Importer compatibility:
+- Canonical `mne.export.v2` (preferred)
+- Legacy `mne` nested export
+- Moola export format
+
 ## Command Bar
 
 Open with `Cmd+K`. Accepts natural language commands backed by Claude (e.g. "Add 10 AAPL shares at $220 bought today", "What's my net worth?").

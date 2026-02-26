@@ -6,7 +6,7 @@ export async function getAllAssets() {
     .select(`
       *,
       location:locations(*),
-      ticker:tickers(*),
+      ticker:tickers(*, ticker_themes(theme:themes(*))),
       stock_subtypes(*, transactions(*), rsu_grants(*))
     `)
     .order('name')
@@ -44,7 +44,7 @@ export async function getAssetById(id: string) {
     .select(`
       *,
       location:locations(*),
-      ticker:tickers(*),
+      ticker:tickers(*, ticker_themes(theme:themes(*))),
       stock_subtypes(*, transactions(*), rsu_grants(*))
     `)
     .eq('id', id)

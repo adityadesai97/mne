@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react'
 import { deleteTicker, getAllTickers, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { getAllThemes, getOrCreateTheme, addTickerTheme, removeTickerTheme } from '@/lib/db/themes'
+import { autoAssignThemesForTicker, autoAssignThemesForTickerIfEnabled } from '@/lib/autoThemes'
+import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { config } from '@/store/config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Plus, Sparkles, Trash2, X } from 'lucide-react'
 
 export default function Watchlist() {
   const [tickers, setTickers] = useState<any[]>([])
@@ -44,24 +46,23 @@ export default function Watchlist() {
       const { data: { user } } = await getSupabaseClient().auth.getUser()
       if (!user) throw new Error('Not authenticated')
       const newTicker = await upsertTicker({ user_id: user.id, symbol: trimmed, watchlist_only: true })
-      setSymbol('')
-      setShowForm(false)
-      await loadTickers()
-      if (config.finnhubApiKey) {
-        try {
+      await Promise.allSettled([
+        autoAssignThemesForTickerIfEnabled({
+          userId: user.id,
+          tickerId: newTicker.id,
+          symbol: trimmed,
+          skipIfAlreadyTagged: true,
+        }),
+        (async () => {
+          if (!config.finnhubApiKey) return
           const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${trimmed}&token=${config.finnhubApiKey}`)
           const profile = await res.json()
-          if (profile.finnhubIndustry) {
-            const themeId = await getOrCreateTheme(profile.finnhubIndustry)
-            await addTickerTheme(newTicker.id, themeId)
-          }
-          if (profile.logo) {
-            await getSupabaseClient().from('tickers').update({ logo: profile.logo }).eq('id', newTicker.id)
-          }
-        } catch {
-          // ignore — theme assignment and logo save are best-effort
-        }
-      }
+          if (!profile.logo) return
+          await getSupabaseClient().from('tickers').update({ logo: profile.logo }).eq('id', newTicker.id)
+        })(),
+      ])
+      setSymbol('')
+      setShowForm(false)
       await loadTickers()
     } catch (err: any) {
       setError(err.message ?? 'Failed to add ticker')
@@ -85,10 +86,17 @@ export default function Watchlist() {
   const handleDeleteTicker = async (ticker: any, e: React.MouseEvent) => {
     e.stopPropagation()
     if (ticker.is_owned) {
-      alert('Cannot delete a ticker that is still owned.')
+      showAppAlert('Cannot delete a ticker that is still owned.', { variant: 'error' })
       return
     }
-    if (!window.confirm(`Delete ${ticker.symbol} from watchlist?`)) return
+    const confirmed = await requestAppConfirm({
+      title: 'Delete ticker?',
+      message: `Delete ${ticker.symbol} from watchlist?`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
     setDeletingTickerId(ticker.id)
     try {
       await deleteTicker(ticker.id)
@@ -99,7 +107,7 @@ export default function Watchlist() {
       })
       await loadTickers()
     } catch (err: any) {
-      alert(err.message ?? 'Failed to delete ticker')
+      showAppAlert(err.message ?? 'Failed to delete ticker', { variant: 'error' })
     } finally {
       setDeletingTickerId(null)
     }
@@ -193,10 +201,12 @@ export default function Watchlist() {
   )
 }
 
-function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => void }) {
+function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Promise<void> }) {
   const [adding, setAdding] = useState(false)
   const [newTheme, setNewTheme] = useState('')
   const [saving, setSaving] = useState(false)
+  const [autoAssigning, setAutoAssigning] = useState(false)
+  const [autoAssignNote, setAutoAssignNote] = useState<string | null>(null)
   const [allThemes, setAllThemes] = useState<any[]>([])
 
   useEffect(() => {
@@ -210,12 +220,12 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => voi
     setSaving(true)
     try {
       await addTickerTheme(ticker.id, themeId)
-      onUpdated()
+      await onUpdated()
       // Re-fetch allThemes to reflect the newly assigned one (onUpdated reloads tickers, not allThemes)
       const updated = await getAllThemes()
       setAllThemes(updated)
     } catch (err: any) {
-      alert(err.message)
+      showAppAlert(err.message ?? 'Failed to add theme', { variant: 'error' })
     } finally {
       setSaving(false)
     }
@@ -230,20 +240,36 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => voi
       await addTickerTheme(ticker.id, themeId)
       setNewTheme('')
       setAdding(false)
-      onUpdated()
+      await onUpdated()
     } catch (err: any) {
-      alert(err.message)
+      showAppAlert(err.message ?? 'Failed to add theme', { variant: 'error' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleAutoAssign() {
+    setAutoAssigning(true)
+    setAutoAssignNote(null)
+    try {
+      const result = await autoAssignThemesForTicker({ tickerId: ticker.id, symbol: ticker.symbol })
+      await onUpdated()
+      const updated = await getAllThemes()
+      setAllThemes(updated)
+      setAutoAssignNote(result.assignedCount > 0 ? `Added ${result.assignedCount} AI theme${result.assignedCount === 1 ? '' : 's'}` : 'No new AI themes found')
+    } catch (err: any) {
+      showAppAlert(err.message ?? 'Failed to auto-assign themes', { variant: 'error' })
+    } finally {
+      setAutoAssigning(false)
     }
   }
 
   async function handleRemove(themeId: string) {
     try {
       await removeTickerTheme(ticker.id, themeId)
-      onUpdated()
+      await onUpdated()
     } catch (err: any) {
-      alert(err.message)
+      showAppAlert(err.message ?? 'Failed to remove theme', { variant: 'error' })
     }
   }
 
@@ -259,7 +285,17 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => voi
         <button onClick={() => setAdding(v => !v)} className="text-xs text-muted-foreground hover:text-foreground px-1">
           {adding ? '–' : '+ theme'}
         </button>
+        <button
+          type="button"
+          onClick={handleAutoAssign}
+          disabled={autoAssigning || saving}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-1 disabled:opacity-50"
+        >
+          <Sparkles size={12} />
+          {autoAssigning ? 'Assigning…' : 'AI themes'}
+        </button>
       </div>
+      {autoAssignNote && <p className="text-xs text-muted-foreground mb-2">{autoAssignNote}</p>}
       {adding && (
         <div>
           {availableThemes.length > 0 && (

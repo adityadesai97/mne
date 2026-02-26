@@ -8,6 +8,7 @@ import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, updateTransaction } from '@/lib/db/transactions'
 import { endGrant } from '@/lib/db/grants'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
+import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 
 interface EditAssetValues {
   name: string
@@ -40,7 +41,14 @@ export default function AssetDetail() {
   }, [id])
 
   async function handleDeleteTransaction(txId: string) {
-    if (!window.confirm('Delete this transaction?')) return
+    const confirmed = await requestAppConfirm({
+      title: 'Delete transaction?',
+      message: 'Delete this transaction?',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteTransaction(txId)
       if (id) setAsset(await getAssetById(id))
@@ -59,7 +67,14 @@ export default function AssetDetail() {
   }
 
   async function handleEndGrant(grantId: string) {
-    const date = window.prompt('End date (YYYY-MM-DD):', new Date().toISOString().split('T')[0])
+    const date = await requestAppPrompt({
+      title: 'End RSU grant',
+      message: 'Enter end date (YYYY-MM-DD)',
+      defaultValue: new Date().toISOString().split('T')[0],
+      placeholder: 'YYYY-MM-DD',
+      submitLabel: 'Save',
+      cancelLabel: 'Cancel',
+    })
     if (!date) return
     try {
       await endGrant(grantId, date)
@@ -93,7 +108,14 @@ export default function AssetDetail() {
   }
 
   async function handleDeleteAsset() {
-    if (!window.confirm('Delete this asset and all its transactions? This cannot be undone.')) return
+    const confirmed = await requestAppConfirm({
+      title: 'Delete asset?',
+      message: 'Delete this asset and all its transactions? This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteAsset(asset.id)
       navigate('/portfolio')

@@ -1,9 +1,12 @@
 // src/pages/Home.tsx
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { animate } from 'framer-motion'
 import { TrendingUp, TrendingDown } from 'lucide-react'
+import ReactECharts from 'echarts-for-react'
+import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
+import { getSnapshots } from '@/lib/db/snapshots'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 
@@ -16,8 +19,25 @@ const TYPE_COLORS: Record<string, string> = {
   Other: '#6B7280',
 }
 
+const AXIS_COLOR = 'hsl(215,14%,55%)'
+const TOOLTIP_BG = 'hsl(224,13%,9%)'
+const GRID_COLOR = 'hsl(224,13%,16%)'
+const LINE_COLOR = 'hsl(217,91%,60%)'
+
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+}
+
+function formatDateCompact(date: string) {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return date
+  return new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric' }).format(parsed)
+}
+
+function formatDateShort(date: string) {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return date
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
 }
 
 function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | null>, format = fmtCurrency) {
@@ -41,7 +61,9 @@ const fadeUp = (delay: number) => ({
 
 export default function Home() {
   const [assets, setAssets] = useState<any[]>([])
+  const [snapshots, setSnapshots] = useState<any[]>([])
   const [assetsLoaded, setAssetsLoaded] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [firstName, setFirstName] = useState<string | null>(null)
   const heroRef = useRef<HTMLParagraphElement>(null)
 
@@ -59,16 +81,122 @@ export default function Home() {
     })
   }, [])
 
+  useEffect(() => {
+    if (!assetsLoaded || assets.length === 0) {
+      setSnapshots([])
+      return
+    }
+    getSnapshots().then(setSnapshots).catch(console.error)
+  }, [assetsLoaded, assets.length])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const totalValue = computeTotalNetWorth(assets)
-  const totalCost = assets.reduce((sum, a) => sum + computeCostBasis(a), 0)
-  const gainLoss = totalValue - totalCost
-  const gainLossPercent = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
-  const isGain = gainLoss >= 0
+
+  const netWorthSeries = useMemo(() => {
+    const valid = snapshots
+      .filter((point) => point?.date && Number.isFinite(Number(point.value)))
+      .map((point) => ({ date: point.date, value: Number(point.value) }))
+
+    if (valid.length > 0) return valid
+
+    const today = new Date().toISOString().slice(0, 10)
+    return [{ date: today, value: totalValue }]
+  }, [snapshots, totalValue])
+
+  const netWorthValues = useMemo(() => netWorthSeries.map((point) => point.value), [netWorthSeries])
+  const netWorthCount = netWorthValues.length
+  const netWorthBounds = useMemo(() => {
+    if (!netWorthValues.length) return { min: 0, max: 0 }
+
+    const min = Math.min(...netWorthValues)
+    const max = Math.max(...netWorthValues)
+    const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
+    const pad = range * (netWorthCount <= 2 ? 0.35 : 0.18)
+    return { min: min - pad, max: max + pad }
+  }, [netWorthCount, netWorthValues])
+
+  const netWorthOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      backgroundColor: TOOLTIP_BG,
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
+      trigger: 'axis',
+      formatter: (params: unknown) => {
+        const rows = params as Array<{ axisValue: string; value: number | [string, number] }>
+        if (!rows.length) return ''
+        const first = rows[0]
+        const raw = first.value
+        const value = Array.isArray(raw) ? Number(raw[1]) : Number(raw)
+        return `${formatDateShort(first.axisValue)}<br/>${fmtCurrency(value)}`
+      },
+    },
+    grid: {
+      left: isMobile ? 4 : 2,
+      right: isMobile ? 6 : 4,
+      top: 6,
+      bottom: isMobile ? 24 : 22,
+      containLabel: false,
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: netWorthSeries.map((point) => point.date),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: AXIS_COLOR,
+        fontSize: 10,
+        margin: 8,
+        showMinLabel: true,
+        showMaxLabel: true,
+        hideOverlap: false,
+        formatter: (value: string) => formatDateCompact(value),
+      },
+    },
+    yAxis: {
+      type: 'value',
+      show: false,
+      min: netWorthBounds.min,
+      max: netWorthBounds.max,
+      splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } },
+    },
+    series: [
+      {
+        name: 'Net Worth',
+        type: 'line',
+        smooth: netWorthCount > 2,
+        symbol: netWorthCount <= 2 ? 'circle' : 'none',
+        symbolSize: 6,
+        clip: true,
+        lineStyle: { width: 2.25, color: LINE_COLOR },
+        areaStyle: {
+          opacity: netWorthCount <= 2 ? 0.05 : 0.08,
+          color: LINE_COLOR,
+          origin: 'start',
+        },
+        data: netWorthValues,
+      },
+    ],
+  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues])
+
+  const stockAssets = assets.filter((asset) => asset.asset_type === 'Stock')
+  const stockTotalValue = stockAssets.reduce((sum, asset) => sum + computeAssetValue(asset), 0)
+  const stockTotalCost = stockAssets.reduce((sum, asset) => sum + computeCostBasis(asset), 0)
+  const stockGainLoss = stockTotalValue - stockTotalCost
+  const stockGainLossPercent = stockTotalCost > 0 ? (stockGainLoss / stockTotalCost) * 100 : 0
+  const stockIsGain = stockGainLoss >= 0
 
   useAnimatedNumber(totalValue, heroRef)
 
   // Best performer
-  const bestAsset = assets.reduce<any | null>((best, a) => {
+  const bestAsset = stockAssets.reduce<any | null>((best, a) => {
     const gain = computeUnrealizedGain(a)
     if (best === null || gain > computeUnrealizedGain(best)) return a
     return best
@@ -147,23 +275,23 @@ export default function Home() {
             {firstName ? `${firstName}'s Net Worth` : 'Net Worth'}
           </p>
 
-          <div className="flex items-baseline gap-3 mb-1 relative">
+          <div className="mb-4 relative">
             <p
               ref={heroRef}
               className="text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne"
             >
               {fmtCurrency(totalValue)}
             </p>
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full tabular-nums flex-shrink-0 ${
-              isGain ? 'bg-gain/[0.12] text-gain' : 'bg-loss/[0.12] text-loss'
-            }`}>
-              {isGain ? '+' : ''}{gainLossPercent.toFixed(2)}%
-            </span>
           </div>
 
-          <p className={`text-sm tabular-nums mb-4 relative ${isGain ? 'text-gain' : 'text-loss'}`}>
-            {isGain ? '+' : ''}{fmtCurrency(gainLoss)}
-          </p>
+          <div className="relative mb-4 -mx-1">
+            <ReactECharts
+              option={netWorthOption}
+              style={{ width: '100%', height: isMobile ? 130 : 150 }}
+              notMerge
+              opts={{ renderer: 'svg' }}
+            />
+          </div>
 
           {/* Mini meta row — positions + asset types */}
           <div className="flex gap-5 pt-3 border-t border-white/[0.05] relative">
@@ -226,16 +354,16 @@ export default function Home() {
 
         <motion.div {...fadeUp(0.1)} className="bg-card shadow-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
-            {isGain
+            {stockIsGain
               ? <TrendingUp size={11} className="text-gain" />
               : <TrendingDown size={11} className="text-loss" />}
             <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">P&L</p>
           </div>
-          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
-            {isGain ? '+' : ''}{fmtCurrency(gainLoss)}
+          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+            {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
-          <p className={`text-[10px] tabular-nums mt-0.5 ${isGain ? 'text-gain' : 'text-loss'}`}>
-            {isGain ? '+' : ''}{gainLossPercent.toFixed(2)}%
+          <p className={`text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+            {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
 
