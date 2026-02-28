@@ -103,6 +103,9 @@ export default function Settings() {
     tax_harvest_threshold: 1000,
     rsu_alert_days_before: 7,
     auto_theme_assignment_enabled: true,
+    price_alerts_enabled: true,
+    vest_alerts_enabled: true,
+    capital_gains_alerts_enabled: true,
   })
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
@@ -155,6 +158,19 @@ export default function Settings() {
     } catch (error) {
       console.error('Failed to save auto-theme setting', error)
       const rollback = { ...next, auto_theme_assignment_enabled: !enabled }
+      setSettings(rollback)
+      settingsRef.current = rollback
+    }
+  }
+
+  async function setNotificationToggle(field: 'price_alerts_enabled' | 'vest_alerts_enabled' | 'capital_gains_alerts_enabled', enabled: boolean) {
+    const next = { ...settingsRef.current, [field]: enabled }
+    setSettings(next)
+    settingsRef.current = next
+    try {
+      await saveSettings(next)
+    } catch {
+      const rollback = { ...next, [field]: !enabled }
       setSettings(rollback)
       settingsRef.current = rollback
     }
@@ -250,31 +266,6 @@ export default function Settings() {
       {/* Notifications */}
       <SectionHeader><Bell size={10} className="inline mr-1.5 mb-0.5" />Notifications</SectionHeader>
       <div className="space-y-2">
-        {pushEnabled && (
-          <>
-            <NumberRow
-              label="Price alert threshold"
-              hint="Alert when price moves by this %"
-              value={settings.price_alert_threshold}
-              onChange={v => setSettings(s => ({ ...s, price_alert_threshold: v }))}
-              onBlur={() => saveSettings(settingsRef.current)}
-            />
-            <NumberRow
-              label="Tax harvest threshold"
-              hint="Alert when loss exceeds this amount ($)"
-              value={settings.tax_harvest_threshold}
-              onChange={v => setSettings(s => ({ ...s, tax_harvest_threshold: v }))}
-              onBlur={() => saveSettings(settingsRef.current)}
-            />
-            <NumberRow
-              label="RSU vest reminder"
-              hint="Days before vest end to notify"
-              value={settings.rsu_alert_days_before}
-              onChange={v => setSettings(s => ({ ...s, rsu_alert_days_before: v }))}
-              onBlur={() => saveSettings(settingsRef.current)}
-            />
-          </>
-        )}
         <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Push notifications</p>
@@ -293,28 +284,89 @@ export default function Settings() {
             onEnable={async () => {
               setPushEnabled(true)
               setPushLoading(true)
-              try {
-                await subscribeToPush()
-              } catch (e: any) {
-                console.error('Push subscribe failed:', e.message)
-                setPushEnabled(false)
-              } finally {
-                setPushLoading(false)
-              }
+              try { await subscribeToPush() }
+              catch (e: any) { console.error('Push subscribe failed:', e.message); setPushEnabled(false) }
+              finally { setPushLoading(false) }
             }}
             onDisable={async () => {
               setPushEnabled(false)
               setPushLoading(true)
-              try {
-                await unsubscribeFromPush()
-              } catch {
-                setPushEnabled(true)
-              } finally {
-                setPushLoading(false)
-              }
+              try { await unsubscribeFromPush() }
+              catch { setPushEnabled(true) }
+              finally { setPushLoading(false) }
             }}
           />
         </div>
+
+        {pushEnabled && (
+          <>
+            {/* Price alerts */}
+            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Price alerts</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Notify when a stock price moves significantly</p>
+              </div>
+              <Toggle
+                enabled={settings.price_alerts_enabled}
+                onEnable={() => { void setNotificationToggle('price_alerts_enabled', true) }}
+                onDisable={() => { void setNotificationToggle('price_alerts_enabled', false) }}
+              />
+            </div>
+            {settings.price_alerts_enabled && (
+              <NumberRow
+                label="Price alert threshold"
+                hint="Alert when price moves by this %"
+                value={settings.price_alert_threshold}
+                onChange={v => setSettings(s => ({ ...s, price_alert_threshold: v }))}
+                onBlur={() => saveSettings(settingsRef.current)}
+              />
+            )}
+
+            {/* RSU vest reminders */}
+            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">RSU vest reminders</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Notify before RSU vest dates</p>
+              </div>
+              <Toggle
+                enabled={settings.vest_alerts_enabled}
+                onEnable={() => { void setNotificationToggle('vest_alerts_enabled', true) }}
+                onDisable={() => { void setNotificationToggle('vest_alerts_enabled', false) }}
+              />
+            </div>
+            {settings.vest_alerts_enabled && (
+              <NumberRow
+                label="RSU vest reminder"
+                hint="Days before vest end to notify"
+                value={settings.rsu_alert_days_before}
+                onChange={v => setSettings(s => ({ ...s, rsu_alert_days_before: v }))}
+                onBlur={() => saveSettings(settingsRef.current)}
+              />
+            )}
+
+            {/* Capital gains alerts */}
+            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Capital gains alerts</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Notify when tax lots are promoted to long term</p>
+              </div>
+              <Toggle
+                enabled={settings.capital_gains_alerts_enabled}
+                onEnable={() => { void setNotificationToggle('capital_gains_alerts_enabled', true) }}
+                onDisable={() => { void setNotificationToggle('capital_gains_alerts_enabled', false) }}
+              />
+            </div>
+            {settings.capital_gains_alerts_enabled && (
+              <NumberRow
+                label="Tax harvest threshold"
+                hint="Alert when loss exceeds this amount ($)"
+                value={settings.tax_harvest_threshold}
+                onChange={v => setSettings(s => ({ ...s, tax_harvest_threshold: v }))}
+                onBlur={() => saveSettings(settingsRef.current)}
+              />
+            )}
+          </>
+        )}
       </div>
 
       {/* Data */}

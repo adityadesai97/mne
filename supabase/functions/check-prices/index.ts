@@ -9,6 +9,7 @@ Deno.serve(async () => {
   const { data: settings } = await supabase.from('user_settings').select('*')
 
   for (const userSettings of settings ?? []) {
+    if (userSettings.price_alerts_enabled === false) continue
     const { data: tickers } = await supabase
       .from('tickers')
       .select('*')

@@ -24,6 +24,10 @@ Deno.serve(async () => {
 
   if (!lots?.length) return new Response(JSON.stringify({ ok: true, promoted: 0 }))
 
+  // Load user settings to check per-user notification preferences
+  const { data: allSettings } = await supabase.from('user_settings').select('user_id, capital_gains_alerts_enabled')
+  const settingsMap = new Map((allSettings ?? []).map((s: any) => [s.user_id, s]))
+
   // Group lot IDs by user_id
   const byUser = new Map<string, string[]>()
   for (const lot of lots) {
@@ -37,6 +41,9 @@ Deno.serve(async () => {
       .from('transactions')
       .update({ capital_gains_status: 'Long Term' })
       .in('id', ids)
+
+    const userSettings = settingsMap.get(userId)
+    if (userSettings?.capital_gains_alerts_enabled === false) continue
 
     await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-push`, {
       method: 'POST',

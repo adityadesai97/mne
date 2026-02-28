@@ -9,6 +9,7 @@ Deno.serve(async () => {
   const { data: settings } = await supabase.from('user_settings').select('*')
 
   for (const userSettings of settings ?? []) {
+    if (userSettings.vest_alerts_enabled === false) continue
     const daysAhead = userSettings.rsu_alert_days_before ?? 7
     const today = new Date()
     const cutoff = new Date(today)
