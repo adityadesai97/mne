@@ -20,7 +20,7 @@ npx vitest --run charts.test      # single file
 
 ### Startup & Auth
 
-`src/App.tsx` reads 4 localStorage keys via `src/store/config.ts` (`mne_supabase_url`, `mne_supabase_anon_key`, `mne_claude_api_key`, `mne_finnhub_api_key`). If any are missing, `<Onboarding>` renders instead of the app. Supabase is initialized as a singleton via `src/lib/supabase.ts:initSupabase()` — all DB calls go through `getSupabaseClient()`, which throws if called before initialization.
+`src/App.tsx` gates on `config.isConfigured && isSupabaseReady()`. If false, `<Onboarding>` renders. Supabase is initialized at module load time from env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) — there is no `initSupabase()` call. All DB calls go through `getSupabaseClient()`, which throws if the env vars were absent. `src/store/config.ts` stores only `mne_claude_api_key`, `mne_finnhub_api_key`, `mne_needs_signin`, and `mne_theme` in localStorage.
 
 On every app load, `src/layouts/AppLayout.tsx` runs a startup effect: loads assets, records a daily net worth snapshot, promotes stale Short Term tax lots to Long Term, and syncs the Finnhub API key to `user_settings`.
 
@@ -52,7 +52,11 @@ All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transac
 
 ### Claude AI Commands
 
-`src/lib/claude.ts` is the core AI feature. The command bar (⌘K) collects natural language input, sends it to the Claude API with the full portfolio as JSON context and 7 tool definitions (`add_stock_transaction`, `add_cash_asset`, `add_rsu_grant`, `sell_shares`, `update_asset_value`, `add_ticker_to_watchlist`, `navigate_to`). Claude responds with a `tool_use` block; `executeTool()` maps that to the correct DB write + UI update. Write operations show a confirmation message before executing. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
+`src/lib/claude.ts` is the core AI feature. The command bar (⌘K) collects natural language input and sends it to the Claude API. There are 16 tool definitions split into two groups:
+- **Read tools** (looped until a write/nav tool is chosen): `get_portfolio_summary`, `get_positions`, `get_transactions`, `get_net_worth_timeseries`, `get_exposure_breakdown`, `analyze_tax_lots`, `simulate_portfolio_actions`, `recommend_actions_for_goal`
+- **Write/nav tools**: `add_stock_transaction`, `add_cash_asset`, `add_rsu_grant`, `sell_shares`, `update_asset_value`, `add_ticker_to_watchlist`, `add_ticker_themes`, `navigate_to`
+
+`executeTool()` maps tool calls to the correct DB write + UI update. Write operations show a confirmation message before executing. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
 
 ### Edge Functions
 
@@ -72,6 +76,29 @@ Four Deno functions in `supabase/functions/`:
 
 Tests live in `src/__tests__/`. Pattern: plain Vitest `test()` calls (no `describe` blocks), mock objects typed as `any`. Supabase calls are not mocked — tests that need DB use real fixtures or test pure computation functions. The test environment is `jsdom` with globals enabled.
 
+### Import/Export
+
+`src/lib/importExport.ts` — full portfolio backup/restore. Exports a `mne.export.v2` JSON blob (assets, tickers, themes, locations). Accessible from Settings. `abortActiveImport()` is called in `AppLayout` on unmount to cancel in-flight imports.
+
+### Auto Theme Assignment
+
+`src/lib/autoThemes.ts` — uses Claude API to automatically suggest and assign themes to tickers based on their sector/industry. Controlled by `auto_theme_assignment_enabled` in `user_settings` (added in migration `20260225000002_user_settings_auto_theme_assignment.sql`).
+
+## Environment Variables
+
+Required (in `.env.local`):
+```bash
+VITE_SUPABASE_URL=        # Supabase project URL
+VITE_SUPABASE_ANON_KEY=   # Supabase anon key
+```
+
+Optional:
+```bash
+VITE_RESTRICT_SIGNUPS=false   # Only allow emails in public.allowed_emails table
+VITE_LANDING_AS_HOME=false    # Show landing page before sign-in
+VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
+```
+
 ## Gotchas
 
 **RLS on new tables**: Every new Supabase table needs an explicit RLS policy or all writes silently fail with a policy violation. Check `supabase/migrations/` for the pattern used on existing tables.
@@ -80,4 +107,4 @@ Tests live in `src/__tests__/`. Pattern: plain Vitest `test()` calls (no `descri
 
 **Push notifications in production**: Requires `VITE_VAPID_PUBLIC_KEY` in `.env.local` and the three VAPID secrets (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) set in Supabase dashboard → Settings → Edge Functions → Secrets.
 
-**DB migrations**: Applied via Supabase MCP (`apply_migration` tool) or the Supabase dashboard SQL editor. There is no local Supabase CLI setup — all schema changes go directly to the hosted project.
+**DB migrations**: Applied via Supabase MCP (`apply_migration` tool) or the Supabase dashboard SQL editor. There is no local Supabase CLI setup — all schema changes go directly to the hosted project. `supabase/sql/self_host_bootstrap.sql` is a standalone script to initialize a fresh Supabase project for self-hosting.

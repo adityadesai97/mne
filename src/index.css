@@ -65,6 +65,11 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
 }
 
+/* Prevent iOS Safari from auto-zooming when focusing inputs with font-size < 16px */
+input, select, textarea {
+  font-size: max(16px, 1em);
+}
+
 .font-syne {
   font-family: var(--display-font, 'Manrope', sans-serif);
 }

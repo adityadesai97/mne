@@ -162,7 +162,7 @@ export default function AppLayout() {
 
       {/* Main content — offset by sidebar on desktop */}
       <div
-        className="flex-1 md:ml-16 min-h-screen flex flex-col"
+        className="flex-1 md:ml-16 min-h-screen flex flex-col overflow-x-hidden"
         style={{
           minHeight: '100dvh',
           paddingTop: 'var(--app-safe-top, 0px)',
