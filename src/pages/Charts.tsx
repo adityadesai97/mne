@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
-import { getSnapshots } from '@/lib/db/snapshots'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
@@ -20,8 +19,6 @@ import {
 
 type Subtype = 'Market' | 'ESPP' | 'RSU'
 const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
-type NetWorthRange = '1M' | '3M' | '6M' | '1Y' | 'ALL'
-const NET_WORTH_RANGES: NetWorthRange[] = ['1M', '3M', '6M', '1Y', 'ALL']
 
 const PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
 const GAIN_COLOR = 'hsl(158, 64%, 52%)'
@@ -53,17 +50,6 @@ function fmtShort(n: number) {
   return String(Math.round(n))
 }
 
-function formatDateShort(date: string) {
-  const parsed = new Date(`${date}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return date
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
-}
-
-function formatDateCompact(date: string) {
-  const parsed = new Date(`${date}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return date
-  return new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric' }).format(parsed)
-}
 
 function donutOption(
   data: { name: string; value: number; color: string }[],
@@ -103,9 +89,7 @@ export default function Charts() {
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
-  const [snapshots, setSnapshots] = useState<any[]>([])
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  const [netWorthRange, setNetWorthRange] = useState<NetWorthRange>('1Y')
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
 
   useEffect(() => {
@@ -115,13 +99,6 @@ export default function Charts() {
       .finally(() => setAssetsLoaded(true))
   }, [])
   useEffect(() => {
-    if (!assetsLoaded || assets.length === 0) {
-      setSnapshots([])
-      return
-    }
-    getSnapshots().then(setSnapshots).catch(console.error)
-  }, [assetsLoaded, assets.length])
-  useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -129,10 +106,7 @@ export default function Charts() {
 
   const handleRefresh = useCallback(async () => {
     if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
-    const [fresh] = await Promise.all([
-      getAllAssets().catch(() => assets),
-      getSnapshots().then(setSnapshots).catch(console.error),
-    ])
+    const fresh = await getAllAssets().catch(() => assets)
     setAssets((fresh as any[]) ?? assets)
   }, [assets])
 
@@ -172,107 +146,6 @@ export default function Charts() {
     () => donutOption(themeDistributionColorData),
     [themeDistributionColorData],
   )
-  const filteredSnapshots = useMemo(() => {
-    if (snapshots.length <= 1 || netWorthRange === 'ALL') return snapshots
-    const latest = snapshots[snapshots.length - 1]
-    if (!latest?.date) return snapshots
-
-    const endDate = new Date(`${latest.date}T00:00:00`)
-    if (Number.isNaN(endDate.getTime())) return snapshots
-
-    const startDate = new Date(endDate)
-    if (netWorthRange === '1M') startDate.setMonth(startDate.getMonth() - 1)
-    if (netWorthRange === '3M') startDate.setMonth(startDate.getMonth() - 3)
-    if (netWorthRange === '6M') startDate.setMonth(startDate.getMonth() - 6)
-    if (netWorthRange === '1Y') startDate.setFullYear(startDate.getFullYear() - 1)
-
-    const filtered = snapshots.filter((point) => {
-      if (!point?.date) return false
-      const date = new Date(`${point.date}T00:00:00`)
-      if (Number.isNaN(date.getTime())) return false
-      return date >= startDate
-    })
-
-    if (filtered.length >= 2) return filtered
-    return snapshots.slice(Math.max(0, snapshots.length - 2))
-  }, [netWorthRange, snapshots])
-  const netWorthValues = useMemo(() => filteredSnapshots.map((point) => Number(point.value)), [filteredSnapshots])
-  const netWorthCount = netWorthValues.length
-  const netWorthBounds = useMemo(() => {
-    if (!netWorthValues.length) {
-      return { min: 0, max: 0 }
-    }
-
-    const min = Math.min(...netWorthValues)
-    const max = Math.max(...netWorthValues)
-    const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
-    const pad = range * (netWorthCount <= 2 ? 0.4 : 0.2)
-
-    return {
-      min: min - pad,
-      max: max + pad,
-    }
-  }, [netWorthCount, netWorthValues])
-
-  const netWorthOption = useMemo<EChartsOption>(() => ({
-    backgroundColor: 'transparent',
-    tooltip: {
-      ...tooltipBase,
-      trigger: 'axis',
-      formatter: (params: unknown) => {
-        const rows = params as Array<{ axisValue: string; value: number | [string, number] }>
-        if (!rows.length) return ''
-        const first = rows[0]
-        const raw = first.value
-        const value = Array.isArray(raw) ? Number(raw[1]) : Number(raw)
-        return `${formatDateShort(first.axisValue)}<br/>${fmt(value)}`
-      },
-    },
-    grid: {
-      left: isMobile ? 14 : 12,
-      right: isMobile ? 14 : 12,
-      top: 12,
-      bottom: isMobile ? 30 : 26,
-      containLabel: false,
-    },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: filteredSnapshots.map((point) => point.date),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: {
-        color: AXIS_COLOR,
-        fontSize: 10,
-        margin: isMobile ? 8 : 10,
-        showMinLabel: true,
-        showMaxLabel: true,
-        hideOverlap: false,
-        formatter: (value: string) => formatDateCompact(value),
-      },
-    },
-    yAxis: {
-      type: 'value',
-      show: false,
-      min: netWorthBounds.min,
-      max: netWorthBounds.max,
-      splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } },
-    },
-    series: [
-      {
-        name: 'Net Worth',
-        type: 'line',
-        smooth: netWorthCount > 2,
-        symbol: netWorthCount <= 2 && isMobile ? 'circle' : 'none',
-        symbolSize: 6,
-        clip: true,
-        lineStyle: { width: 2, color: 'hsl(217,91%,60%)' },
-        areaStyle: { opacity: netWorthCount <= 2 ? 0.05 : 0.08, color: 'hsl(217,91%,60%)', origin: 'start' },
-        data: netWorthValues,
-      },
-    ],
-  }), [filteredSnapshots, isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthValues])
-
   const allocationOption = useMemo<EChartsOption>(
     () => donutOption(allocationColorData),
     [allocationColorData],
@@ -544,35 +417,6 @@ export default function Charts() {
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-24 px-4 space-y-4">
       <h1 className="text-xl font-bold">Charts</h1>
-
-      {filteredSnapshots.length > 1 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="text-sm text-muted-foreground">Net Worth Over Time</CardTitle>
-              <div className="flex items-center gap-1 flex-wrap justify-end">
-                {NET_WORTH_RANGES.map((range) => (
-                  <button
-                    key={range}
-                    type="button"
-                    onClick={() => setNetWorthRange(range)}
-                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                      netWorthRange === range
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-transparent text-muted-foreground border-border'
-                    }`}
-                  >
-                    {range}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ReactECharts option={netWorthOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
