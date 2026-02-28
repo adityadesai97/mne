@@ -261,7 +261,13 @@ export default function Settings() {
             onEnable={async () => {
               setPushEnabled(true)
               setPushLoading(true)
-              try { await subscribeToPush() }
+              try {
+                await subscribeToPush()
+                const next = { ...settingsRef.current, price_alerts_enabled: true, vest_alerts_enabled: true, capital_gains_alerts_enabled: true }
+                setSettings(next)
+                settingsRef.current = next
+                await saveSettings(next)
+              }
               catch (e: any) { console.error('Push subscribe failed:', e.message); setPushEnabled(false) }
               finally { setPushLoading(false) }
             }}
