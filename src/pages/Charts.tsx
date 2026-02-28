@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
+import { refreshAllPrices } from '@/lib/db/tickers'
+import { config } from '@/store/config'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   groupByAssetType,
@@ -122,6 +126,17 @@ export default function Charts() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  const handleRefresh = useCallback(async () => {
+    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    const [fresh] = await Promise.all([
+      getAllAssets().catch(() => assets),
+      getSnapshots().then(setSnapshots).catch(console.error),
+    ])
+    setAssets((fresh as any[]) ?? assets)
+  }, [assets])
+
+  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   function toggleSubtype(s: Subtype) {
     setActiveSubtypes((prev) => {
@@ -525,6 +540,8 @@ export default function Charts() {
   }
 
   return (
+    <>
+    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-24 px-4 space-y-4">
       <h1 className="text-xl font-bold">Charts</h1>
 
@@ -710,5 +727,6 @@ export default function Charts() {
         </Card>
       )}
     </div>
+    </>
   )
 }

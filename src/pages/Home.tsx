@@ -1,5 +1,5 @@
 // src/pages/Home.tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { animate } from 'framer-motion'
 import { TrendingUp, TrendingDown } from 'lucide-react'
@@ -9,6 +9,10 @@ import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
+import { refreshAllPrices } from '@/lib/db/tickers'
+import { config } from '@/store/config'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 
 const TYPE_COLORS: Record<string, string> = {
   Stock: '#3B82F6',
@@ -94,6 +98,17 @@ export default function Home() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  const handleRefresh = useCallback(async () => {
+    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    const [fresh] = await Promise.all([
+      getAllAssets().catch(() => assets),
+      getSnapshots().then(setSnapshots).catch(console.error),
+    ])
+    setAssets((fresh as any[]) ?? assets)
+  }, [assets])
+
+  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const totalValue = computeTotalNetWorth(assets)
 
@@ -276,6 +291,8 @@ export default function Home() {
   }
 
   return (
+    <>
+    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
       {/* TOP GRID: Net Worth Hero + Allocation */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -414,5 +431,6 @@ export default function Home() {
 
       </div>
     </div>
+    </>
   )
 }
