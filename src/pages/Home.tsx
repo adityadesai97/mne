@@ -102,10 +102,29 @@ export default function Home() {
       .filter((point) => point?.date && Number.isFinite(Number(point.value)))
       .map((point) => ({ date: point.date, value: Number(point.value) }))
 
-    if (valid.length > 0) return valid
+    if (valid.length === 0) {
+      const today = new Date().toISOString().slice(0, 10)
+      return [{ date: today, value: totalValue }]
+    }
 
-    const today = new Date().toISOString().slice(0, 10)
-    return [{ date: today, value: totalValue }]
+    const range = (localStorage.getItem('mne_home_chart_range') ?? '1Y') as '1M' | '3M' | '6M' | '1Y' | 'ALL'
+    if (valid.length <= 1 || range === 'ALL') return valid
+
+    const latest = valid[valid.length - 1]
+    const endDate = new Date(`${latest.date}T00:00:00`)
+    if (Number.isNaN(endDate.getTime())) return valid
+
+    const startDate = new Date(endDate)
+    if (range === '1M') startDate.setMonth(startDate.getMonth() - 1)
+    if (range === '3M') startDate.setMonth(startDate.getMonth() - 3)
+    if (range === '6M') startDate.setMonth(startDate.getMonth() - 6)
+    if (range === '1Y') startDate.setFullYear(startDate.getFullYear() - 1)
+
+    const filtered = valid.filter(point => {
+      const d = new Date(`${point.date}T00:00:00`)
+      return !Number.isNaN(d.getTime()) && d >= startDate
+    })
+    return filtered.length >= 2 ? filtered : valid.slice(Math.max(0, valid.length - 2))
   }, [snapshots, totalValue])
 
   const netWorthValues = useMemo(() => netWorthSeries.map((point) => point.value), [netWorthSeries])

@@ -84,6 +84,16 @@ export default function Settings() {
     vest_alerts_enabled: true,
     capital_gains_alerts_enabled: true,
   })
+  const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
+  type HomeChartRange = typeof HOME_CHART_RANGES[number]
+  const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
+    () => (localStorage.getItem('mne_home_chart_range') as HomeChartRange) ?? '1Y'
+  )
+  function handleHomeChartRangeChange(v: HomeChartRange) {
+    localStorage.setItem('mne_home_chart_range', v)
+    setHomeChartRangeState(v)
+  }
+
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
@@ -217,9 +227,29 @@ export default function Settings() {
 
       {/* Appearance */}
       <SectionHeader><Sun size={10} className="inline mr-1.5 mb-0.5" />Appearance</SectionHeader>
-      <div className="bg-card rounded-xl px-4 py-4 space-y-2">
-        <p className="text-sm font-medium">Theme</p>
-        <ThemePicker value={theme} onChange={handleThemeChange} />
+      <div className="space-y-2">
+        <div className="bg-card rounded-xl px-4 py-4 space-y-2">
+          <p className="text-sm font-medium">Theme</p>
+          <ThemePicker value={theme} onChange={handleThemeChange} />
+        </div>
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Home chart range</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Time window shown in the net worth chart</p>
+          </div>
+          <div className="flex items-center gap-1 bg-muted/60 rounded-lg p-1">
+            {HOME_CHART_RANGES.map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => handleHomeChartRangeChange(r)}
+                className={`text-xs px-2.5 py-1 rounded-md transition-colors ${homeChartRange === r ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* AI */}
