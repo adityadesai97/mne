@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Input } from '@/components/ui/input'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 
 function normalizeErrorMessage(message: string): string {
@@ -172,7 +171,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth < 768)
   const threadRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const msgIdRef = useRef(0)
 
   function nextId() { return ++msgIdRef.current }
@@ -183,6 +182,11 @@ export function CommandBar({ open, onClose }: Props) {
     } catch {
       inputRef.current.focus()
     }
+  }, [])
+
+  const autoGrow = useCallback((el: HTMLTextAreaElement) => {
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`
   }, [])
 
   useEffect(() => {
@@ -259,6 +263,10 @@ export function CommandBar({ open, onClose }: Props) {
       msgIdRef.current = 0
     }
   }, [open])
+
+  useEffect(() => {
+    if (inputRef.current) autoGrow(inputRef.current)
+  }, [query, autoGrow])
 
   function buildHistory(newUserContent: string): Message[] {
     const history: Message[] = displayMessages.flatMap((m): Message[] => {
@@ -362,14 +370,19 @@ export function CommandBar({ open, onClose }: Props) {
                   transition={{ duration: 0.12, delay: 0.08 }}
                 >
                   <div className="flex items-center border-b border-border px-4 py-3">
-                    <Input
+                    <textarea
                       ref={inputRef}
                       autoFocus
+                      rows={1}
                       placeholder="Ask anything or issue a command..."
                       value={query}
                       onChange={e => setQuery(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose() }}
-                      className="border-0 focus-visible:ring-0 text-base bg-transparent"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                        if (e.key === 'Escape') onClose()
+                      }}
+                      className="w-full border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                      style={{ maxHeight: '144px' }}
                     />
                   </div>
                   {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
@@ -433,13 +446,18 @@ export function CommandBar({ open, onClose }: Props) {
                     </AnimatePresence>
                   </div>
                   <div className="border-t border-border px-4 py-3">
-                    <Input
+                    <textarea
                       ref={inputRef}
+                      rows={1}
                       placeholder="Reply..."
                       value={query}
                       onChange={e => setQuery(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose() }}
-                      className="border-0 focus-visible:ring-0 text-base bg-transparent"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                        if (e.key === 'Escape') onClose()
+                      }}
+                      className="w-full border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                      style={{ maxHeight: '144px' }}
                     />
                   </div>
                 </motion.div>
@@ -554,7 +572,7 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <span className="bg-muted text-foreground text-sm px-3 py-1.5 rounded-full max-w-[80%]">
+        <span className="bg-muted text-foreground text-sm px-3 py-2 rounded-2xl max-w-[80%] whitespace-pre-wrap break-words">
           {message.content}
         </span>
       </div>
