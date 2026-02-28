@@ -1,12 +1,14 @@
 // src/pages/Watchlist.tsx
-import { useEffect, useState } from 'react'
-import { deleteTicker, getAllTickers, upsertTicker } from '@/lib/db/tickers'
+import { useCallback, useEffect, useState } from 'react'
+import { deleteTicker, getAllTickers, refreshAllPrices, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
+import { config } from '@/store/config'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { getAllThemes, getOrCreateTheme, addTickerTheme, removeTickerTheme } from '@/lib/db/themes'
 import { autoAssignThemesForTicker, autoAssignThemesForTickerIfEnabled } from '@/lib/autoThemes'
 import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
-import { config } from '@/store/config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Sparkles, Trash2, X } from 'lucide-react'
@@ -19,6 +21,13 @@ export default function Watchlist() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [deletingTickerId, setDeletingTickerId] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const loadTickers = async () => {
     const [allTickers, allAssets] = await Promise.all([getAllTickers(), getAllAssets()])
@@ -35,6 +44,13 @@ export default function Watchlist() {
   }
 
   useEffect(() => { loadTickers().catch(console.error) }, [])
+
+  const handleRefresh = useCallback(async () => {
+    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    await loadTickers().catch(console.error)
+  }, [])
+
+  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,6 +130,8 @@ export default function Watchlist() {
   }
 
   return (
+    <>
+    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-4">
       <div className="flex items-center justify-between px-4 mb-4">
         <h1 className="text-xl font-bold">Watchlist</h1>
@@ -198,6 +216,7 @@ export default function Watchlist() {
         <p className="text-muted-foreground text-center mt-16">No tickers in watchlist yet.</p>
       )}
     </div>
+    </>
   )
 }
 

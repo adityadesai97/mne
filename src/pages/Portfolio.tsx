@@ -1,6 +1,10 @@
 // src/pages/Portfolio.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAllAssets } from '@/lib/db/assets'
+import { refreshAllPrices } from '@/lib/db/tickers'
+import { config } from '@/store/config'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
 
@@ -12,6 +16,7 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
 
   useEffect(() => {
     getAllAssets()
@@ -19,6 +24,20 @@ export default function Portfolio() {
       .catch(console.error)
       .finally(() => setAssetsLoaded(true))
   }, [])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const handleRefresh = useCallback(async () => {
+    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    const fresh = await getAllAssets().catch(() => assets)
+    setAssets((fresh as any[]) ?? assets)
+  }, [assets])
+
+  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const assetTypes = useMemo(() => {
     const types = new Set(assets.map((a) => a.asset_type as string))
@@ -79,6 +98,8 @@ export default function Portfolio() {
   }
 
   return (
+    <>
+    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-4">
       <div className="flex justify-between items-center px-4 mb-3">
         <h1 className="text-xl font-bold">Portfolio</h1>
@@ -132,5 +153,6 @@ export default function Portfolio() {
         </p>
       )}
     </div>
+    </>
   )
 }

@@ -43,3 +43,17 @@ export async function updateTickerPrice(symbol: string, price: number) {
     .eq('symbol', symbol)
   if (error) throw error
 }
+
+export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
+  const tickers = await getAllTickers()
+  const stockTickers = (tickers ?? []).filter((t: any) => t.symbol)
+  await Promise.all(stockTickers.map(async (ticker: any) => {
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker.symbol}&token=${finnhubApiKey}`)
+      const quote = await res.json()
+      if (quote.c && Number.isFinite(Number(quote.c))) {
+        await updateTickerPrice(ticker.symbol, Number(quote.c))
+      }
+    } catch { /* best-effort per ticker */ }
+  }))
+}
