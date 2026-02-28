@@ -48,7 +48,7 @@ export async function saveSettings(settings: Record<string, unknown>) {
   if (!user) throw new Error('Not authenticated')
   const { error } = await getSupabaseClient()
     .from('user_settings')
-    .upsert({ ...settings, user_id: user.id })
+    .upsert({ ...settings, user_id: user.id }, { onConflict: 'user_id' })
   if (error) throw error
 }
 
