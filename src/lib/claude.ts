@@ -1185,9 +1185,9 @@ For sell_shares, require the source account/location name. For lot selection, re
 - single-lot: purchase_date + count
 - multi-lot: lots[] with purchase_date + count for each lot
 If lot details are missing, ask a follow-up question.
-When the user requests multiple new assets/tickers in one message, process them sequentially.
-If required details are missing, ask follow-up questions for only the first unresolved asset and wait for the user's answer before moving to the next one.
-When all required details are present for multiple assets, you MUST return multiple tool calls in a single response — one per asset.
+When the user provides 2 or more stock purchases and all details are present, use add_stock_transactions with a transactions array.
+When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
+If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
@@ -1345,6 +1345,34 @@ const tools: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'add_stock_transactions',
+    description: 'Add multiple stock transactions at once. Use this when the user provides 2 or more stock purchases in one request.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        transactions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+              count: { type: 'number', description: 'Number of shares' },
+              cost_price: { type: 'number', description: 'Price per share at purchase' },
+              purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+              subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+              asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+              location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+              ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+            },
+            required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
+          },
+        },
+      },
+      required: ['transactions'],
+    },
+  },
+  {
     name: 'add_cash_asset',
     description: 'Add a non-stock asset: 401k, CD, Cash, Deposit, or HSA',
     input_schema: {
@@ -1359,6 +1387,32 @@ const tools: Anthropic.Tool[] = [
         notes: { type: 'string', description: 'Optional notes' },
       },
       required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
+    },
+  },
+  {
+    name: 'add_cash_assets',
+    description: 'Add multiple non-stock assets (401k, CD, Cash, Deposit, HSA) at once.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        assets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Name of the account' },
+              asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
+              location_name: { type: 'string', description: 'Institution name' },
+              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+              ownership: { type: 'string', enum: ['Individual', 'Joint'] },
+              price: { type: 'number', description: 'Current value in dollars' },
+              notes: { type: 'string', description: 'Optional notes' },
+            },
+            required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
+          },
+        },
+      },
+      required: ['assets'],
     },
   },
   {
@@ -1495,7 +1549,9 @@ const READ_TOOL_NAMES = new Set([
 
 const WRITE_TOOL_NAMES = new Set([
   'add_stock_transaction',
+  'add_stock_transactions',
   'add_cash_asset',
+  'add_cash_assets',
   'add_ticker_to_watchlist',
   'add_ticker_themes',
   'add_rsu_grant',
@@ -1503,6 +1559,114 @@ const WRITE_TOOL_NAMES = new Set([
   'sell_shares',
   'update_asset_value',
 ])
+
+type ConfirmationPreviewSection = {
+  title: string
+  columns: string[]
+  rows: string[][]
+}
+
+function numberToText(value: unknown, maxFractionDigits = 4): string {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toLocaleString('en-US', { maximumFractionDigits: maxFractionDigits })
+}
+
+function moneyToText(value: unknown): string {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function dateToText(value: unknown): string {
+  const text = String(value ?? '').trim()
+  return text || '-'
+}
+
+function mergePreviewSections(sections: ConfirmationPreviewSection[]): ConfirmationPreviewSection[] {
+  const merged = new Map<string, ConfirmationPreviewSection>()
+  for (const section of sections) {
+    const key = `${section.title}::${section.columns.join('|')}`
+    const existing = merged.get(key)
+    if (!existing) {
+      merged.set(key, {
+        title: section.title,
+        columns: [...section.columns],
+        rows: [...section.rows],
+      })
+      continue
+    }
+    existing.rows.push(...section.rows)
+  }
+  return [...merged.values()]
+}
+
+function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPreviewSection[] {
+  if (toolName === 'add_stock_transaction' || toolName === 'add_stock_transactions') {
+    const transactions = toolName === 'add_stock_transactions'
+      ? (Array.isArray(input.transactions) ? input.transactions : [])
+      : [input]
+    if (transactions.length === 0) return []
+
+    return [{
+      title: 'Stock Transactions',
+      columns: ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account'],
+      rows: transactions.map((tx: any) => [
+        String(tx?.symbol ?? '').toUpperCase() || '-',
+        numberToText(tx?.count),
+        moneyToText(tx?.cost_price),
+        dateToText(tx?.purchase_date),
+        String(tx?.subtype ?? 'Market'),
+        String(tx?.location_name ?? '').trim() || '-',
+        String(tx?.account_type ?? '').trim() || '-',
+      ]),
+    }]
+  }
+
+  if (toolName === 'add_cash_asset' || toolName === 'add_cash_assets') {
+    const assets = toolName === 'add_cash_assets'
+      ? (Array.isArray(input.assets) ? input.assets : [])
+      : [input]
+    if (assets.length === 0) return []
+
+    return [{
+      title: 'Non-Stock Assets',
+      columns: ['Name', 'Type', 'Value', 'Location', 'Account', 'Ownership'],
+      rows: assets.map((asset: any) => [
+        String(asset?.name ?? '').trim() || '-',
+        String(asset?.asset_type ?? '').trim() || '-',
+        moneyToText(asset?.price),
+        String(asset?.location_name ?? '').trim() || '-',
+        String(asset?.account_type ?? '').trim() || '-',
+        String(asset?.ownership ?? '').trim() || '-',
+      ]),
+    }]
+  }
+
+  if (toolName === 'add_rsu_grant' || toolName === 'add_rsu_grants') {
+    const grants = toolName === 'add_rsu_grants'
+      ? (Array.isArray(input.grants) ? input.grants : [])
+      : [input]
+    if (grants.length === 0) return []
+
+    return [{
+      title: 'RSU Grants',
+      columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Location', 'Account'],
+      rows: grants.map((grant: any) => [
+        String(grant?.symbol ?? '').toUpperCase() || '-',
+        numberToText(grant?.total_shares),
+        dateToText(grant?.grant_date),
+        dateToText(grant?.vest_start),
+        dateToText(grant?.vest_end),
+        dateToText(grant?.cliff_date),
+        String(grant?.location_name ?? '').trim() || '-',
+        String(grant?.account_type ?? '').trim() || '-',
+      ]),
+    }]
+  }
+
+  return []
+}
 
 function confirmationMessageFor(toolName: string, input: any): string {
   switch (toolName) {
@@ -1513,8 +1677,16 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const gainStatus = date < oneYearAgo ? 'Long Term' : 'Short Term'
       return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${input.purchase_date} (${gainStatus}, ${input.subtype || 'Market'})`
     }
+    case 'add_stock_transactions': {
+      const transactions = Array.isArray(input.transactions) ? input.transactions : []
+      return `Add ${transactions.length} stock transaction${transactions.length === 1 ? '' : 's'}`
+    }
     case 'add_cash_asset':
       return `Add ${input.asset_type} account "${input.name}" at ${input.location_name} worth $${Number(input.price).toLocaleString()}`
+    case 'add_cash_assets': {
+      const assets = Array.isArray(input.assets) ? input.assets : []
+      return `Add ${assets.length} non-stock asset${assets.length === 1 ? '' : 's'}`
+    }
     case 'add_ticker_to_watchlist':
       return `Add ${input.symbol.toUpperCase()} to watchlist`
     case 'add_ticker_themes': {
@@ -1525,9 +1697,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
     }
     case 'add_rsu_grants': {
       const grants = Array.isArray(input.grants) ? input.grants : []
-      const symbol = grants[0]?.symbol?.toUpperCase() ?? '?'
-      const lines = grants.map((g: any) => `  • ${g.total_shares} shares on ${g.grant_date} (vests ${g.vest_start} → ${g.vest_end})`).join('\n')
-      return `Record ${grants.length} RSU grants for ${symbol}:\n${lines}`
+      return `Record ${grants.length} RSU grant${grants.length === 1 ? '' : 's'}`
     }
     case 'add_rsu_grant':
       return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${input.grant_date} (vests ${input.vest_start} → ${input.vest_end})`
@@ -1671,6 +1841,15 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     return
   }
 
+  if (toolName === 'add_cash_assets') {
+    const assets = Array.isArray(input.assets) ? input.assets : []
+    if (assets.length === 0) throw new Error('assets is required and must contain at least one item')
+    for (const asset of assets) {
+      await executeTool('add_cash_asset', asset, userId)
+    }
+    return
+  }
+
   if (toolName === 'add_stock_transaction') {
     const symbol = input.symbol.toUpperCase()
     const subtype = input.subtype || 'Market'
@@ -1747,6 +1926,15 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       capital_gains_status,
     })
     if (error) throw new Error(`Failed to create transaction: ${error.message}`)
+  }
+
+  if (toolName === 'add_stock_transactions') {
+    const transactions = Array.isArray(input.transactions) ? input.transactions : []
+    if (transactions.length === 0) throw new Error('transactions is required and must contain at least one item')
+    for (const tx of transactions) {
+      await executeTool('add_stock_transaction', tx, userId)
+    }
+    return
   }
 
   if (toolName === 'add_rsu_grant') {
@@ -2318,6 +2506,21 @@ export async function runCommand(messages: Message[]): Promise<any> {
   })
 
   addTrace('Received user command', clipText(lastUserContent, 180))
+  const supabase = getSupabaseClient()
+  const { data: authData, error: authError } = await supabase.auth.getUser()
+  if (authError) {
+    addTrace('Authentication check failed', authError.message)
+    throw new Error(`Authentication failed: ${authError.message}`)
+  }
+  const authedUser = authData?.user
+  if (!authedUser) {
+    addTrace('Blocked unauthenticated command')
+    return withTrace({
+      type: 'text',
+      message: 'Sign in to use command bar commands.',
+    })
+  }
+
   if (/^create:mock_data$/i.test(lastUserContent)) return createMockDataCommand()
   if (/^delete:all_data$/i.test(lastUserContent)) return deleteAllDataCommand()
   const notifMatch = /^create:mock_notification:(capital_gains|price_movement|rsu_grant)$/i.exec(lastUserContent)
@@ -2334,14 +2537,13 @@ export async function runCommand(messages: Message[]): Promise<any> {
     })
   }
 
-  const [assets, allTickers, { data: { user } }] = await Promise.all([
+  const [assets, allTickers] = await Promise.all([
     getAllAssets(),
     getAllTickers(),
-    getSupabaseClient().auth.getUser(),
   ])
   addTrace('Loaded portfolio state', `${assets.length} asset(s), ${allTickers.length} ticker(s)`)
 
-  const userName = (user?.user_metadata?.full_name ?? user?.user_metadata?.name)
+  const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
   const client = new Anthropic({ apiKey: config.claudeApiKey, dangerouslyAllowBrowser: true })
   const baseSystemPrompt = buildSystemPrompt(assets, userName)
@@ -2500,6 +2702,7 @@ ${JSON.stringify(expandedContext, null, 2)}`
 
   const buildWriteConfirmation = (name: string, input: any) => ({
     confirmationMessage: confirmationMessageFor(name, input),
+    previewSections: buildPreviewSectionsFor(name, input),
     execute: async () => {
       const supabase = getSupabaseClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -2517,9 +2720,18 @@ ${JSON.stringify(expandedContext, null, 2)}`
     }
   }
 
-  addTrace('Prepared write confirmation queue', `${confirmations.length} action(s)`)
+  const mergedSections = mergePreviewSections(
+    confirmations.flatMap((confirmation) => confirmation.previewSections ?? []),
+  )
+  addTrace('Prepared batched write confirmation', `${confirmations.length} action(s)`)
   return {
-    type: 'write_confirm_queue',
-    confirmations,
+    type: 'write_confirm',
+    confirmationMessage: `Apply ${confirmations.length} actions in one batch?`,
+    previewSections: mergedSections,
+    execute: async () => {
+      for (const confirmation of confirmations) {
+        await confirmation.execute()
+      }
+    },
   }
 }

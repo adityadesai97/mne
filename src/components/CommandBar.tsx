@@ -475,6 +475,61 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   const [error, setError] = useState<string | null>(null)
   const [queueIndex, setQueueIndex] = useState(0)
 
+  const PreviewSections = ({ sections }: { sections: any[] }) => {
+    if (!Array.isArray(sections) || sections.length === 0) return null
+    return (
+      <div className="space-y-2">
+        {sections.map((section, idx) => {
+          const title = String(section?.title ?? '').trim() || `Items ${idx + 1}`
+          const columns = Array.isArray(section?.columns) ? section.columns.map((col: unknown) => String(col ?? '')) : []
+          const rows = Array.isArray(section?.rows) ? section.rows : []
+          if (columns.length === 0) return null
+
+          return (
+            <div key={`${title}-${idx}`} className="rounded-md border border-border/70 overflow-hidden">
+              <p className="px-2 py-1 text-[11px] font-medium bg-muted/40">{title}</p>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-muted/20">
+                    <tr>
+                      {columns.map((column: string, columnIdx: number) => (
+                        <th key={columnIdx} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length === 0 ? (
+                      <tr className="border-t border-border/60">
+                        <td colSpan={columns.length} className="px-2 py-1.5 text-muted-foreground">
+                          No items
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row: unknown, rowIdx: number) => {
+                        const cells = Array.isArray(row) ? row : []
+                        return (
+                          <tr key={rowIdx} className="border-t border-border/60">
+                            {columns.map((_: string, columnIdx: number) => (
+                              <td key={columnIdx} className="px-2 py-1.5 align-top whitespace-nowrap">
+                                {String(cells[columnIdx] ?? '-')}
+                              </td>
+                            ))}
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   if (action.type === 'navigate') {
     return <p className="p-4 text-sm text-gain">Navigating to {action.route}...</p>
   }
@@ -492,6 +547,7 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
       <div className="p-4 space-y-3">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Confirm Action {progress}</p>
         <p className="text-sm">{current.confirmationMessage}</p>
+        <PreviewSections sections={current.previewSections} />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
           <button
@@ -531,7 +587,9 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   if (action.type === 'write_confirm') {
     return (
       <div className="p-4 space-y-3">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Confirm Action</p>
         <p className="text-sm">{action.confirmationMessage}</p>
+        <PreviewSections sections={action.previewSections} />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
           <button
