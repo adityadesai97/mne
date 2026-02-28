@@ -299,12 +299,23 @@ export default function Settings() {
         </div>
 
         {pushEnabled && (
-          <>
+          <div className="ml-3 pl-3 border-l-2 border-border/40 space-y-1.5">
             {/* Price alerts */}
-            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">Price alerts</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Notify when a stock price moves significantly</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Alert when price moves by this %</p>
+              </div>
+              <div className={`flex items-center gap-1.5 transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
+                <Input
+                  type="number"
+                  value={settings.price_alert_threshold}
+                  onChange={e => setSettings(s => ({ ...s, price_alert_threshold: Number(e.target.value) }))}
+                  onBlur={() => saveSettings(settingsRef.current)}
+                  disabled={!settings.price_alerts_enabled}
+                  className="w-14 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
+                />
+                <span className="text-xs text-muted-foreground">%</span>
               </div>
               <Toggle
                 enabled={settings.price_alerts_enabled}
@@ -312,21 +323,23 @@ export default function Settings() {
                 onDisable={() => { void setNotificationToggle('price_alerts_enabled', false) }}
               />
             </div>
-            {settings.price_alerts_enabled && (
-              <NumberRow
-                label="Price alert threshold"
-                hint="Alert when price moves by this %"
-                value={settings.price_alert_threshold}
-                onChange={v => setSettings(s => ({ ...s, price_alert_threshold: v }))}
-                onBlur={() => saveSettings(settingsRef.current)}
-              />
-            )}
 
             {/* RSU vest reminders */}
-            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">RSU vest reminders</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Notify before RSU vest dates</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Days before vest end to notify</p>
+              </div>
+              <div className={`flex items-center gap-1.5 transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
+                <Input
+                  type="number"
+                  value={settings.rsu_alert_days_before}
+                  onChange={e => setSettings(s => ({ ...s, rsu_alert_days_before: Number(e.target.value) }))}
+                  onBlur={() => saveSettings(settingsRef.current)}
+                  disabled={!settings.vest_alerts_enabled}
+                  className="w-14 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
+                />
+                <span className="text-xs text-muted-foreground">days</span>
               </div>
               <Toggle
                 enabled={settings.vest_alerts_enabled}
@@ -334,21 +347,23 @@ export default function Settings() {
                 onDisable={() => { void setNotificationToggle('vest_alerts_enabled', false) }}
               />
             </div>
-            {settings.vest_alerts_enabled && (
-              <NumberRow
-                label="RSU vest reminder"
-                hint="Days before vest end to notify"
-                value={settings.rsu_alert_days_before}
-                onChange={v => setSettings(s => ({ ...s, rsu_alert_days_before: v }))}
-                onBlur={() => saveSettings(settingsRef.current)}
-              />
-            )}
 
             {/* Capital gains alerts */}
-            <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">Capital gains alerts</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Notify when tax lots are promoted to long term</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Alert when loss exceeds this amount</p>
+              </div>
+              <div className={`flex items-center gap-1.5 transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
+                <span className="text-xs text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={settings.tax_harvest_threshold}
+                  onChange={e => setSettings(s => ({ ...s, tax_harvest_threshold: Number(e.target.value) }))}
+                  onBlur={() => saveSettings(settingsRef.current)}
+                  disabled={!settings.capital_gains_alerts_enabled}
+                  className="w-18 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
+                />
               </div>
               <Toggle
                 enabled={settings.capital_gains_alerts_enabled}
@@ -356,16 +371,7 @@ export default function Settings() {
                 onDisable={() => { void setNotificationToggle('capital_gains_alerts_enabled', false) }}
               />
             </div>
-            {settings.capital_gains_alerts_enabled && (
-              <NumberRow
-                label="Tax harvest threshold"
-                hint="Alert when loss exceeds this amount ($)"
-                value={settings.tax_harvest_threshold}
-                onChange={v => setSettings(s => ({ ...s, tax_harvest_threshold: v }))}
-                onBlur={() => saveSettings(settingsRef.current)}
-              />
-            )}
-          </>
+          </div>
         )}
       </div>
 
