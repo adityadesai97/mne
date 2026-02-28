@@ -1187,7 +1187,8 @@ For sell_shares, require the source account/location name. For lot selection, re
 If lot details are missing, ask a follow-up question.
 When the user requests multiple new assets/tickers in one message, process them sequentially.
 If required details are missing, ask follow-up questions for only the first unresolved asset and wait for the user's answer before moving to the next one.
-When all required details are present for multiple assets, you may return multiple tool calls in order.
+When all required details are present for multiple assets, you MUST return multiple tool calls in a single response — one per asset.
+When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
 Today's date is ${new Date().toISOString().split('T')[0]}`
@@ -1388,8 +1389,38 @@ const tools: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'add_rsu_grants',
+    description: 'Record multiple RSU grant awards at once. Use this when the user provides 2 or more RSU grants in a single message.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        grants: {
+          type: 'array',
+          description: 'List of RSU grants to add',
+          items: {
+            type: 'object',
+            properties: {
+              symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+              grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the grant was awarded' },
+              total_shares: { type: 'number', description: 'Total shares in the grant' },
+              vest_start: { type: 'string', description: 'ISO date when vesting begins' },
+              vest_end: { type: 'string', description: 'ISO date when vesting ends' },
+              cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+              asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+              location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+              ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+            },
+            required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
+          },
+        },
+      },
+      required: ['grants'],
+    },
+  },
+  {
     name: 'add_rsu_grant',
-    description: 'Record an RSU grant award with its vesting schedule. Use this when the user receives a new RSU grant, not when shares vest.',
+    description: 'Record a single RSU grant award with its vesting schedule. Use add_rsu_grants (plural) instead when adding 2 or more grants.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -1468,6 +1499,7 @@ const WRITE_TOOL_NAMES = new Set([
   'add_ticker_to_watchlist',
   'add_ticker_themes',
   'add_rsu_grant',
+  'add_rsu_grants',
   'sell_shares',
   'update_asset_value',
 ])
@@ -1490,6 +1522,12 @@ function confirmationMessageFor(toolName: string, input: any): string {
         ? input.themes.map((theme: unknown) => String(theme).trim()).filter(Boolean)
         : []
       return `Add ${themes.join(', ')} theme${themes.length === 1 ? '' : 's'} to ${input.symbol.toUpperCase()}`
+    }
+    case 'add_rsu_grants': {
+      const grants = Array.isArray(input.grants) ? input.grants : []
+      const symbol = grants[0]?.symbol?.toUpperCase() ?? '?'
+      const lines = grants.map((g: any) => `  • ${g.total_shares} shares on ${g.grant_date} (vests ${g.vest_start} → ${g.vest_end})`).join('\n')
+      return `Record ${grants.length} RSU grants for ${symbol}:\n${lines}`
     }
     case 'add_rsu_grant':
       return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${input.grant_date} (vests ${input.vest_start} → ${input.vest_end})`
@@ -1777,6 +1815,13 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       cliff_date: input.cliff_date ?? null,
     })
     if (error) throw new Error(`Failed to create RSU grant: ${error.message}`)
+  }
+
+  if (toolName === 'add_rsu_grants') {
+    const grants = Array.isArray(input.grants) ? input.grants : []
+    for (const grant of grants) {
+      await executeTool('add_rsu_grant', grant, userId)
+    }
   }
 
   if (toolName === 'sell_shares') {

@@ -50,13 +50,17 @@ All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transac
 
 `src/lib/charts.ts` derives chart datasets (allocation, P&L, capital gains exposure, RSU vesting progress) by transforming the deeply-nested asset graph returned by `getAllAssets()`.
 
+### Pages
+
+Five pages in `src/pages/`: `Home` (net worth hero + chart), `Portfolio` (position cards), `Charts` (allocation/P&L/RSU charts), `Watchlist` (tickers + themes), `Settings` (API keys, notifications, appearance). All support pull-to-refresh on mobile via `usePullToRefresh` (`src/hooks/usePullToRefresh.ts`) + `PullToRefreshIndicator` (`src/components/PullToRefreshIndicator.tsx`).
+
+### user_settings Columns
+
+Key columns (all RLS-protected): `price_alert_threshold`, `tax_harvest_threshold`, `rsu_alert_days_before`, `auto_theme_assignment_enabled`, `price_alerts_enabled`, `vest_alerts_enabled`, `capital_gains_alerts_enabled`. Home chart range is in `localStorage` (`mne_home_chart_range`, values: `1M | 3M | 6M | 1Y | ALL`), not DB.
+
 ### Claude AI Commands
 
-`src/lib/claude.ts` is the core AI feature. The command bar (⌘K) collects natural language input and sends it to the Claude API. There are 16 tool definitions split into two groups:
-- **Read tools** (looped until a write/nav tool is chosen): `get_portfolio_summary`, `get_positions`, `get_transactions`, `get_net_worth_timeseries`, `get_exposure_breakdown`, `analyze_tax_lots`, `simulate_portfolio_actions`, `recommend_actions_for_goal`
-- **Write/nav tools**: `add_stock_transaction`, `add_cash_asset`, `add_rsu_grant`, `sell_shares`, `update_asset_value`, `add_ticker_to_watchlist`, `add_ticker_themes`, `navigate_to`
-
-`executeTool()` maps tool calls to the correct DB write + UI update. Write operations show a confirmation message before executing. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
+`src/lib/claude.ts` is the core AI feature. The command bar (⌘K) collects natural language input and sends it to the Claude API. Read tools loop until a write/nav tool is selected — full tool list in `src/lib/claude.ts`. `executeTool()` maps tool calls to the correct DB write + UI update. Write operations show a confirmation message before executing. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
 
 ### Edge Functions
 
@@ -108,3 +112,11 @@ VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 **Push notifications in production**: Requires `VITE_VAPID_PUBLIC_KEY` in `.env.local` and the three VAPID secrets (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) set in Supabase dashboard → Settings → Edge Functions → Secrets.
 
 **DB migrations**: Applied via Supabase MCP (`apply_migration` tool) or the Supabase dashboard SQL editor. There is no local Supabase CLI setup — all schema changes go directly to the hosted project. `supabase/sql/self_host_bootstrap.sql` is a standalone script to initialize a fresh Supabase project for self-hosting.
+
+**`saveSettings` upsert**: Must include `{ onConflict: 'user_id' }` in the upsert call or updates silently fail with a unique constraint error when a row already exists.
+
+**Missing `user_settings` columns**: A 400 from PostgREST on `/rest/v1/user_settings` often means a migration was never applied (column doesn't exist in DB), not a client bug. Check the response body for the actual column name.
+
+**`gh` CLI not available**: `gh` is not installed. Create PRs via the GitHub web URL printed by `git push` instead.
+
+**Notification edge functions**: Each `check-*` function reads `price_alerts_enabled` / `vest_alerts_enabled` / `capital_gains_alerts_enabled` from `user_settings` and skips push (but not DB promotion) when false.
