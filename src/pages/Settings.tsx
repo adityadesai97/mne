@@ -38,29 +38,6 @@ function Row({ label, hint, right, onClick, destructive, disabled }: {
   )
 }
 
-function NumberRow({ label, hint, value, onChange, onBlur }: {
-  label: string
-  hint?: string
-  value: number
-  onChange: (v: number) => void
-  onBlur: () => void
-}) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
-      </div>
-      <Input
-        type="number"
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        onBlur={onBlur}
-        className="w-20 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
-      />
-    </div>
-  )
-}
 
 function Toggle({ enabled, onEnable, onDisable }: { enabled: boolean; onEnable: () => void; onDisable: () => void }) {
   return (
