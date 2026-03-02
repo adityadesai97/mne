@@ -18,6 +18,14 @@ export interface NormalizedResponse {
   choices: [{ message: { content: string | null; tool_calls?: NormalizedToolCall[] } }]
 }
 
+export interface LLMClient {
+  chat: {
+    completions: {
+      create(params: { model: string; max_tokens?: number; messages: any[]; tools?: any[] }): Promise<NormalizedResponse>
+    }
+  }
+}
+
 // ── Convert OpenAI-format messages → Anthropic format ────────────────────────
 function toAnthropicMessages(messages: any[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = []
@@ -46,7 +54,7 @@ function toAnthropicMessages(messages: any[]): Anthropic.MessageParam[] {
     } else if (msg.role === 'tool') {
       result.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: msg.tool_call_id, content: msg.content }] })
     } else {
-      result.push({ role: msg.role, content: msg.content })
+      result.push({ role: msg.role, content: msg.content ?? '' })
     }
     i++
   }
@@ -103,10 +111,10 @@ class ClaudeAdapter {
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
-export function createLLMClient(provider: LLMProvider, apiKey: string): ClaudeAdapter | OpenAI {
+export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClient {
   if (provider === 'claude') return new ClaudeAdapter(apiKey)
   const baseURL = provider === 'groq'
     ? 'https://api.groq.com/openai/v1'
     : 'https://generativelanguage.googleapis.com/v1beta/openai'
-  return new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: true })
+  return new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: true }) as unknown as LLMClient
 }
