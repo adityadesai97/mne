@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import { config } from '@/store/config'
 import { getSupabaseClient } from './supabase'
 
@@ -54,22 +54,25 @@ async function fetchTickerProfile(symbol: string): Promise<{ name: string; indus
   }
 }
 
-async function suggestTickerThemesWithClaude(
+async function suggestTickerThemes(
   symbol: string,
   existingThemes: string[],
   profile: { name: string; industry: string },
 ): Promise<string[]> {
-  if (!config.claudeApiKey) return []
+  if (!config.activeApiKey) return []
 
-  const client = new Anthropic({ apiKey: config.claudeApiKey, dangerouslyAllowBrowser: true })
+  const client = createLLMClient(config.llmProvider, config.activeApiKey)
   const existingThemeList = existingThemes.slice(0, 80)
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const response = await client.chat.completions.create({
+      model: MODEL_FOR_PROVIDER[config.llmProvider],
       max_tokens: 180,
-      system: 'Return only valid JSON in shape {"themes":["Theme 1","Theme 2"]}. No extra text.',
       messages: [
+        {
+          role: 'system',
+          content: 'Return only valid JSON in shape {"themes":["Theme 1","Theme 2"]}. No extra text.',
+        },
         {
           role: 'user',
           content: `Suggest 1-3 investment themes for ticker ${symbol}.
@@ -85,9 +88,9 @@ Rules:
       ],
     })
 
-    const text = response.content.find((block) => block.type === 'text')
-    if (!text || text.type !== 'text') return []
-    return parseThemeSuggestions(text.text)
+    const text = response.choices[0]?.message?.content ?? ''
+    if (!text) return []
+    return parseThemeSuggestions(text)
   } catch {
     return []
   }
@@ -131,7 +134,7 @@ export async function autoAssignThemesForTicker(params: {
     .filter(Boolean)
 
   const profile = await fetchTickerProfile(symbol)
-  let suggestedThemes = await suggestTickerThemesWithClaude(symbol, existingThemeNames, profile)
+  let suggestedThemes = await suggestTickerThemes(symbol, existingThemeNames, profile)
   if (suggestedThemes.length === 0 && profile.industry) {
     suggestedThemes = [profile.industry]
   }
