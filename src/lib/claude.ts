@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import type { NormalizedResponse } from './llm'
 import { config } from '@/store/config'
@@ -1162,12 +1161,8 @@ function summarizeReadToolResult(toolName: string, result: any): string {
   return clipText(result, 160)
 }
 
-function extractTextFromClaudeResponse(response: any): string {
-  return (response?.content ?? [])
-    .filter((block: any) => block.type === 'text')
-    .map((block: any) => String(block.text ?? '').trim())
-    .filter(Boolean)
-    .join('\n')
+function extractTextFromResponse(response: NormalizedResponse): string {
+  return response.choices[0]?.message?.content ?? ''
 }
 
 export function buildSystemPrompt(assets: any[], userName?: string): string {
@@ -2604,15 +2599,14 @@ export async function runCommand(messages: Message[]): Promise<any> {
 
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
-  const client = new Anthropic({ apiKey: config.claudeApiKey, dangerouslyAllowBrowser: true })
+  const client = createLLMClient(config.llmProvider, config.activeApiKey)
   const baseSystemPrompt = buildSystemPrompt(assets, userName)
 
-  const runClaude = async (systemPrompt: string, inputMessages: any) => client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
+    model: MODEL_FOR_PROVIDER[config.llmProvider],
     max_tokens: 1024,
-    system: systemPrompt,
-    messages: inputMessages,
-    tools: tools as any,
+    messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
+    tools,
   })
 
   const shouldAttachComputedContext = isAnalyticalQuestion(lastUserContent) || mentionsNetWorth(lastUserContent)
@@ -2637,7 +2631,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
   }
 
   let claudeMessages: any[] = [...messages]
-  let response = await runClaude(systemPrompt, claudeMessages)
+  let response = await runLLM(systemPrompt, claudeMessages)
   addTrace('Initial model pass complete')
 
   let snapshotsCache: any[] | null = null
@@ -2654,7 +2648,12 @@ ${JSON.stringify(analysisContext, null, 2)}`
 
   const maxReadToolRounds = 3
   for (let round = 0; round < maxReadToolRounds; round += 1) {
-    const toolUsesInRound = response.content.filter((b): b is any => b.type === 'tool_use')
+    const rawToolCallsInRound = response.choices[0]?.message?.tool_calls ?? []
+    const toolUsesInRound = rawToolCallsInRound.map(tc => ({
+      id: tc.id,
+      name: tc.function.name,
+      input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
+    }))
     if (toolUsesInRound.length === 0) {
       addTrace('No read tools requested', `Round ${round + 1}`)
       break
@@ -2671,7 +2670,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
 
     addTrace('Executing read tools', `Round ${round + 1}, ${readToolUses.length} tool call(s)`)
 
-    const toolResultBlocks = await Promise.all(readToolUses.map(async (tool) => {
+    const toolResultMessages = await Promise.all(readToolUses.map(async (tool) => {
       try {
         const result = await executeReadTool(tool.name, tool.input, {
           assets,
@@ -2681,39 +2680,30 @@ ${JSON.stringify(analysisContext, null, 2)}`
           `Read tool: ${tool.name}`,
           `${summarizeReadToolResult(tool.name, result)}${tool.input ? ` | input ${clipText(tool.input, 120)}` : ''}`,
         )
-        return {
-          type: 'tool_result' as const,
-          tool_use_id: tool.id,
-          content: JSON.stringify({ ok: true, result }),
-        }
+        return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: true, result }) }
       } catch (error: any) {
         addTrace(`Read tool failed: ${tool.name}`, String(error?.message ?? 'Read tool failed'))
-        return {
-          type: 'tool_result' as const,
-          tool_use_id: tool.id,
-          content: JSON.stringify({ ok: false, error: String(error?.message ?? 'Read tool failed') }),
-        }
+        return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: false, error: String(error?.message ?? 'Read tool failed') }) }
       }
     }))
 
     claudeMessages = [
       ...claudeMessages,
-      { role: 'assistant', content: response.content as any },
-      { role: 'user', content: toolResultBlocks as any },
+      { role: 'assistant' as const, content: response.choices[0].message.content ?? null, tool_calls: response.choices[0].message.tool_calls },
+      ...toolResultMessages,
     ]
-    response = await runClaude(systemPrompt, claudeMessages)
+    response = await runLLM(systemPrompt, claudeMessages)
     addTrace('Model re-run with read tool results', `Round ${round + 1}`)
   }
 
   const maxReasoningSteps = 2
   for (let step = 0; step < maxReasoningSteps; step += 1) {
-    const toolUsesInLoop = response.content.filter((b): b is any => b.type === 'tool_use')
-    if (toolUsesInLoop.length > 0) {
+    if ((response.choices[0]?.message?.tool_calls?.length ?? 0) > 0) {
       addTrace('Exited clarification loop', 'Model emitted tool calls')
       break
     }
 
-    const assistantText = extractTextFromClaudeResponse(response)
+    const assistantText = extractTextFromResponse(response)
     if (!looksLikePortfolioDetailQuestion(assistantText)) {
       addTrace('Clarification loop not needed')
       break
@@ -2733,28 +2723,33 @@ ${JSON.stringify(expandedContext, null, 2)}`
       { role: 'assistant', content: assistantText },
       { role: 'user', content: hiddenFollowUp },
     ]
-    response = await runClaude(baseSystemPrompt, claudeMessages)
+    response = await runLLM(baseSystemPrompt, claudeMessages)
     addTrace('Model re-run with expanded context', `Step ${step + 1}`)
   }
 
-  const toolUses = response.content.filter((b): b is any => b.type === 'tool_use')
+  const rawFinalCalls = response.choices[0]?.message?.tool_calls ?? []
+  const toolUses = rawFinalCalls.map(tc => ({
+    id: tc.id,
+    name: tc.function.name,
+    input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
+  }))
   if (toolUses.length === 0) {
-    const text = extractTextFromClaudeResponse(response)
+    const text = extractTextFromResponse(response)
     addTrace('Returned final text response')
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
   }
 
-  const navigateTool = toolUses.find((tool) => tool.name === 'navigate_to')
-  const writeTools = toolUses.filter((tool) => WRITE_TOOL_NAMES.has(tool.name))
+  const navigateTool = toolUses.find(tool => tool.name === 'navigate_to')
+  const writeTools = toolUses.filter(tool => WRITE_TOOL_NAMES.has(tool.name))
 
   if (writeTools.length === 0 && navigateTool) {
-    addTrace('Performed navigation', String((navigateTool.input as any).route ?? ''))
-    window.location.href = (navigateTool.input as any).route
-    return { type: 'navigate', route: (navigateTool.input as any).route }
+    addTrace('Performed navigation', String(navigateTool.input.route ?? ''))
+    window.location.href = navigateTool.input.route
+    return { type: 'navigate', route: navigateTool.input.route }
   }
 
   if (writeTools.length === 0) {
-    const text = extractTextFromClaudeResponse(response)
+    const text = extractTextFromResponse(response)
     addTrace('Returned final text response')
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
   }
