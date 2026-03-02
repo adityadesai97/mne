@@ -375,7 +375,7 @@ export default function Settings() {
                 <p className="text-sm font-medium">Price alerts</p>
                 <Hint text="Alert when price moves by this %" />
               </div>
-              <div className={`flex items-center gap-1.5 transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
+              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
                   value={settings.price_alert_threshold}
@@ -399,7 +399,7 @@ export default function Settings() {
                 <p className="text-sm font-medium">RSU vest reminders</p>
                 <Hint text="Days before vest end to notify" />
               </div>
-              <div className={`flex items-center gap-1.5 transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
+              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
                   value={settings.rsu_alert_days_before}
@@ -423,7 +423,7 @@ export default function Settings() {
                 <p className="text-sm font-medium">Capital gains alerts</p>
                 <Hint text="Alert when loss exceeds this amount" />
               </div>
-              <div className={`flex items-center gap-1.5 transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
+              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
                 <span className="text-xs text-muted-foreground">$</span>
                 <Input
                   type="number"
