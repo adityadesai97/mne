@@ -1,6 +1,8 @@
 import { getSupabaseClient } from '../supabase'
 import type { LLMProvider } from '@/store/config'
 
+const VALID_PROVIDERS = ['claude', 'groq', 'gemini'] as const
+
 export async function loadApiKeys(): Promise<{
   claudeApiKey: string
   groqApiKey: string
@@ -22,7 +24,7 @@ export async function loadApiKeys(): Promise<{
     claudeApiKey: data.claude_api_key ?? '',
     groqApiKey: data.groq_api_key ?? '',
     geminiApiKey: data.gemini_api_key ?? '',
-    llmProvider: (data.llm_provider as LLMProvider | null) ?? 'claude',
+    llmProvider: (VALID_PROVIDERS.includes(data.llm_provider as LLMProvider) ? data.llm_provider : 'claude') as LLMProvider,
     finnhubApiKey: data.finnhub_api_key,
   }
 }
