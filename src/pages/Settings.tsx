@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
 import { Input } from '@/components/ui/input'
 import { config } from '@/store/config'
+import type { LLMProvider } from '@/store/config'
 import { exportData, importData, setActiveImportController } from '@/lib/importExport'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -98,9 +99,10 @@ export default function Settings() {
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
   const [editingKeys, setEditingKeys] = useState(false)
-  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', finnhubApiKey: '' })
+  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', geminiApiKey: '', finnhubApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
+  const [providerWarning, setProviderWarning] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importAbortRef = useRef<AbortController | null>(null)
@@ -136,6 +138,18 @@ export default function Settings() {
     setThemeState(v)
   }
 
+  function handleProviderChange(p: LLMProvider) {
+    const keyForProvider = p === 'claude' ? config.claudeApiKey : p === 'groq' ? config.groqApiKey : config.geminiApiKey
+    if (!keyForProvider) {
+      const name = p === 'claude' ? 'Claude' : p === 'groq' ? 'Groq' : 'Gemini'
+      setProviderWarning(`Add a ${name} API key in API Keys first.`)
+      return
+    }
+    setProviderWarning('')
+    config.setLLMProvider(p)
+    saveSettings({ llm_provider: p }).catch(console.error)
+  }
+
   async function setAutoThemeAssignmentEnabled(enabled: boolean) {
     const next = { ...settingsRef.current, auto_theme_assignment_enabled: enabled }
     setSettings(next)
@@ -164,14 +178,28 @@ export default function Settings() {
   }
 
   async function handleSaveKeys() {
-    if (!keyDraft.claudeApiKey || !keyDraft.finnhubApiKey) { setKeyError('Both fields are required'); return }
+    const mergedClaude  = keyDraft.claudeApiKey  || config.claudeApiKey
+    const mergedGroq    = keyDraft.groqApiKey    || config.groqApiKey
+    const mergedGemini  = keyDraft.geminiApiKey  || config.geminiApiKey
+    const mergedFinnhub = keyDraft.finnhubApiKey || config.finnhubApiKey
+    if (!mergedFinnhub) { setKeyError('Finnhub API key is required'); return }
+    if (!mergedClaude && !mergedGroq && !mergedGemini) { setKeyError('At least one AI provider key is required'); return }
     setKeySaving(true)
     setKeyError('')
     try {
       const { data: { user } } = await getSupabaseClient().auth.getUser()
       if (!user) { setKeyError('Not authenticated'); return }
-      await saveSettings({ user_id: user.id, claude_api_key: keyDraft.claudeApiKey, finnhub_api_key: keyDraft.finnhubApiKey })
-      config.save(keyDraft)
+      const dbRow: Record<string, string> = { user_id: user.id, finnhub_api_key: mergedFinnhub }
+      if (keyDraft.claudeApiKey) dbRow.claude_api_key = keyDraft.claudeApiKey
+      if (keyDraft.groqApiKey)   dbRow.groq_api_key   = keyDraft.groqApiKey
+      if (keyDraft.geminiApiKey) dbRow.gemini_api_key  = keyDraft.geminiApiKey
+      await saveSettings(dbRow)
+      config.save({
+        claudeApiKey:  keyDraft.claudeApiKey  || config.claudeApiKey,
+        groqApiKey:    keyDraft.groqApiKey    || config.groqApiKey,
+        geminiApiKey:  keyDraft.geminiApiKey  || config.geminiApiKey,
+        finnhubApiKey: mergedFinnhub,
+      })
       setEditingKeys(false)
     } catch (e: any) {
       setKeyError(e.message ?? 'Failed to save')
@@ -255,11 +283,28 @@ export default function Settings() {
       {/* AI */}
       <SectionHeader><Sparkles size={10} className="inline mr-1.5 mb-0.5" />AI</SectionHeader>
       <div className="space-y-2">
+        {/* AI Provider picker */}
+        <div className="bg-card rounded-xl px-4 py-4 space-y-2">
+          <p className="text-sm font-medium">AI Provider</p>
+          <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
+            {(['claude', 'groq', 'gemini'] as LLMProvider[]).map(p => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => handleProviderChange(p)}
+                className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${config.llmProvider === p ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {p === 'claude' ? 'Claude' : p === 'groq' ? 'Groq' : 'Gemini'}
+              </button>
+            ))}
+          </div>
+          {providerWarning && <p className="text-xs text-amber-500">{providerWarning}</p>}
+        </div>
         <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Auto-assign themes</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Use Claude to suggest themes when new tickers are created
+              Use AI to suggest themes when new tickers are created
             </p>
           </div>
           <Toggle
@@ -433,6 +478,36 @@ export default function Settings() {
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Groq API Key</label>
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+                Get key <ExternalLink size={9} />
+              </a>
+            </div>
+            <input
+              type="password"
+              placeholder="gsk_..."
+              value={keyDraft.groqApiKey}
+              onChange={e => setKeyDraft(d => ({ ...d, groqApiKey: e.target.value }))}
+              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Gemini API Key</label>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+                Get key <ExternalLink size={9} />
+              </a>
+            </div>
+            <input
+              type="password"
+              placeholder="AIza..."
+              value={keyDraft.geminiApiKey}
+              onChange={e => setKeyDraft(d => ({ ...d, geminiApiKey: e.target.value }))}
+              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finnhub API Key</label>
               <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
@@ -475,6 +550,27 @@ export default function Settings() {
             <span className="text-xs font-mono text-muted-foreground">{config.claudeApiKey ? '••••••••' : 'Not set'}</span>
           </div>
           <div className="h-px bg-border mx-4" />
+          <div className="h-px bg-border mx-4" />
+          <div className="flex items-center gap-3 px-4 py-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Groq</p>
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
+                Get key <ExternalLink size={9} />
+              </a>
+            </div>
+            <span className="text-xs font-mono text-muted-foreground">{config.groqApiKey ? '••••••••' : 'Not set'}</span>
+          </div>
+          <div className="h-px bg-border mx-4" />
+          <div className="flex items-center gap-3 px-4 py-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Gemini</p>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
+                Get key <ExternalLink size={9} />
+              </a>
+            </div>
+            <span className="text-xs font-mono text-muted-foreground">{config.geminiApiKey ? '••••••••' : 'Not set'}</span>
+          </div>
+          <div className="h-px bg-border mx-4" />
           <div className="flex items-center gap-3 px-4 py-4">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">Finnhub</p>
@@ -487,7 +583,7 @@ export default function Settings() {
           <div className="h-px bg-border mx-4" />
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
-            onClick={() => { setKeyDraft({ claudeApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
+            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', geminiApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
           >
             <p className="text-sm font-medium flex-1">Update API keys</p>
             <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
