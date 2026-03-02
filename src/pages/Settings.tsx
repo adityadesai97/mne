@@ -360,10 +360,7 @@ export default function Settings() {
           <div className="ml-3 pl-3 border-l-2 border-border/40 space-y-1.5">
             {/* Price alerts */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Price alerts</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Alert when price moves by this %</p>
-              </div>
+              <p className="text-sm font-medium flex-shrink-0">Price alerts</p>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
@@ -384,10 +381,7 @@ export default function Settings() {
 
             {/* RSU vest reminders */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">RSU vest reminders</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Days before vest end to notify</p>
-              </div>
+              <p className="text-sm font-medium flex-shrink-0">RSU vest reminders</p>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
@@ -408,10 +402,7 @@ export default function Settings() {
 
             {/* Capital gains alerts */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Capital gains alerts</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Alert when loss exceeds this amount</p>
-              </div>
+              <p className="text-sm font-medium flex-shrink-0">Capital gains alerts</p>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
                 <span className="text-xs text-muted-foreground">$</span>
                 <Input
@@ -540,47 +531,6 @@ export default function Settings() {
         </div>
       ) : (
         <div className="bg-card rounded-xl overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Claude</p>
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <span className="text-xs font-mono text-muted-foreground">{config.claudeApiKey ? '••••••••' : 'Not set'}</span>
-          </div>
-          <div className="h-px bg-border mx-4" />
-          <div className="h-px bg-border mx-4" />
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Groq</p>
-              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <span className="text-xs font-mono text-muted-foreground">{config.groqApiKey ? '••••••••' : 'Not set'}</span>
-          </div>
-          <div className="h-px bg-border mx-4" />
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Gemini</p>
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <span className="text-xs font-mono text-muted-foreground">{config.geminiApiKey ? '••••••••' : 'Not set'}</span>
-          </div>
-          <div className="h-px bg-border mx-4" />
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Finnhub</p>
-              <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors mt-0.5 w-fit">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <span className="text-xs font-mono text-muted-foreground">{config.finnhubApiKey ? '••••••••' : 'Not set'}</span>
-          </div>
-          <div className="h-px bg-border mx-4" />
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
             onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', geminiApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
