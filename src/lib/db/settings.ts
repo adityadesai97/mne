@@ -1,15 +1,30 @@
 import { getSupabaseClient } from '../supabase'
+import type { LLMProvider } from '@/store/config'
 
-export async function loadApiKeys(): Promise<{ claudeApiKey: string; finnhubApiKey: string } | null> {
+export async function loadApiKeys(): Promise<{
+  claudeApiKey: string
+  groqApiKey: string
+  geminiApiKey: string
+  llmProvider: LLMProvider
+  finnhubApiKey: string
+} | null> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) return null
   const { data } = await getSupabaseClient()
     .from('user_settings')
-    .select('claude_api_key, finnhub_api_key')
+    .select('claude_api_key, groq_api_key, gemini_api_key, llm_provider, finnhub_api_key')
     .eq('user_id', user.id)
     .maybeSingle()
-  if (!data?.claude_api_key || !data?.finnhub_api_key) return null
-  return { claudeApiKey: data.claude_api_key, finnhubApiKey: data.finnhub_api_key }
+  if (!data?.finnhub_api_key) return null
+  const hasAnyAIKey = data.claude_api_key || data.groq_api_key || data.gemini_api_key
+  if (!hasAnyAIKey) return null
+  return {
+    claudeApiKey: data.claude_api_key ?? '',
+    groqApiKey: data.groq_api_key ?? '',
+    geminiApiKey: data.gemini_api_key ?? '',
+    llmProvider: (data.llm_provider as LLMProvider | null) ?? 'claude',
+    finnhubApiKey: data.finnhub_api_key,
+  }
 }
 
 export async function getUserSettings() {
