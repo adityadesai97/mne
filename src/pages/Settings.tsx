@@ -8,7 +8,7 @@ import { exportData, importData, setActiveImportController } from '@/lib/importE
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
-import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles } from 'lucide-react'
+import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info } from 'lucide-react'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -71,6 +71,17 @@ function ThemePicker({ value, onChange }: { value: 'light' | 'dark' | 'system'; 
           {opt.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+function Hint({ text }: { text: string }) {
+  return (
+    <div className="relative group/hint inline-flex items-center">
+      <Info size={11} className="text-muted-foreground/40 cursor-help" />
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-[11px] whitespace-nowrap shadow-md opacity-0 group-hover/hint:opacity-100 transition-opacity pointer-events-none z-50">
+        {text}
+      </div>
     </div>
   )
 }
@@ -360,7 +371,10 @@ export default function Settings() {
           <div className="ml-3 pl-3 border-l-2 border-border/40 space-y-1.5">
             {/* Price alerts */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <p className="text-sm font-medium flex-shrink-0">Price alerts</p>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <p className="text-sm font-medium">Price alerts</p>
+                <Hint text="Alert when price moves by this %" />
+              </div>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
@@ -381,7 +395,10 @@ export default function Settings() {
 
             {/* RSU vest reminders */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <p className="text-sm font-medium flex-shrink-0">RSU vest reminders</p>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <p className="text-sm font-medium">RSU vest reminders</p>
+                <Hint text="Days before vest end to notify" />
+              </div>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
                 <Input
                   type="number"
@@ -402,7 +419,10 @@ export default function Settings() {
 
             {/* Capital gains alerts */}
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
-              <p className="text-sm font-medium flex-shrink-0">Capital gains alerts</p>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <p className="text-sm font-medium">Capital gains alerts</p>
+                <Hint text="Alert when loss exceeds this amount" />
+              </div>
               <div className={`flex items-center gap-1.5 transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
                 <span className="text-xs text-muted-foreground">$</span>
                 <Input
@@ -451,7 +471,7 @@ export default function Settings() {
       {/* API Keys */}
       <SectionHeader><Key size={10} className="inline mr-1.5 mb-0.5" />API Keys</SectionHeader>
       {editingKeys ? (
-        <div className="bg-card rounded-xl p-4 space-y-3">
+        <div className="bg-card rounded-xl p-4 space-y-3 animate-slideDown">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Claude API Key</label>

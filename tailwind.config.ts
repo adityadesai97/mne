@@ -57,6 +57,15 @@ const config: Config = {
         card: 'inset 0 0 0 1px rgba(255,255,255,0.06)',
         'card-hover': 'inset 0 0 0 1px rgba(255,255,255,0.10), 0 0 0 1px hsl(217 91% 60% / 0.15)',
       },
+      keyframes: {
+        slideDown: {
+          from: { opacity: '0', transform: 'translateY(-6px)' },
+          to:   { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        slideDown: 'slideDown 0.15s ease-out',
+      },
     },
   },
   plugins: [],
