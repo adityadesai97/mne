@@ -208,7 +208,10 @@ create table if not exists public.user_settings (
   price_alert_threshold numeric(5,2) default 5.0,
   tax_harvest_threshold numeric(12,2) default 1000.0,
   rsu_alert_days_before int default 7,
-  auto_theme_assignment_enabled boolean not null default true
+  auto_theme_assignment_enabled boolean not null default true,
+  price_alerts_enabled boolean not null default true,
+  vest_alerts_enabled boolean not null default true,
+  capital_gains_alerts_enabled boolean not null default true
 );
 create unique index if not exists user_settings_user_id_key
   on public.user_settings (user_id);
@@ -218,6 +221,9 @@ alter table public.user_settings add column if not exists rsu_alert_days_before 
 alter table public.user_settings add column if not exists claude_api_key text;
 alter table public.user_settings add column if not exists finnhub_api_key text;
 alter table public.user_settings add column if not exists auto_theme_assignment_enabled boolean not null default true;
+alter table public.user_settings add column if not exists price_alerts_enabled boolean not null default true;
+alter table public.user_settings add column if not exists vest_alerts_enabled boolean not null default true;
+alter table public.user_settings add column if not exists capital_gains_alerts_enabled boolean not null default true;
 alter table public.user_settings add column if not exists llm_provider text not null default 'claude';
 alter table public.user_settings add column if not exists groq_api_key text;
 alter table public.user_settings add column if not exists gemini_api_key text;

@@ -1,6 +1,6 @@
 # mne
 
-A personal finance tracker with AI-powered portfolio management. Built with React, Vite, Supabase, and Claude.
+A personal finance tracker with AI-powered portfolio management. Built with React, Vite, Supabase, and configurable LLM providers.
 
 ---
 
@@ -12,7 +12,10 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
    ```
 2. **Sign in** — open the app and click "Continue with Google". Use the Google account matching your allowlisted email.
 3. **Enter API keys** — on first sign-in you'll be asked for:
-   - **Claude API key** — [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+   - **One AI provider key**:
+     - Claude — [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+     - Groq — [console.groq.com/keys](https://console.groq.com/keys)
+     - Gemini — [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
    - **Finnhub API key** — [finnhub.io/dashboard](https://finnhub.io/dashboard) (free tier is sufficient)
 4. Done. Keys are stored in the database tied to your account and persist across devices.
 
@@ -22,7 +25,7 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 
 This setup is intentionally scoped to:
 - Supabase auth + database
-- Claude and Finnhub user API keys
+- One AI provider key (Claude/Groq/Gemini) and Finnhub user API keys
 - Running the app locally
 
 ### 1. Prerequisites
@@ -30,7 +33,10 @@ This setup is intentionally scoped to:
 - Node.js `22.x` and npm
 - A Supabase project
 - A Google OAuth client (for Supabase Auth)
-- Claude API key ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
+- One AI provider key:
+  - Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
+  - Groq ([console.groq.com/keys](https://console.groq.com/keys))
+  - Gemini ([aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey))
 - Finnhub API key ([finnhub.io/dashboard](https://finnhub.io/dashboard))
 
 ### 2. Install dependencies
@@ -59,13 +65,27 @@ Optional flags:
 
 ### 4. Apply the app schema in Supabase
 
-In Supabase Dashboard -> **SQL Editor**, run:
+In Supabase Dashboard -> **SQL Editor**, open and run the SQL in:
 
-```
-supabase/sql/self_host_bootstrap.sql
-```
+`supabase/sql/self_host_bootstrap.sql`
+
+Important: run the **contents of the file** in SQL Editor, not the file path text.
 
 This bootstrap script is idempotent and aligns with the current app schema.
+
+If you already created tables with an older schema, also run:
+
+```sql
+alter table public.user_settings
+  add column if not exists price_alerts_enabled boolean not null default true,
+  add column if not exists vest_alerts_enabled boolean not null default true,
+  add column if not exists capital_gains_alerts_enabled boolean not null default true,
+  add column if not exists llm_provider text not null default 'claude',
+  add column if not exists groq_api_key text,
+  add column if not exists gemini_api_key text;
+
+notify pgrst, 'reload schema';
+```
 
 ### 5. Enable Google sign-in in Supabase Auth
 
@@ -81,7 +101,7 @@ This bootstrap script is idempotent and aligns with the current app schema.
 npm run dev
 ```
 
-Open `http://localhost:5173`, sign in with Google, then enter your Claude and Finnhub keys in-app when prompted.
+Open `http://localhost:5173`, sign in with Google, then enter your chosen AI provider key and Finnhub key in-app when prompted.
 
 ### 7. Optional allowlist (only if `VITE_RESTRICT_SIGNUPS=true`)
 
@@ -91,7 +111,19 @@ In Supabase SQL Editor:
 insert into allowed_emails (email) values ('you@example.com');
 ```
 
+### Upgrading an existing self-hosted instance
+
+For ongoing updates (code + schema), follow:
+
+- [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md)
+
 ---
+
+## Deployment and update workflows
+
+- Hosted operator release runbook: [`docs/operator-release-runbook.md`](docs/operator-release-runbook.md)
+- Self-host upgrade guide: [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md)
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Managing access
 
@@ -166,11 +198,11 @@ Importer compatibility:
 
 ## Command Bar
 
-Open with `Cmd+K`. Accepts natural language commands backed by Claude (e.g. "Add 10 AAPL shares at $220 bought today", "What's my net worth?").
+Open with `Cmd+K`. Accepts natural language commands backed by your configured AI provider (e.g. "Add 10 AAPL shares at $220 bought today", "What's my net worth?").
 
 ### Dev commands
 
-These bypass Claude and operate directly on the database. Useful for testing and development.
+These bypass AI provider calls and operate directly on the database. Useful for testing and development.
 
 | Command | Description |
 |---------|-------------|

@@ -3,6 +3,12 @@ import type { LLMProvider } from '@/store/config'
 
 const VALID_PROVIDERS = ['claude', 'groq', 'gemini'] as const
 
+function extractMissingColumn(error: { message?: string; details?: string; hint?: string } | null | undefined): string | null {
+  const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
+  const match = text.match(/Could not find the '([^']+)' column/i)
+  return match?.[1] ?? null
+}
+
 export async function loadApiKeys(): Promise<{
   claudeApiKey: string
   groqApiKey: string
@@ -12,11 +18,12 @@ export async function loadApiKeys(): Promise<{
 } | null> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) return null
-  const { data } = await getSupabaseClient()
+  const { data, error } = await getSupabaseClient()
     .from('user_settings')
-    .select('claude_api_key, groq_api_key, gemini_api_key, llm_provider, finnhub_api_key')
+    .select('*')
     .eq('user_id', user.id)
     .maybeSingle()
+  if (error && error.code !== 'PGRST116') throw error
   if (!data?.finnhub_api_key) return null
   const hasAnyAIKey = data.claude_api_key || data.groq_api_key || data.gemini_api_key
   if (!hasAnyAIKey) return null
@@ -63,10 +70,22 @@ export async function getSettings() {
 export async function saveSettings(settings: Record<string, unknown>) {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) throw new Error('Not authenticated')
-  const { error } = await getSupabaseClient()
-    .from('user_settings')
-    .upsert({ ...settings, user_id: user.id }, { onConflict: 'user_id' })
-  if (error) throw error
+
+  const payload: Record<string, unknown> = { ...settings, user_id: user.id }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { error } = await getSupabaseClient()
+      .from('user_settings')
+      .upsert(payload, { onConflict: 'user_id' })
+    if (!error) return
+    const missingColumn = extractMissingColumn(error)
+    if (missingColumn && missingColumn !== 'user_id' && missingColumn in payload) {
+      delete payload[missingColumn]
+      continue
+    }
+    throw error
+  }
+
+  throw new Error('Failed to save settings after schema compatibility retries')
 }
 
 export async function syncFinnhubKey() {
