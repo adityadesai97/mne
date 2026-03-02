@@ -1194,344 +1194,401 @@ If the user says they sold shares and does not mention proceeds transfer, ask wh
 Today's date is ${new Date().toISOString().split('T')[0]}`
 }
 
-const tools: Anthropic.Tool[] = [
+const tools = [
   {
-    name: 'navigate_to',
-    description: 'Navigate to a page in the app for read/view requests',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        route: { type: 'string', enum: ['/', '/portfolio', '/charts', '/watchlist', '/settings'] },
-      },
-      required: ['route'],
-    },
-  },
-  {
-    name: 'get_portfolio_summary',
-    description: 'Return canonical portfolio totals and top holdings for exact read-only answers.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {},
-    },
-  },
-  {
-    name: 'get_positions',
-    description: 'Return normalized positions with optional filters.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbols: { type: 'array', items: { type: 'string' } },
-        asset_types: { type: 'array', items: { type: 'string' } },
-        location_names: { type: 'array', items: { type: 'string' } },
-        limit: { type: 'number', description: 'Max rows, default 200' },
+    type: 'function' as const,
+    function: {
+      name: 'navigate_to',
+      description: 'Navigate to a page in the app for read/view requests',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          route: { type: 'string', enum: ['/', '/portfolio', '/charts', '/watchlist', '/settings'] },
+        },
+        required: ['route'],
       },
     },
   },
   {
-    name: 'get_transactions',
-    description: 'Return normalized stock transaction lots with optional symbol/date/subtype filters.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbols: { type: 'array', items: { type: 'string' } },
-        subtypes: { type: 'array', items: { type: 'string' } },
-        from_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
-        to_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
-        limit: { type: 'number', description: 'Max rows, default 250' },
+    type: 'function' as const,
+    function: {
+      name: 'get_portfolio_summary',
+      description: 'Return canonical portfolio totals and top holdings for exact read-only answers.',
+      parameters: {
+        type: 'object' as const,
+        properties: {},
       },
     },
   },
   {
-    name: 'get_net_worth_timeseries',
-    description: 'Return net worth history and changes for a selected range.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        range: { type: 'string', enum: ['1M', '3M', '6M', '1Y', 'ALL'] },
+    type: 'function' as const,
+    function: {
+      name: 'get_positions',
+      description: 'Return normalized positions with optional filters.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbols: { type: 'array', items: { type: 'string' } },
+          asset_types: { type: 'array', items: { type: 'string' } },
+          location_names: { type: 'array', items: { type: 'string' } },
+          limit: { type: 'number', description: 'Max rows, default 200' },
+        },
       },
     },
   },
   {
-    name: 'get_exposure_breakdown',
-    description: 'Return exposure by ticker, theme, asset type, or location.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        dimension: { type: 'string', enum: ['ticker', 'theme', 'asset_type', 'location'] },
-        include_cash: { type: 'boolean', description: 'Include non-stock assets where applicable' },
-      },
-      required: ['dimension'],
-    },
-  },
-  {
-    name: 'analyze_tax_lots',
-    description: 'Analyze tax lots for unrealized gains/losses, harvesting opportunities, and upcoming long-term promotions.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbols: { type: 'array', items: { type: 'string' } },
-        harvest_threshold_pct: { type: 'number', description: 'Default -5 (percent)' },
-        upcoming_long_term_days: { type: 'number', description: 'Default 45 days' },
+    type: 'function' as const,
+    function: {
+      name: 'get_transactions',
+      description: 'Return normalized stock transaction lots with optional symbol/date/subtype filters.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbols: { type: 'array', items: { type: 'string' } },
+          subtypes: { type: 'array', items: { type: 'string' } },
+          from_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          to_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          limit: { type: 'number', description: 'Max rows, default 250' },
+        },
       },
     },
   },
   {
-    name: 'simulate_portfolio_actions',
-    description: 'Run a what-if simulation on portfolio actions and return before/after deltas.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        actions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: {
-                type: 'string',
-                enum: ['buy_stock', 'sell_stock', 'set_price', 'add_cash', 'remove_cash', 'set_cash_total'],
+    type: 'function' as const,
+    function: {
+      name: 'get_net_worth_timeseries',
+      description: 'Return net worth history and changes for a selected range.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          range: { type: 'string', enum: ['1M', '3M', '6M', '1Y', 'ALL'] },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_exposure_breakdown',
+      description: 'Return exposure by ticker, theme, asset type, or location.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          dimension: { type: 'string', enum: ['ticker', 'theme', 'asset_type', 'location'] },
+          include_cash: { type: 'boolean', description: 'Include non-stock assets where applicable' },
+        },
+        required: ['dimension'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'analyze_tax_lots',
+      description: 'Analyze tax lots for unrealized gains/losses, harvesting opportunities, and upcoming long-term promotions.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbols: { type: 'array', items: { type: 'string' } },
+          harvest_threshold_pct: { type: 'number', description: 'Default -5 (percent)' },
+          upcoming_long_term_days: { type: 'number', description: 'Default 45 days' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'simulate_portfolio_actions',
+      description: 'Run a what-if simulation on portfolio actions and return before/after deltas.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          actions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type: {
+                  type: 'string',
+                  enum: ['buy_stock', 'sell_stock', 'set_price', 'add_cash', 'remove_cash', 'set_cash_total'],
+                },
+                symbol: { type: 'string' },
+                shares: { type: 'number' },
+                count: { type: 'number' },
+                price: { type: 'number' },
+                use_cash: { type: 'boolean' },
+                move_proceeds_to_cash: { type: 'boolean' },
+                amount: { type: 'number' },
+                value: { type: 'number' },
               },
-              symbol: { type: 'string' },
-              shares: { type: 'number' },
-              count: { type: 'number' },
-              price: { type: 'number' },
-              use_cash: { type: 'boolean' },
-              move_proceeds_to_cash: { type: 'boolean' },
-              amount: { type: 'number' },
-              value: { type: 'number' },
+              required: ['type'],
             },
-            required: ['type'],
           },
         },
+        required: ['actions'],
       },
-      required: ['actions'],
     },
   },
   {
-    name: 'recommend_actions_for_goal',
-    description: 'Generate portfolio-tailored recommendations for a specific goal.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        goal: {
-          type: 'string',
-          enum: ['reduce_concentration', 'improve_diversification', 'reduce_tax_burden', 'raise_cash_buffer'],
+    type: 'function' as const,
+    function: {
+      name: 'recommend_actions_for_goal',
+      description: 'Generate portfolio-tailored recommendations for a specific goal.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          goal: {
+            type: 'string',
+            enum: ['reduce_concentration', 'improve_diversification', 'reduce_tax_burden', 'raise_cash_buffer'],
+          },
+          target_max_single_ticker_pct: { type: 'number' },
+          target_cash_pct: { type: 'number' },
+          symbols: { type: 'array', items: { type: 'string' } },
+          harvest_threshold_pct: { type: 'number' },
+          upcoming_long_term_days: { type: 'number' },
         },
-        target_max_single_ticker_pct: { type: 'number' },
-        target_cash_pct: { type: 'number' },
-        symbols: { type: 'array', items: { type: 'string' } },
-        harvest_threshold_pct: { type: 'number' },
-        upcoming_long_term_days: { type: 'number' },
+        required: ['goal'],
       },
-      required: ['goal'],
     },
   },
   {
-    name: 'add_stock_transaction',
-    description: 'Add shares of a stock to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-        count: { type: 'number', description: 'Number of shares' },
-        cost_price: { type: 'number', description: 'Price per share at purchase' },
-        purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
-        subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
-        asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-        location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
-        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-        ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+    type: 'function' as const,
+    function: {
+      name: 'add_stock_transaction',
+      description: 'Add shares of a stock to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          count: { type: 'number', description: 'Number of shares' },
+          cost_price: { type: 'number', description: 'Price per share at purchase' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+          asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+          location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+          account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+          ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+        },
+        required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
       },
-      required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
     },
   },
   {
-    name: 'add_stock_transactions',
-    description: 'Add multiple stock transactions at once. Use this when the user provides 2 or more stock purchases in one request.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        transactions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-              count: { type: 'number', description: 'Number of shares' },
-              cost_price: { type: 'number', description: 'Price per share at purchase' },
-              purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
-              subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
-              asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-              location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
-              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-              ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+    type: 'function' as const,
+    function: {
+      name: 'add_stock_transactions',
+      description: 'Add multiple stock transactions at once. Use this when the user provides 2 or more stock purchases in one request.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          transactions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+                count: { type: 'number', description: 'Number of shares' },
+                cost_price: { type: 'number', description: 'Price per share at purchase' },
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+                subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+                asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+                location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+                account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+                ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+              },
+              required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
             },
-            required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
           },
         },
+        required: ['transactions'],
       },
-      required: ['transactions'],
     },
   },
   {
-    name: 'add_cash_asset',
-    description: 'Add a non-stock asset: 401k, CD, Cash, Deposit, or HSA',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        name: { type: 'string', description: 'Name of the account' },
-        asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
-        location_name: { type: 'string', description: 'Institution name' },
-        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-        ownership: { type: 'string', enum: ['Individual', 'Joint'] },
-        price: { type: 'number', description: 'Current value in dollars' },
-        notes: { type: 'string', description: 'Optional notes' },
+    type: 'function' as const,
+    function: {
+      name: 'add_cash_asset',
+      description: 'Add a non-stock asset: 401k, CD, Cash, Deposit, or HSA',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          name: { type: 'string', description: 'Name of the account' },
+          asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
+          location_name: { type: 'string', description: 'Institution name' },
+          account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+          ownership: { type: 'string', enum: ['Individual', 'Joint'] },
+          price: { type: 'number', description: 'Current value in dollars' },
+          notes: { type: 'string', description: 'Optional notes' },
+        },
+        required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
       },
-      required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
     },
   },
   {
-    name: 'add_cash_assets',
-    description: 'Add multiple non-stock assets (401k, CD, Cash, Deposit, HSA) at once.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        assets: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string', description: 'Name of the account' },
-              asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
-              location_name: { type: 'string', description: 'Institution name' },
-              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-              ownership: { type: 'string', enum: ['Individual', 'Joint'] },
-              price: { type: 'number', description: 'Current value in dollars' },
-              notes: { type: 'string', description: 'Optional notes' },
+    type: 'function' as const,
+    function: {
+      name: 'add_cash_assets',
+      description: 'Add multiple non-stock assets (401k, CD, Cash, Deposit, HSA) at once.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          assets: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Name of the account' },
+                asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
+                location_name: { type: 'string', description: 'Institution name' },
+                account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+                ownership: { type: 'string', enum: ['Individual', 'Joint'] },
+                price: { type: 'number', description: 'Current value in dollars' },
+                notes: { type: 'string', description: 'Optional notes' },
+              },
+              required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
             },
-            required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
           },
         },
+        required: ['assets'],
       },
-      required: ['assets'],
     },
   },
   {
-    name: 'add_ticker_to_watchlist',
-    description: 'Add a stock ticker to the watchlist for price tracking',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-      },
-      required: ['symbol'],
-    },
-  },
-  {
-    name: 'add_ticker_themes',
-    description: 'Assign one or more themes to a ticker. Reuse existing theme names when they already exist for the user.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-        themes: {
-          type: 'array',
-          description: 'Theme names to add to this ticker, e.g. ["AI","Cloud"]',
-          items: { type: 'string' },
+    type: 'function' as const,
+    function: {
+      name: 'add_ticker_to_watchlist',
+      description: 'Add a stock ticker to the watchlist for price tracking',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
         },
+        required: ['symbol'],
       },
-      required: ['symbol', 'themes'],
     },
   },
   {
-    name: 'add_rsu_grants',
-    description: 'Record multiple RSU grant awards at once. Use this when the user provides 2 or more RSU grants in a single message.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        grants: {
-          type: 'array',
-          description: 'List of RSU grants to add',
-          items: {
-            type: 'object',
-            properties: {
-              symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-              grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the grant was awarded' },
-              total_shares: { type: 'number', description: 'Total shares in the grant' },
-              vest_start: { type: 'string', description: 'ISO date when vesting begins' },
-              vest_end: { type: 'string', description: 'ISO date when vesting ends' },
-              cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
-              asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-              location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
-              account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-              ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
-            },
-            required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
+    type: 'function' as const,
+    function: {
+      name: 'add_ticker_themes',
+      description: 'Assign one or more themes to a ticker. Reuse existing theme names when they already exist for the user.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          themes: {
+            type: 'array',
+            description: 'Theme names to add to this ticker, e.g. ["AI","Cloud"]',
+            items: { type: 'string' },
           },
         },
+        required: ['symbol', 'themes'],
       },
-      required: ['grants'],
     },
   },
   {
-    name: 'add_rsu_grant',
-    description: 'Record a single RSU grant award with its vesting schedule. Use add_rsu_grants (plural) instead when adding 2 or more grants.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-        grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the grant was awarded' },
-        total_shares: { type: 'number', description: 'Total shares in the grant' },
-        vest_start: { type: 'string', description: 'ISO date when vesting begins' },
-        vest_end: { type: 'string', description: 'ISO date when vesting ends' },
-        cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
-        asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
-        location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
-        account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
-        ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
-      },
-      required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
-    },
-  },
-  {
-    name: 'sell_shares',
-    description: 'Record a stock sale from one or more purchase-date lots in a specific account/location, with optional proceeds transfer.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-        count: { type: 'number', description: 'Number of shares sold (single-lot mode)' },
-        sale_price: { type: 'number', description: 'Price per share at sale' },
-        sale_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
-        purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for the original lot being sold (single-lot mode)' },
-        lots: {
-          type: 'array',
-          description: 'Optional multi-lot mode: each entry specifies purchase_date and count sold from that lot.',
-          items: {
-            type: 'object',
-            properties: {
-              purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for this lot' },
-              count: { type: 'number', description: 'Shares sold from this lot' },
+    type: 'function' as const,
+    function: {
+      name: 'add_rsu_grants',
+      description: 'Record multiple RSU grant awards at once. Use this when the user provides 2 or more RSU grants in a single message.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          grants: {
+            type: 'array',
+            description: 'List of RSU grants to add',
+            items: {
+              type: 'object',
+              properties: {
+                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+                grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the grant was awarded' },
+                total_shares: { type: 'number', description: 'Total shares in the grant' },
+                vest_start: { type: 'string', description: 'ISO date when vesting begins' },
+                vest_end: { type: 'string', description: 'ISO date when vesting ends' },
+                cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+                asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+                location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+                account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+                ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+              },
+              required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
             },
-            required: ['purchase_date', 'count'],
           },
         },
-        source_location_name: { type: 'string', description: 'Account/location holding the shares, e.g. Fidelity or Robinhood' },
-        proceeds_destination_asset_name: { type: 'string', description: 'Optional destination asset name to receive sale proceeds (e.g., Vanguard 401k)' },
-        proceeds_transfer_amount: { type: 'number', description: 'Optional transfer amount; defaults to total shares sold × sale_price' },
+        required: ['grants'],
       },
-      required: ['symbol', 'sale_price', 'sale_date', 'source_location_name'],
     },
   },
   {
-    name: 'update_asset_value',
-    description: 'Update the current value of a non-stock asset (401k, CD, Cash, Deposit, HSA)',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        asset_name: { type: 'string', description: 'Exact name of the asset as it appears in the portfolio' },
-        price: { type: 'number', description: 'New current value in dollars' },
+    type: 'function' as const,
+    function: {
+      name: 'add_rsu_grant',
+      description: 'Record a single RSU grant award with its vesting schedule. Use add_rsu_grants (plural) instead when adding 2 or more grants.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the grant was awarded' },
+          total_shares: { type: 'number', description: 'Total shares in the grant' },
+          vest_start: { type: 'string', description: 'ISO date when vesting begins' },
+          vest_end: { type: 'string', description: 'ISO date when vesting ends' },
+          cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+          asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+          location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
+          account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+          ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+        },
+        required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
       },
-      required: ['asset_name', 'price'],
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'sell_shares',
+      description: 'Record a stock sale from one or more purchase-date lots in a specific account/location, with optional proceeds transfer.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          count: { type: 'number', description: 'Number of shares sold (single-lot mode)' },
+          sale_price: { type: 'number', description: 'Price per share at sale' },
+          sale_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for the original lot being sold (single-lot mode)' },
+          lots: {
+            type: 'array',
+            description: 'Optional multi-lot mode: each entry specifies purchase_date and count sold from that lot.',
+            items: {
+              type: 'object',
+              properties: {
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for this lot' },
+                count: { type: 'number', description: 'Shares sold from this lot' },
+              },
+              required: ['purchase_date', 'count'],
+            },
+          },
+          source_location_name: { type: 'string', description: 'Account/location holding the shares, e.g. Fidelity or Robinhood' },
+          proceeds_destination_asset_name: { type: 'string', description: 'Optional destination asset name to receive sale proceeds (e.g., Vanguard 401k)' },
+          proceeds_transfer_amount: { type: 'number', description: 'Optional transfer amount; defaults to total shares sold × sale_price' },
+        },
+        required: ['symbol', 'sale_price', 'sale_date', 'source_location_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'update_asset_value',
+      description: 'Update the current value of a non-stock asset (401k, CD, Cash, Deposit, HSA)',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          asset_name: { type: 'string', description: 'Exact name of the asset as it appears in the portfolio' },
+          price: { type: 'number', description: 'New current value in dollars' },
+        },
+        required: ['asset_name', 'price'],
+      },
     },
   },
 ]
@@ -2553,7 +2610,7 @@ export async function runCommand(messages: Message[]): Promise<any> {
     max_tokens: 1024,
     system: systemPrompt,
     messages: inputMessages,
-    tools,
+    tools: tools as any,
   })
 
   const shouldAttachComputedContext = isAnalyticalQuestion(lastUserContent) || mentionsNetWorth(lastUserContent)
@@ -2595,7 +2652,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
 
   const maxReadToolRounds = 3
   for (let round = 0; round < maxReadToolRounds; round += 1) {
-    const toolUsesInRound = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    const toolUsesInRound = response.content.filter((b): b is any => b.type === 'tool_use')
     if (toolUsesInRound.length === 0) {
       addTrace('No read tools requested', `Round ${round + 1}`)
       break
@@ -2648,7 +2705,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
 
   const maxReasoningSteps = 2
   for (let step = 0; step < maxReasoningSteps; step += 1) {
-    const toolUsesInLoop = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    const toolUsesInLoop = response.content.filter((b): b is any => b.type === 'tool_use')
     if (toolUsesInLoop.length > 0) {
       addTrace('Exited clarification loop', 'Model emitted tool calls')
       break
@@ -2678,7 +2735,7 @@ ${JSON.stringify(expandedContext, null, 2)}`
     addTrace('Model re-run with expanded context', `Step ${step + 1}`)
   }
 
-  const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+  const toolUses = response.content.filter((b): b is any => b.type === 'tool_use')
   if (toolUses.length === 0) {
     const text = extractTextFromClaudeResponse(response)
     addTrace('Returned final text response')
