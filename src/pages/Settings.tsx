@@ -110,7 +110,7 @@ export default function Settings() {
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
   const [editingKeys, setEditingKeys] = useState(false)
-  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', geminiApiKey: '', finnhubApiKey: '' })
+  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
   const [providerWarning, setProviderWarning] = useState('')
@@ -150,9 +150,9 @@ export default function Settings() {
   }
 
   function handleProviderChange(p: LLMProvider) {
-    const keyForProvider = p === 'claude' ? config.claudeApiKey : p === 'groq' ? config.groqApiKey : config.geminiApiKey
+    const keyForProvider = p === 'claude' ? config.claudeApiKey : config.groqApiKey
     if (!keyForProvider) {
-      const name = p === 'claude' ? 'Claude' : p === 'groq' ? 'Groq' : 'Gemini'
+      const name = p === 'claude' ? 'Claude' : 'Groq'
       setProviderWarning(`Add a ${name} API key in API Keys first.`)
       return
     }
@@ -191,10 +191,9 @@ export default function Settings() {
   async function handleSaveKeys() {
     const mergedClaude  = keyDraft.claudeApiKey  || config.claudeApiKey
     const mergedGroq    = keyDraft.groqApiKey    || config.groqApiKey
-    const mergedGemini  = keyDraft.geminiApiKey  || config.geminiApiKey
     const mergedFinnhub = keyDraft.finnhubApiKey || config.finnhubApiKey
     if (!mergedFinnhub) { setKeyError('Finnhub API key is required'); return }
-    if (!mergedClaude && !mergedGroq && !mergedGemini) { setKeyError('At least one AI provider key is required'); return }
+    if (!mergedClaude && !mergedGroq) { setKeyError('At least one AI provider key is required'); return }
     setKeySaving(true)
     setKeyError('')
     try {
@@ -203,12 +202,10 @@ export default function Settings() {
       const dbRow: Record<string, string> = { user_id: user.id, finnhub_api_key: mergedFinnhub }
       if (keyDraft.claudeApiKey) dbRow.claude_api_key = keyDraft.claudeApiKey
       if (keyDraft.groqApiKey)   dbRow.groq_api_key   = keyDraft.groqApiKey
-      if (keyDraft.geminiApiKey) dbRow.gemini_api_key  = keyDraft.geminiApiKey
       await saveSettings(dbRow)
       config.save({
         claudeApiKey:  keyDraft.claudeApiKey  || config.claudeApiKey,
         groqApiKey:    keyDraft.groqApiKey    || config.groqApiKey,
-        geminiApiKey:  keyDraft.geminiApiKey  || config.geminiApiKey,
         finnhubApiKey: mergedFinnhub,
       })
       setEditingKeys(false)
@@ -298,14 +295,14 @@ export default function Settings() {
         <div className="bg-card rounded-xl px-4 py-4 space-y-2">
           <p className="text-sm font-medium">AI Provider</p>
           <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
-            {(['claude', 'groq', 'gemini'] as LLMProvider[]).map(p => (
+            {(['claude', 'groq'] as LLMProvider[]).map(p => (
               <button
                 key={p}
                 type="button"
                 onClick={() => handleProviderChange(p)}
                 className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${config.llmProvider === p ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                {p === 'claude' ? 'Claude' : p === 'groq' ? 'Groq' : 'Gemini'}
+                {p === 'claude' ? 'Claude' : 'Groq'}
               </button>
             ))}
           </div>
@@ -504,21 +501,6 @@ export default function Settings() {
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Gemini API Key</label>
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder="AIza..."
-              value={keyDraft.geminiApiKey}
-              onChange={e => setKeyDraft(d => ({ ...d, geminiApiKey: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finnhub API Key</label>
               <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
@@ -553,7 +535,7 @@ export default function Settings() {
         <div className="bg-card rounded-xl overflow-hidden">
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
-            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', geminiApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
+            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
           >
             <p className="text-sm font-medium flex-1">Update API keys</p>
             <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />

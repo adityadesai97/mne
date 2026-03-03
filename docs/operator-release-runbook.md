@@ -10,8 +10,9 @@ This runbook is for the app owner running production on their own Supabase + Ver
 
 ## Schema source of truth
 
-- `supabase/migrations/` is the canonical incremental history for upgrades.
-- `supabase/sql/self_host_bootstrap.sql` is the canonical full snapshot for first-time setup and drift repair.
+- `supabase/sql/self_host_bootstrap.sql` is the canonical idempotent schema snapshot.
+- `supabase/migrations/` contains `20260302000000_baseline.sql` plus future release migrations.
+- This repository was rebaselined pre-release into a single baseline migration; future schema changes should be forward migrations.
 - When adding a migration, update bootstrap SQL in the same PR.
 
 ## Release order (always)
@@ -53,6 +54,8 @@ Choose one method.
 For first-time or drifted environments, run the contents of:
 
 - `supabase/sql/self_host_bootstrap.sql`
+
+Do not run schema creation/migrations from Vercel build hooks. Build/deploy should be stateless; apply DB changes before app deploy.
 
 ## Deploy edge functions
 

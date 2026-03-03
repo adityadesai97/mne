@@ -12,7 +12,6 @@ const UNAUTHORIZED_MESSAGE = 'User is not authorized to use this app.'
 const PROVIDER_META: Record<LLMProvider, { label: string; placeholder: string; href: string }> = {
   claude: { label: 'Claude API Key', placeholder: 'sk-ant-...', href: 'https://console.anthropic.com/settings/keys' },
   groq:   { label: 'Groq API Key',   placeholder: 'gsk_...',   href: 'https://console.groq.com/keys' },
-  gemini: { label: 'Gemini API Key', placeholder: 'AIza...',   href: 'https://aistudio.google.com/app/apikey' },
 }
 
 function isFlagEnabled(value?: string) {
@@ -170,12 +169,10 @@ export default function Onboarding({ onComplete }: Props) {
       }
       if (provider === 'claude') dbRow.claude_api_key = aiKey
       if (provider === 'groq') dbRow.groq_api_key = aiKey
-      if (provider === 'gemini') dbRow.gemini_api_key = aiKey
       await saveSettings(dbRow)
       config.save({
         claudeApiKey:  provider === 'claude'  ? aiKey : '',
         groqApiKey:    provider === 'groq'    ? aiKey : '',
-        geminiApiKey:  provider === 'gemini'  ? aiKey : '',
         llmProvider:   provider,
         finnhubApiKey: finnhubKey,
       })
@@ -255,14 +252,14 @@ export default function Onboarding({ onComplete }: Props) {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">AI Provider</label>
         <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
-          {(['claude', 'groq', 'gemini'] as LLMProvider[]).map(p => (
+          {(['claude', 'groq'] as LLMProvider[]).map(p => (
             <button
               key={p}
               type="button"
               onClick={() => { setProvider(p); setAiKey('') }}
               className={`flex-1 text-xs py-1.5 rounded-md transition-colors capitalize ${provider === p ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              {p === 'claude' ? 'Claude' : p === 'groq' ? 'Groq' : 'Gemini'}
+              {p === 'claude' ? 'Claude' : 'Groq'}
             </button>
           ))}
         </div>

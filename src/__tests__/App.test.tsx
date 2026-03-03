@@ -3,8 +3,12 @@ import App from '../App'
 
 vi.mock('../lib/supabase', () => ({
   isSupabaseReady: () => false,
+  onAuthFailure: () => () => {},
   getSupabaseClient: () => ({
-    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) },
+    auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+    },
   }),
 }))
 

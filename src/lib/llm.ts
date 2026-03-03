@@ -5,7 +5,6 @@ import type { LLMProvider } from '@/store/config'
 export const MODEL_FOR_PROVIDER: Record<LLMProvider, string> = {
   claude: 'claude-sonnet-4-6',
   groq: 'llama-3.3-70b-versatile',
-  gemini: 'gemini-2.0-flash',
 }
 
 // ── Normalized response type (OpenAI shape) ──────────────────────────────────
@@ -25,8 +24,6 @@ export interface LLMClient {
     }
   }
 }
-
-const GEMINI_PROXY_PATH = '/api/gemini-chat'
 
 // ── Convert OpenAI-format messages → Anthropic format ────────────────────────
 function toAnthropicMessages(messages: any[]): Anthropic.MessageParam[] {
@@ -112,46 +109,9 @@ class ClaudeAdapter {
   }
 }
 
-// ── Gemini adapter (same-origin proxy to avoid browser CORS) ──────────────────
-class GeminiProxyAdapter {
-  private apiKey: string
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey
-  }
-
-  chat = {
-    completions: {
-      create: async (params: {
-        model: string
-        max_tokens?: number
-        messages: any[]
-        tools?: any[]
-      }): Promise<NormalizedResponse> => {
-        const response = await fetch(GEMINI_PROXY_PATH, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify(params),
-        })
-
-        if (!response.ok) {
-          const details = (await response.text()).trim()
-          throw new Error(`Gemini request failed (${response.status}): ${details || 'Unknown error'}`)
-        }
-
-        return await response.json() as NormalizedResponse
-      },
-    },
-  }
-}
-
 // ── Factory ───────────────────────────────────────────────────────────────────
 export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClient {
   if (provider === 'claude') return new ClaudeAdapter(apiKey)
-  if (provider === 'gemini') return new GeminiProxyAdapter(apiKey)
   return new OpenAI({
     apiKey,
     baseURL: 'https://api.groq.com/openai/v1',

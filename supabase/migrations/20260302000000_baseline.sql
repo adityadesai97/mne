@@ -1,5 +1,5 @@
--- mne self-host bootstrap schema
--- Purpose: initialize (or upgrade) a Supabase project so the current app can run locally.
+-- mne baseline migration
+-- Rebaselined pre-release to match supabase/sql/self_host_bootstrap.sql.
 -- Safe to run more than once.
 
 create extension if not exists pgcrypto;

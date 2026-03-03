@@ -35,6 +35,8 @@ Use one approach consistently.
   - It is idempotent (`create/alter ... if not exists`).
 
 - Approach B (migration-driven): apply all new files in `supabase/migrations/` since your last upgrade.
+  - Fresh installs can start from `20260302000000_baseline.sql`.
+  - This baseline was created pre-release to unify prior migration history.
 
 If you see schema-cache errors such as missing columns, run:
 
@@ -80,3 +82,7 @@ notify pgrst, 'reload schema';
 ### Settings save fails after upgrade
 
 Apply latest DB updates first. The app expects new columns before new features can persist.
+
+### Should DB tables be created during `npm run build` or Vercel build?
+
+No. Treat DB changes as an explicit operational step. Build pipelines should compile and test code only; schema changes should be applied separately before deploying app code.

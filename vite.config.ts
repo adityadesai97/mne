@@ -30,15 +30,6 @@ export default defineConfig({
       },
     }),
   ],
-  server: {
-    proxy: {
-      '/api/gemini-chat': {
-        target: 'https://generativelanguage.googleapis.com',
-        changeOrigin: true,
-        rewrite: () => '/v1beta/openai/chat/completions',
-      },
-    },
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

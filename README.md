@@ -15,7 +15,6 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
    - **One AI provider key**:
      - Claude — [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
      - Groq — [console.groq.com/keys](https://console.groq.com/keys)
-     - Gemini — [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
    - **Finnhub API key** — [finnhub.io/dashboard](https://finnhub.io/dashboard) (free tier is sufficient)
 4. Done. Keys are stored in the database tied to your account and persist across devices.
 
@@ -25,7 +24,7 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 
 This setup is intentionally scoped to:
 - Supabase auth + database
-- One AI provider key (Claude/Groq/Gemini) and Finnhub user API keys
+- One AI provider key (Claude/Groq) and Finnhub user API keys
 - Running the app locally
 
 ### 1. Prerequisites
@@ -36,7 +35,6 @@ This setup is intentionally scoped to:
 - One AI provider key:
   - Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
   - Groq ([console.groq.com/keys](https://console.groq.com/keys))
-  - Gemini ([aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey))
 - Finnhub API key ([finnhub.io/dashboard](https://finnhub.io/dashboard))
 
 ### 2. Install dependencies
@@ -72,20 +70,7 @@ In Supabase Dashboard -> **SQL Editor**, open and run the SQL in:
 Important: run the **contents of the file** in SQL Editor, not the file path text.
 
 This bootstrap script is idempotent and aligns with the current app schema.
-
-If you already created tables with an older schema, also run:
-
-```sql
-alter table public.user_settings
-  add column if not exists price_alerts_enabled boolean not null default true,
-  add column if not exists vest_alerts_enabled boolean not null default true,
-  add column if not exists capital_gains_alerts_enabled boolean not null default true,
-  add column if not exists llm_provider text not null default 'claude',
-  add column if not exists groq_api_key text,
-  add column if not exists gemini_api_key text;
-
-notify pgrst, 'reload schema';
-```
+For CLI-based workflows, `supabase/migrations/20260302000000_baseline.sql` matches this schema snapshot.
 
 ### 5. Enable Google sign-in in Supabase Auth
 
@@ -116,6 +101,30 @@ insert into allowed_emails (email) values ('you@example.com');
 For ongoing updates (code + schema), follow:
 
 - [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md)
+
+---
+
+## Update workflows by persona
+
+### 1) Hosted app users (your Supabase + Vercel project)
+
+- End users only sign in and manage their own API keys in-app.
+- You (operator) should release using:
+  - [`docs/operator-release-runbook.md`](docs/operator-release-runbook.md)
+- Best practice release order:
+  1. Apply DB changes in Supabase.
+  2. Deploy Supabase edge functions (if changed).
+  3. Push app code to `main` and let Vercel auto-deploy.
+
+### 2) Repo cloners (their own Supabase credentials)
+
+- Clone the repo and follow the self-host setup steps above.
+- For updates from upstream:
+  1. Pull latest code.
+  2. Apply DB updates (bootstrap SQL or new migrations).
+  3. Restart/rebuild app.
+- Detailed process:
+  - [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md)
 
 ---
 
