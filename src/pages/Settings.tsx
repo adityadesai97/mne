@@ -89,7 +89,6 @@ function Hint({ text }: { text: string }) {
 export default function Settings() {
   const [settings, setSettings] = useState({
     price_alert_threshold: 5,
-    tax_harvest_threshold: 1000,
     rsu_alert_days_before: 7,
     auto_theme_assignment_enabled: true,
     price_alerts_enabled: true,
@@ -418,19 +417,9 @@ export default function Settings() {
             <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
               <div className="flex items-center gap-1 flex-shrink-0">
                 <p className="text-sm font-medium">Capital gains alerts</p>
-                <Hint text="Alert when loss exceeds this amount" />
+                <Hint text="Notify when Short Term lots are promoted to Long Term (after 1 year)." />
               </div>
-              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.capital_gains_alerts_enabled ? '' : 'opacity-35'}`}>
-                <span className="text-xs text-muted-foreground">$</span>
-                <Input
-                  type="number"
-                  value={settings.tax_harvest_threshold}
-                  onChange={e => setSettings(s => ({ ...s, tax_harvest_threshold: Number(e.target.value) }))}
-                  onBlur={() => saveSettings(settingsRef.current)}
-                  disabled={!settings.capital_gains_alerts_enabled}
-                  className="w-18 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
-                />
-              </div>
+              <div className="ml-auto" />
               <Toggle
                 enabled={settings.capital_gains_alerts_enabled}
                 onEnable={() => { void setNotificationToggle('capital_gains_alerts_enabled', true) }}

@@ -351,7 +351,6 @@ export type Database = {
           id: string
           price_alert_threshold: number | null
           rsu_alert_days_before: number | null
-          tax_harvest_threshold: number | null
           user_id: string
         }
         Insert: {
@@ -361,7 +360,6 @@ export type Database = {
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
-          tax_harvest_threshold?: number | null
           user_id: string
         }
         Update: {
@@ -371,7 +369,6 @@ export type Database = {
           id?: string
           price_alert_threshold?: number | null
           rsu_alert_days_before?: number | null
-          tax_harvest_threshold?: number | null
           user_id?: string
         }
         Relationships: []
