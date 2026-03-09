@@ -4,7 +4,7 @@ import { getSettings, saveSettings } from '@/lib/db/settings'
 import { Input } from '@/components/ui/input'
 import { config } from '@/store/config'
 import type { LLMProvider } from '@/store/config'
-import { exportData, exportCsv, importData, setActiveImportController } from '@/lib/importExport'
+import { exportData, importData, setActiveImportController } from '@/lib/importExport'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
@@ -433,11 +433,10 @@ export default function Settings() {
       {/* Data */}
       <SectionHeader><Database size={10} className="inline mr-1.5 mb-0.5" />Data</SectionHeader>
       <div className="space-y-2">
-        <Row label="Export data as JSON" onClick={exportData} />
-        <Row label="Export tax lots as CSV" hint="One row per lot — useful for tax filing" onClick={() => { void exportCsv() }} />
+        <Row label="Export" hint="Download a full JSON backup of your portfolio" onClick={exportData} />
         <Row
-          label={importLoading ? 'Importing JSON…' : 'Import from JSON'}
-          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : undefined}
+          label={importLoading ? 'Importing…' : 'Import'}
+          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Restore from a JSON backup'}
           right={importLoading ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
           disabled={importLoading}
           onClick={() => fileInputRef.current?.click()}
