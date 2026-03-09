@@ -13,6 +13,20 @@ import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
+import { showAppAlert } from '@/lib/appAlerts'
+
+const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
+
+function formatRelativeTime(isoString: string | null): string | null {
+  if (!isoString) return null
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 const TYPE_COLORS: Record<string, string> = {
   Stock: '#3B82F6',
@@ -69,12 +83,15 @@ export default function Home() {
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [firstName, setFirstName] = useState<string | null>(null)
+  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
+    () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
+  )
   const heroRef = useRef<HTMLParagraphElement>(null)
 
   useEffect(() => {
     getAllAssets()
       .then(setAssets)
-      .catch(console.error)
+      .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
       .finally(() => setAssetsLoaded(true))
   }, [])
 
@@ -90,7 +107,9 @@ export default function Home() {
       setSnapshots([])
       return
     }
-    getSnapshots().then(setSnapshots).catch(console.error)
+    getSnapshots().then(setSnapshots).catch(() => {
+      // snapshots are non-critical; no alert needed
+    })
   }, [assetsLoaded, assets.length])
 
   useEffect(() => {
@@ -100,10 +119,22 @@ export default function Home() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    if (config.finnhubApiKey) {
+      try {
+        await refreshAllPrices(config.finnhubApiKey)
+        const now = new Date().toISOString()
+        localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
+        setPricesRefreshedAt(now)
+      } catch {
+        showAppAlert('Price refresh failed. Check your Finnhub API key.', { variant: 'error' })
+      }
+    }
     const [fresh] = await Promise.all([
-      getAllAssets().catch(() => assets),
-      getSnapshots().then(setSnapshots).catch(console.error),
+      getAllAssets().catch(() => {
+        showAppAlert('Failed to reload portfolio.', { variant: 'error' })
+        return assets
+      }),
+      getSnapshots().then(setSnapshots).catch(() => {}),
     ])
     setAssets((fresh as any[]) ?? assets)
   }, [assets])
@@ -329,7 +360,7 @@ export default function Home() {
             />
           </div>
 
-          {/* Mini meta row — positions + asset types */}
+          {/* Mini meta row — positions + asset types + price freshness */}
           <div className="flex gap-5 pt-3 border-t border-white/[0.05] relative">
             <div>
               <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Positions</p>
@@ -340,6 +371,15 @@ export default function Home() {
               <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Asset Types</p>
               <p className="text-sm font-medium tabular-nums mt-0.5">{uniqueAssetTypes}</p>
             </div>
+            {formatRelativeTime(pricesRefreshedAt) && (
+              <>
+                <div className="w-px bg-border" />
+                <div>
+                  <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Prices</p>
+                  <p className="text-sm font-medium tabular-nums mt-0.5">{formatRelativeTime(pricesRefreshedAt)}</p>
+                </div>
+              </>
+            )}
           </div>
         </motion.div>
 
