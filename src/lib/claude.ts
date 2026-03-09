@@ -1722,6 +1722,83 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
   return []
 }
 
+function isValidIsoDate(value: unknown): boolean {
+  if (typeof value !== 'string' || !value) return false
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+}
+
+function validateWriteToolInput(toolName: string, input: any): string | null {
+  if (toolName === 'add_stock_transaction') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
+    if (!Number.isFinite(Number(input.count)) || Number(input.count) <= 0) return 'Shares must be a positive number'
+    if (!Number.isFinite(Number(input.cost_price)) || Number(input.cost_price) < 0) return 'Cost price must be a non-negative number'
+    if (!isValidIsoDate(input.purchase_date)) return `Invalid purchase date: "${input.purchase_date}". Use YYYY-MM-DD format`
+    if (new Date(input.purchase_date) > new Date()) return 'Purchase date cannot be in the future'
+  }
+
+  if (toolName === 'add_stock_transactions') {
+    const transactions = Array.isArray(input.transactions) ? input.transactions : []
+    if (transactions.length === 0) return 'At least one transaction is required'
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i]
+      if (!tx.symbol || !String(tx.symbol).trim()) return `Transaction ${i + 1}: symbol is required`
+      if (!Number.isFinite(Number(tx.count)) || Number(tx.count) <= 0) return `Transaction ${i + 1}: shares must be a positive number`
+      if (!Number.isFinite(Number(tx.cost_price)) || Number(tx.cost_price) < 0) return `Transaction ${i + 1}: cost price must be a non-negative number`
+      if (!isValidIsoDate(tx.purchase_date)) return `Transaction ${i + 1}: invalid purchase date "${tx.purchase_date}". Use YYYY-MM-DD`
+      if (new Date(tx.purchase_date) > new Date()) return `Transaction ${i + 1}: purchase date cannot be in the future`
+    }
+  }
+
+  if (toolName === 'add_cash_asset') {
+    if (!input.name || !String(input.name).trim()) return 'Asset name is required'
+    if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
+    if (!input.location_name || !String(input.location_name).trim()) return 'Location name is required'
+  }
+
+  if (toolName === 'add_cash_assets') {
+    const assets = Array.isArray(input.assets) ? input.assets : []
+    if (assets.length === 0) return 'At least one asset is required'
+    for (let i = 0; i < assets.length; i++) {
+      const a = assets[i]
+      if (!a.name || !String(a.name).trim()) return `Asset ${i + 1}: name is required`
+      if (!Number.isFinite(Number(a.price)) || Number(a.price) < 0) return `Asset ${i + 1}: price must be a non-negative number`
+    }
+  }
+
+  if (toolName === 'sell_shares') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
+    if (!Number.isFinite(Number(input.sale_price)) || Number(input.sale_price) < 0) return 'Sale price must be a non-negative number'
+    if (!isValidIsoDate(input.sale_date)) return `Invalid sale date: "${input.sale_date}". Use YYYY-MM-DD format`
+    if (new Date(input.sale_date) > new Date()) return 'Sale date cannot be in the future'
+    const lots = Array.isArray(input.lots) ? input.lots : []
+    const singleCount = Number(input.count)
+    if (lots.length === 0 && (!Number.isFinite(singleCount) || singleCount <= 0)) {
+      return 'Shares to sell must be a positive number'
+    }
+    for (let i = 0; i < lots.length; i++) {
+      const lot = lots[i]
+      if (!Number.isFinite(Number(lot.count)) || Number(lot.count) <= 0) return `Lot ${i + 1}: shares must be a positive number`
+      if (!isValidIsoDate(lot.purchase_date)) return `Lot ${i + 1}: invalid purchase date "${lot.purchase_date}". Use YYYY-MM-DD`
+    }
+  }
+
+  if (toolName === 'add_rsu_grant') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
+    if (!Number.isFinite(Number(input.total_shares)) || Number(input.total_shares) <= 0) return 'Total shares must be a positive number'
+    if (!isValidIsoDate(input.grant_date)) return `Invalid grant date: "${input.grant_date}". Use YYYY-MM-DD format`
+    if (!isValidIsoDate(input.vest_start)) return `Invalid vest start: "${input.vest_start}". Use YYYY-MM-DD format`
+    if (!isValidIsoDate(input.vest_end)) return `Invalid vest end: "${input.vest_end}". Use YYYY-MM-DD format`
+    if (new Date(input.vest_start) >= new Date(input.vest_end)) return 'Vest start must be before vest end'
+  }
+
+  if (toolName === 'update_asset_value') {
+    if (!input.asset_name || !String(input.asset_name).trim()) return 'Asset name is required'
+    if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
+  }
+
+  return null
+}
+
 function confirmationMessageFor(toolName: string, input: any): string {
   switch (toolName) {
     case 'add_stock_transaction': {
@@ -2754,16 +2831,20 @@ ${JSON.stringify(expandedContext, null, 2)}`
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
   }
 
-  const buildWriteConfirmation = (name: string, input: any) => ({
-    confirmationMessage: confirmationMessageFor(name, input),
-    previewSections: buildPreviewSectionsFor(name, input),
-    execute: async () => {
-      const supabase = getSupabaseClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-      await executeTool(name, input, user.id)
-    },
-  })
+  const buildWriteConfirmation = (name: string, input: any) => {
+    const validationError = validateWriteToolInput(name, input)
+    if (validationError) throw new Error(validationError)
+    return {
+      confirmationMessage: confirmationMessageFor(name, input),
+      previewSections: buildPreviewSectionsFor(name, input),
+      execute: async () => {
+        const supabase = getSupabaseClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Not authenticated')
+        await executeTool(name, input, user.id)
+      },
+    }
+  }
 
   const confirmations = writeTools.map((tool) => buildWriteConfirmation(tool.name, tool.input))
   if (confirmations.length === 1) {

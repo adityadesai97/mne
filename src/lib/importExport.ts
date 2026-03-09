@@ -1006,6 +1006,76 @@ export async function exportData() {
   URL.revokeObjectURL(url)
 }
 
+export async function exportCsv() {
+  const assets = await getAllAssets()
+
+  const csvRows: string[][] = []
+  const headers = [
+    'Asset Name', 'Symbol', 'Asset Type', 'Subtype', 'Location', 'Account Type', 'Ownership',
+    'Shares', 'Cost Price', 'Purchase Date', 'Capital Gains Status',
+    'Current Price', 'Market Value', 'Unrealized Gain/Loss',
+  ]
+  csvRows.push(headers)
+
+  function csvCell(value: string | number | null | undefined): string {
+    const str = value === null || value === undefined ? '' : String(value)
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  for (const asset of assets ?? []) {
+    const name = String(asset.name ?? '')
+    const assetType = String(asset.asset_type ?? '')
+    const location = String((asset as any).location?.name ?? '')
+    const accountType = String((asset as any).location?.account_type ?? '')
+    const ownership = String(asset.ownership ?? '')
+    const symbol = String((asset as any).ticker?.symbol ?? '')
+    const currentPrice = (asset as any).ticker?.current_price ?? null
+
+    const subtypes: any[] = (asset as any).stock_subtypes ?? []
+    if (subtypes.length > 0) {
+      for (const subtype of subtypes) {
+        const subtypeName = String(subtype.subtype ?? '')
+        for (const tx of subtype.transactions ?? []) {
+          const shares = Number(tx.count ?? 0)
+          const costPrice = Number(tx.cost_price ?? 0)
+          const purchaseDate = String(tx.purchase_date ?? '')
+          const gainsStatus = String(tx.capital_gains_status ?? '')
+          const marketValue = currentPrice != null ? shares * Number(currentPrice) : null
+          const unrealizedGain = marketValue != null ? marketValue - shares * costPrice : null
+          csvRows.push([
+            name, symbol, assetType, subtypeName, location, accountType, ownership,
+            shares, costPrice, purchaseDate, gainsStatus,
+            currentPrice ?? '', marketValue !== null ? marketValue.toFixed(2) : '',
+            unrealizedGain !== null ? unrealizedGain.toFixed(2) : '',
+          ].map(csvCell))
+        }
+      }
+    } else {
+      // Non-stock asset: single row
+      const price = Number(asset.price ?? 0)
+      const initialPrice = Number((asset as any).initial_price ?? 0)
+      const gain = price - initialPrice
+      csvRows.push([
+        name, symbol, assetType, '', location, accountType, ownership,
+        '', '', '', '',
+        price, price.toFixed(2), initialPrice > 0 ? gain.toFixed(2) : '',
+      ].map(csvCell))
+    }
+  }
+
+  const csvString = csvRows.map(row => row.join(',')).join('\n')
+  const blob = new Blob([csvString], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `mne-export-${new Date().toISOString().split('T')[0]}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export async function importData(file: File, options: { signal?: AbortSignal } = {}) {
   const { signal } = options
   try {

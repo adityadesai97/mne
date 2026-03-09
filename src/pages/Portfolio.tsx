@@ -7,6 +7,20 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
+import { showAppAlert } from '@/lib/appAlerts'
+
+const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
+
+function formatRelativeTime(isoString: string | null): string | null {
+  if (!isoString) return null
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 type SortOption = 'name' | 'value' | 'gain'
 
@@ -17,11 +31,14 @@ export default function Portfolio() {
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
+    () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
+  )
 
   useEffect(() => {
     getAllAssets()
       .then(setAssets)
-      .catch(console.error)
+      .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
       .finally(() => setAssetsLoaded(true))
   }, [])
 
@@ -32,8 +49,20 @@ export default function Portfolio() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
-    const fresh = await getAllAssets().catch(() => assets)
+    if (config.finnhubApiKey) {
+      try {
+        await refreshAllPrices(config.finnhubApiKey)
+        const now = new Date().toISOString()
+        localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
+        setPricesRefreshedAt(now)
+      } catch {
+        showAppAlert('Price refresh failed. Check your Finnhub API key.', { variant: 'error' })
+      }
+    }
+    const fresh = await getAllAssets().catch(() => {
+      showAppAlert('Failed to reload portfolio.', { variant: 'error' })
+      return assets
+    })
     setAssets((fresh as any[]) ?? assets)
   }, [assets])
 
@@ -102,7 +131,14 @@ export default function Portfolio() {
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-4">
       <div className="flex justify-between items-center px-4 mb-3">
-        <h1 className="text-xl font-bold">Portfolio</h1>
+        <div>
+          <h1 className="text-xl font-bold">Portfolio</h1>
+          {formatRelativeTime(pricesRefreshedAt) && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Prices {formatRelativeTime(pricesRefreshedAt)}
+            </p>
+          )}
+        </div>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortOption)}
