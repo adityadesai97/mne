@@ -1,5 +1,6 @@
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import type { NormalizedResponse } from './llm'
+import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
 import { getAllAssets } from './db/assets'
 import { getSnapshots } from './db/snapshots'
@@ -2622,7 +2623,7 @@ async function executeMockNotification(type: string, userId: string): Promise<vo
   }
 }
 
-export async function runCommand(messages: Message[]): Promise<any> {
+export async function runCommand(messages: Message[], attachment?: FileAttachment): Promise<any> {
   const lastUserContent = messages.findLast(m => m.role === 'user')?.content ?? ''
   const traceSteps: AgentTraceStep[] = []
   const addTrace = (label: string, detail?: string) => {
@@ -2708,6 +2709,48 @@ ${JSON.stringify(analysisContext, null, 2)}`
   }
 
   let claudeMessages: any[] = [...messages]
+
+  // Inject file attachment into the last user message and system prompt
+  if (attachment) {
+    const lastIdx = claudeMessages.length - 1
+    const lastMsg = claudeMessages[lastIdx]
+    const userText = typeof lastMsg?.content === 'string' ? lastMsg.content : ''
+
+    if (attachment.type === 'csv') {
+      claudeMessages[lastIdx] = {
+        ...lastMsg,
+        content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
+      }
+    } else if (attachment.type === 'pdf') {
+      if (config.llmProvider === 'claude') {
+        // Send PDF as native document content block — Claude understands it directly
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: attachment.content } },
+            { type: 'text', text: userText },
+          ],
+        }
+      } else {
+        // Groq doesn't support document blocks — extract text via pdfjs-dist
+        addTrace('Extracting PDF text for Groq provider')
+        const { extractTextFromPdf } = await import('./fileParser')
+        const extractedText = await extractTextFromPdf(attachment)
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
+        }
+      }
+    }
+
+    systemPrompt = `${systemPrompt}
+
+---
+A financial document "${attachment.filename}" has been attached. Analyze it to identify portfolio-relevant data: stock trades (symbol, quantity, price, date, account), cash balances, or other financial positions.
+Summarize what you found before calling any write tools. The user will confirm each write operation before it executes.`
+    addTrace('File attachment injected', `${attachment.filename} (${attachment.type.toUpperCase()})`)
+  }
+
   let response = await runLLM(systemPrompt, claudeMessages)
   addTrace('Initial model pass complete')
 
