@@ -1166,7 +1166,7 @@ function extractTextFromResponse(response: NormalizedResponse): string {
   return response.choices[0]?.message?.content ?? ''
 }
 
-export function buildSystemPrompt(assets: any[], userName?: string): string {
+export function buildSystemPrompt(assets: any[], userName?: string, attachmentFilename?: string): string {
   return `You are a portfolio assistant for a personal finance app called mne.
 The user will issue commands in natural language to read or write to their portfolio.
 ${userName ? `The user's name is ${userName}. Address them by name when appropriate.` : ''}
@@ -1189,7 +1189,10 @@ If required details are missing in a multi-item request, ask follow-up questions
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
-Today's date is ${new Date().toISOString().split('T')[0]}`
+Today's date is ${new Date().toISOString().split('T')[0]}${attachmentFilename ? `
+
+---
+A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, or account balances it contains. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.` : ''}`
 }
 
 const tools = [
@@ -2678,7 +2681,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
-  const baseSystemPrompt = buildSystemPrompt(assets, userName)
+  const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename)
 
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
@@ -2743,11 +2746,6 @@ ${JSON.stringify(analysisContext, null, 2)}`
       }
     }
 
-    systemPrompt = `${systemPrompt}
-
----
-A financial document "${attachment.filename}" has been attached. Analyze it to identify portfolio-relevant data: stock trades (symbol, quantity, price, date, account), cash balances, or other financial positions.
-Summarize what you found before calling any write tools. The user will confirm each write operation before it executes.`
     addTrace('File attachment injected', `${attachment.filename} (${attachment.type.toUpperCase()})`)
   }
 
