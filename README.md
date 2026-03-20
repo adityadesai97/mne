@@ -45,17 +45,9 @@ An interactive script handles dependency installation, `.env.local` creation, an
 bash setup.sh
 ```
 
-It will prompt for your Supabase credentials and ask whether to enable optional features (email allowlist, landing page, push notifications).
+It will prompt for your Supabase credentials, ask whether to enable optional features (email allowlist, landing page, push notifications), and offer to apply the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens)).
 
-### 3. Apply the app schema in Supabase
-
-In Supabase Dashboard → **SQL Editor**, paste and run the contents of:
-
-```
-supabase/sql/self_host_bootstrap.sql
-```
-
-This script is idempotent — safe to re-run. For CLI-based workflows, `supabase/migrations/20260302000000_baseline.sql` matches the same schema snapshot.
+If you prefer to apply the schema manually: in Supabase Dashboard → **SQL Editor**, paste and run the contents of `supabase/sql/self_host_bootstrap.sql`. The script is idempotent — safe to re-run.
 
 ### 4. Enable Google sign-in in Supabase Auth
 
