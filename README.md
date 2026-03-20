@@ -94,13 +94,15 @@ All dev commands require confirmation before executing.
 
 ### Push Notifications
 
-Scheduled edge functions check for events and send browser push alerts:
+Edge functions check for events and send browser push alerts:
 
-- **Price alerts** — fires when a tracked ticker moves beyond your configured threshold (checked hourly)
-- **RSU vesting alerts** — fires when a grant is vesting within your configured window (checked hourly)
-- **Capital gains alerts** — fires when a Short Term lot crosses the 1-year mark and is promoted to Long Term (checked daily at 9am)
+- **Price alerts** — fires when a tracked ticker moves beyond your configured threshold
+- **RSU vesting alerts** — fires when a grant is vesting within your configured window
+- **Capital gains alerts** — fires when a Short Term lot crosses the 1-year mark and is promoted to Long Term
 
 Configure thresholds in Settings → Notifications.
+
+> **Note for self-hosters:** The edge functions (`check-prices`, `check-vests`, `check-capital-gains`) must be scheduled manually via pg_cron in your Supabase project. Recommended schedules: prices and vests hourly, capital gains daily at 9am.
 
 ### Import / Export
 
