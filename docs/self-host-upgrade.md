@@ -2,6 +2,8 @@
 
 ## Quickstart
 
+> **Back up first.** Export your portfolio from **Settings → Export** before upgrading. For a full DB backup, use the Supabase dashboard → Database → Backups.
+
 ```bash
 bash upgrade.sh
 ```
@@ -11,6 +13,8 @@ The script:
 2. Runs `npm ci`
 3. Applies the database schema automatically via the Supabase Management API (prompts for a Personal Access Token; falls back to manual instructions)
 4. Redeploys edge functions automatically if push notifications are set up (detected from `VITE_VAPID_PUBLIC_KEY` in `.env.local`)
+
+After the script completes, restart the app with `bash run.sh`.
 
 ---
 
@@ -60,11 +64,10 @@ supabase functions deploy check-vests         --project-ref <project-ref>
 supabase functions deploy check-capital-gains --project-ref <project-ref>
 ```
 
-### 5. Build and run
+### 5. Run the app
 
 ```bash
-npm run build
-npm run dev
+bash run.sh
 ```
 
 ### 6. Verify

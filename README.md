@@ -32,6 +32,13 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 | AI provider key | Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or Groq ([console.groq.com/keys](https://console.groq.com/keys)). Entered in-app on first sign-in. |
 | Finnhub API key | For stock price quotes. Free tier at [finnhub.io/dashboard](https://finnhub.io/dashboard). Entered in-app on first sign-in. |
 
+#### 0. Clone the repo
+
+```bash
+git clone https://github.com/adityadesai97/mne.git
+cd mne
+```
+
 #### 1. Run setup
 
 ```bash
@@ -42,16 +49,20 @@ This interactive script handles:
 - Installing dependencies
 - Prompting for Supabase credentials and writing `.env.local`
 - Optional features: email allowlist, landing page, push notifications
-- Applying the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens)); falls back to manual instructions if you skip it
-- If push notifications are enabled and a PAT was provided: setting VAPID secrets and pg_cron schedules automatically
+- Applying the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens) — an account-level Supabase token, separate from your project's anon key); falls back to manual instructions if you skip it
+- If push notifications are enabled and a PAT was provided: setting VAPID secrets, pg_cron schedules, and deploying edge functions automatically
+
+> **If setup fails partway through**, re-running `bash setup.sh` is safe — the schema step is idempotent and the script will skip `.env.local` if it already exists.
 
 #### 2. Enable Google sign-in
 
 1. In Supabase: **Authentication → Providers → Google** → enable it.
 2. In [Google Cloud Console](https://console.cloud.google.com), create an OAuth 2.0 Web client:
-   - Authorized JavaScript origin: `http://localhost:5173`
+   - Authorized JavaScript origin: `http://localhost:5173` (add your production URL here too if deploying beyond localhost)
    - Authorized redirect URI: `https://<your-project-ref>.supabase.co/auth/v1/callback`
 3. Paste the Google client ID and secret into Supabase.
+
+> Your **project ref** is the subdomain of your Supabase project URL (`https://<ref>.supabase.co`).
 
 #### 3. Start the app
 
@@ -63,9 +74,15 @@ Open `http://localhost:5173`, sign in with Google, then enter your AI provider k
 
 #### 4. Deploy edge functions (push notifications only)
 
-If you enabled push notifications, deploy the four edge functions using the [Supabase CLI](https://supabase.com/docs/guides/cli):
+If you enabled push notifications and provided a PAT during setup, edge functions were deployed automatically — skip this step.
+
+Otherwise, deploy using the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
+# Install the CLI (macOS / Linux)
+brew install supabase/tap/supabase        # macOS
+# or: https://supabase.com/docs/guides/cli/getting-started for Linux/Windows
+
 supabase login
 supabase functions deploy send-push           --project-ref <your-project-ref>
 supabase functions deploy check-prices        --project-ref <your-project-ref>
@@ -73,7 +90,26 @@ supabase functions deploy check-vests         --project-ref <your-project-ref>
 supabase functions deploy check-capital-gains --project-ref <your-project-ref>
 ```
 
-`setup.sh` prints the exact commands with your project ref filled in. If you ran setup with a Personal Access Token, VAPID secrets and pg_cron schedules were applied automatically; otherwise `setup.sh` also prints the SQL to paste into the Supabase SQL Editor.
+> Your **project ref** is the subdomain of your Supabase URL — e.g. `https://abcdefgh.supabase.co` → ref is `abcdefgh`. `setup.sh` prints the exact commands with this filled in.
+
+If you ran setup without a PAT, `setup.sh` also prints the SQL to paste into the Supabase SQL Editor to set up the pg_cron schedules.
+
+#### 5. Enable push notifications in the app
+
+After deploying edge functions, enable alerts in the app:
+
+1. Open **Settings → Notifications**.
+2. Toggle on the alert types you want (price, RSU vesting, capital gains).
+3. When the browser asks for notification permission, click **Allow**.
+
+Without this step the edge functions will run on schedule but won't send anything — there's no registered browser subscription to deliver to.
+
+#### 6. Verify your setup
+
+1. Sign in and check the Home screen loads with a net worth value (or $0 for a new account).
+2. Open **Settings**, change any value, and save — confirm no errors appear.
+3. Press `Cmd+K` and type "What's my net worth?" — confirm the AI responds.
+4. Add one asset via the command bar or the Portfolio page.
 
 #### Upgrading an existing instance
 
