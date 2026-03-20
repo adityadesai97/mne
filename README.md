@@ -29,66 +29,51 @@ This setup is intentionally scoped to:
 
 ### 1. Prerequisites
 
-- Node.js `22.x` and npm
-- A Supabase project
-- A Google OAuth client (for Supabase Auth)
-- One AI provider key:
-  - Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
-  - Groq ([console.groq.com/keys](https://console.groq.com/keys))
-- Finnhub API key ([finnhub.io/dashboard](https://finnhub.io/dashboard))
+| Dependency | Notes |
+|------------|-------|
+| Node.js `22.x` + npm | Required to build and run the app. Install from [nodejs.org](https://nodejs.org/en/download) or via [nvm](https://github.com/nvm-sh/nvm). |
+| [Supabase](https://supabase.com) project | Free tier is sufficient. Provides the database and auth. |
+| Google OAuth client | For sign-in via Supabase Auth. Create one in [Google Cloud Console](https://console.cloud.google.com). |
+| AI provider key | One of: Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or Groq ([console.groq.com/keys](https://console.groq.com/keys)). Entered in-app on first sign-in. |
+| Finnhub API key | For stock price quotes. Free tier at [finnhub.io/dashboard](https://finnhub.io/dashboard). Entered in-app on first sign-in. |
 
-### 2. Install dependencies
+### 2. Run setup
 
-```bash
-npm install
-```
-
-### 3. Create `.env.local`
+An interactive script handles dependency installation, `.env.local` creation, and walks you through all configuration options:
 
 ```bash
-cp .env.example .env.local
+bash setup.sh
 ```
 
-Then fill:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+It will prompt for your Supabase credentials and ask whether to enable optional features (email allowlist, landing page, push notifications).
 
-Optional flags:
-- `VITE_RESTRICT_SIGNUPS=true` to require email allowlist
-- `VITE_LANDING_AS_HOME=true` to show landing page before sign-in
+### 3. Apply the app schema in Supabase
 
-`VITE_LANDING_AS_HOME` accepts boolean-like values:
-- enabled: `true`, `1`, `yes`, `on`
-- disabled: unset, `false`, `0`, `no`, `off`
+In Supabase Dashboard → **SQL Editor**, paste and run the contents of:
 
-### 4. Apply the app schema in Supabase
+```
+supabase/sql/self_host_bootstrap.sql
+```
 
-In Supabase Dashboard -> **SQL Editor**, open and run the SQL in:
+This script is idempotent — safe to re-run. For CLI-based workflows, `supabase/migrations/20260302000000_baseline.sql` matches the same schema snapshot.
 
-`supabase/sql/self_host_bootstrap.sql`
+### 4. Enable Google sign-in in Supabase Auth
 
-Important: run the **contents of the file** in SQL Editor, not the file path text.
-
-This bootstrap script is idempotent and aligns with the current app schema.
-For CLI-based workflows, `supabase/migrations/20260302000000_baseline.sql` matches this schema snapshot.
-
-### 5. Enable Google sign-in in Supabase Auth
-
-1. In Supabase: **Authentication -> Providers -> Google** -> enable it.
+1. In Supabase: **Authentication → Providers → Google** → enable it.
 2. In [Google Cloud Console](https://console.cloud.google.com), create an OAuth 2.0 Web client:
    - Authorized JavaScript origin: `http://localhost:5173`
    - Authorized redirect URI: `https://<your-project-ref>.supabase.co/auth/v1/callback`
 3. Paste the Google client ID/secret into Supabase.
 
-### 6. Run the app
+### 5. Start the app
 
 ```bash
-npm run dev
+bash run.sh
 ```
 
-Open `http://localhost:5173`, sign in with Google, then enter your chosen AI provider key and Finnhub key in-app when prompted.
+Open `http://localhost:5173`, sign in with Google, then enter your AI provider key and Finnhub key when prompted.
 
-### 7. Optional allowlist (only if `VITE_RESTRICT_SIGNUPS=true`)
+### 6. Optional allowlist (only if `VITE_RESTRICT_SIGNUPS=true`)
 
 In Supabase SQL Editor:
 
