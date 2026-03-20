@@ -38,11 +38,12 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 bash setup.sh
 ```
 
-This interactive script handles everything in one go:
-- Installs dependencies
-- Prompts for your Supabase credentials and writes `.env.local`
-- Asks whether to enable optional features (email allowlist, landing page, push notifications)
-- Offers to apply the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens)); falls back to manual instructions if you skip it
+This interactive script handles:
+- Installing dependencies
+- Prompting for Supabase credentials and writing `.env.local`
+- Optional features: email allowlist, landing page, push notifications
+- Applying the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens)); falls back to manual instructions if you skip it
+- If push notifications are enabled and a PAT was provided: setting VAPID secrets and pg_cron schedules automatically
 
 #### 2. Enable Google sign-in
 
@@ -59,6 +60,20 @@ bash run.sh
 ```
 
 Open `http://localhost:5173`, sign in with Google, then enter your AI provider key and Finnhub key when prompted.
+
+#### 4. Deploy edge functions (push notifications only)
+
+If you enabled push notifications, deploy the four edge functions using the [Supabase CLI](https://supabase.com/docs/guides/cli):
+
+```bash
+supabase login
+supabase functions deploy send-push           --project-ref <your-project-ref>
+supabase functions deploy check-prices        --project-ref <your-project-ref>
+supabase functions deploy check-vests         --project-ref <your-project-ref>
+supabase functions deploy check-capital-gains --project-ref <your-project-ref>
+```
+
+`setup.sh` prints the exact commands with your project ref filled in. If you ran setup with a Personal Access Token, VAPID secrets and pg_cron schedules were applied automatically; otherwise `setup.sh` also prints the SQL to paste into the Supabase SQL Editor.
 
 #### Upgrading an existing instance
 
@@ -102,7 +117,26 @@ Edge functions check for events and send browser push alerts:
 
 Configure thresholds in Settings → Notifications.
 
-> **Note for self-hosters:** The edge functions (`check-prices`, `check-vests`, `check-capital-gains`) must be scheduled manually via pg_cron in your Supabase project. Recommended schedules: prices and vests hourly, capital gains daily at 9am.
+> **Note for self-hosters:** The edge functions (`check-prices`, `check-vests`, `check-capital-gains`) must be deployed and scheduled. `setup.sh` automates this when a Personal Access Token is provided. For manual scheduling, run in the Supabase SQL Editor:
+> ```sql
+> create extension if not exists pg_net schema extensions;
+> create extension if not exists pg_cron;
+>
+> select cron.schedule('mne-check-prices', '0 * * * *',
+>   format($q$select net.http_post(url:=%L,headers:=%L::jsonb,body:='{}'::jsonb)$q$,
+>     'https://<ref>.supabase.co/functions/v1/check-prices',
+>     '{"Content-Type":"application/json","Authorization":"Bearer <anon-key>"}'));
+>
+> select cron.schedule('mne-check-vests', '30 * * * *',
+>   format($q$select net.http_post(url:=%L,headers:=%L::jsonb,body:='{}'::jsonb)$q$,
+>     'https://<ref>.supabase.co/functions/v1/check-vests',
+>     '{"Content-Type":"application/json","Authorization":"Bearer <anon-key>"}'));
+>
+> select cron.schedule('mne-check-capital-gains', '0 9 * * *',
+>   format($q$select net.http_post(url:=%L,headers:=%L::jsonb,body:='{}'::jsonb)$q$,
+>     'https://<ref>.supabase.co/functions/v1/check-capital-gains',
+>     '{"Content-Type":"application/json","Authorization":"Bearer <anon-key>"}'));
+> ```
 
 ### Import / Export
 

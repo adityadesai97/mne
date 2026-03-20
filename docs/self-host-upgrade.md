@@ -46,12 +46,13 @@ notify pgrst, 'reload schema';
 
 ## 4. Update edge functions (if using notifications)
 
-When files under `supabase/functions/` change, redeploy functions.
+When files under `supabase/functions/` change, redeploy functions using the [Supabase CLI](https://supabase.com/docs/guides/cli).
 
 ```bash
-supabase functions deploy send-push --project-ref <project-ref>
-supabase functions deploy check-prices --project-ref <project-ref>
-supabase functions deploy check-vests --project-ref <project-ref>
+supabase login   # only needed once
+supabase functions deploy send-push           --project-ref <project-ref>
+supabase functions deploy check-prices        --project-ref <project-ref>
+supabase functions deploy check-vests         --project-ref <project-ref>
 supabase functions deploy check-capital-gains --project-ref <project-ref>
 ```
 
