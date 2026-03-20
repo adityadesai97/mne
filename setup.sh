@@ -167,20 +167,70 @@ fi  # end SKIP_ENV
 # ─── Step 4: Apply database schema ────────────────────────────────────────────
 header "Step 4: Apply the database schema"
 
-echo "  The app requires a one-time schema setup in your Supabase project."
-echo "  There is no local Supabase CLI — run the SQL directly in the dashboard."
-echo ""
-echo "  1. Open your Supabase project dashboard"
-echo "  2. Go to SQL Editor (left sidebar)"
-echo "  3. Paste the contents of the bootstrap SQL file and click Run:"
-echo ""
-echo "     ${BOLD}supabase/sql/self_host_bootstrap.sql${RESET}"
-echo ""
-echo "  To view the file contents, run:"
-echo "     cat supabase/sql/self_host_bootstrap.sql"
-echo ""
-warn "This step is required before the app will work. The script is idempotent"
-warn "so it's safe to run again if you've already applied an earlier version."
+# Extract the Supabase URL (may have been set earlier, or read from existing file)
+if [ -z "${SUPABASE_URL:-}" ]; then
+  URL_LINE=$(grep "^VITE_SUPABASE_URL=" "$ENV_FILE" 2>/dev/null | head -1)
+  SUPABASE_URL="${URL_LINE#VITE_SUPABASE_URL=}"
+fi
+
+# Derive project ref from URL (https://<ref>.supabase.co)
+PROJECT_REF=""
+if [ -n "${SUPABASE_URL:-}" ]; then
+  PROJECT_REF=$(echo "$SUPABASE_URL" | sed 's|https://||' | sed 's|\.supabase\.co.*||')
+fi
+
+SCHEMA_APPLIED=false
+
+if command -v curl &>/dev/null && [ -n "$PROJECT_REF" ]; then
+  echo "  The schema can be applied automatically using the Supabase Management API."
+  echo "  You'll need a Personal Access Token:"
+  echo "    https://supabase.com/dashboard/account/tokens"
+  echo ""
+  if ask_yn "Apply the database schema automatically?" "y"; then
+    PAT=$(ask_required "Supabase Personal Access Token")
+    echo ""
+    echo "  Applying schema..."
+
+    # Build JSON body using Node (guaranteed available) to safely encode the SQL
+    JSON_BODY=$(node -e "
+      const fs = require('fs');
+      const sql = fs.readFileSync('supabase/sql/self_host_bootstrap.sql', 'utf8');
+      process.stdout.write(JSON.stringify({ query: sql }));
+    ")
+
+    HTTP_STATUS=$(curl -s -o /tmp/mne_schema_response.json -w "%{http_code}" \
+      -X POST \
+      -H "Authorization: Bearer ${PAT}" \
+      -H "Content-Type: application/json" \
+      -d "$JSON_BODY" \
+      "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query")
+
+    if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+      ok "Schema applied successfully."
+      SCHEMA_APPLIED=true
+    else
+      RESPONSE_MSG=$(node -e "
+        try {
+          const r = require('fs').readFileSync('/tmp/mne_schema_response.json','utf8');
+          const j = JSON.parse(r);
+          process.stdout.write(j.message || j.error || r);
+        } catch(e) { process.stdout.write('unknown error'); }
+      " 2>/dev/null || echo "unknown error")
+      err "Schema apply failed (HTTP ${HTTP_STATUS}): ${RESPONSE_MSG}"
+      warn "You can apply it manually — see instructions below."
+    fi
+  fi
+fi
+
+if [ "$SCHEMA_APPLIED" = "false" ]; then
+  echo "  Apply the schema manually:"
+  echo "  1. Open your Supabase project dashboard → SQL Editor"
+  echo "  2. Paste the contents of the file below and click Run:"
+  echo ""
+  echo "     ${BOLD}supabase/sql/self_host_bootstrap.sql${RESET}"
+  echo ""
+  warn "The script is idempotent — safe to re-run on an existing project."
+fi
 
 # ─── Step 5: Google OAuth setup ───────────────────────────────────────────────
 header "Step 5: Enable Google sign-in"
@@ -239,8 +289,7 @@ fi
 # ─── Done ─────────────────────────────────────────────────────────────────────
 header "Setup complete"
 echo ""
-echo "  Once you've applied the SQL schema and configured Google OAuth,"
-echo "  run the app with:"
+echo "  Once you've configured Google OAuth, run the app with:"
 echo ""
 echo -e "     ${BOLD}bash run.sh${RESET}"
 echo ""
