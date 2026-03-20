@@ -32,16 +32,17 @@ If you prefer stable points, check out a release tag instead of `main`.
 
 ### 3. Apply DB updates
 
-Two approaches — use whichever you started with.
+**How schema upgrades work:** This project uses a single idempotent bootstrap script rather than tracked migrations. `supabase/sql/self_host_bootstrap.sql` is kept in sync with every schema change and can be re-run on any existing project at any version — it uses `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, and `DROP COLUMN IF EXISTS` throughout. Running it on an already-current project is a no-op.
 
-**Approach A** (recommended): run the full bootstrap SQL — it's idempotent.
+**Approach A** (recommended): re-run the full bootstrap SQL.
 ```
 Supabase dashboard → SQL Editor → paste supabase/sql/self_host_bootstrap.sql → Run
 ```
+This is what `upgrade.sh` does automatically when a PAT is provided.
 
-**Approach B** (migration-driven): apply new files in `supabase/migrations/` since your last upgrade.
+**Approach B** (migration-driven): apply only the new files in `supabase/migrations/` added since your last upgrade. Each file in that directory is also idempotent. Check the file timestamps against your last upgrade date.
 
-If you see schema-cache errors such as missing columns, run:
+If you see schema-cache errors after applying changes, run:
 
 ```sql
 notify pgrst, 'reload schema';

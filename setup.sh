@@ -1,4 +1,77 @@
 #!/usr/bin/env bash
+# setup.sh — first-time setup for a self-hosted mne instance
+#
+# WHAT IT DOES (in order):
+#
+#   Step 1  Check prerequisites
+#             Verifies Node.js 22.x and npm are installed.
+#
+#   Step 2  Install npm dependencies
+#             Runs `npm install` to populate node_modules/.
+#
+#   Step 3  Write .env.local
+#             Prompts for the Supabase project URL and anon key.
+#             Asks about three optional features:
+#               • Email allowlist   — sets VITE_RESTRICT_SIGNUPS=true so only
+#                                     emails in the allowed_emails table can sign in.
+#               • Landing page      — sets VITE_LANDING_AS_HOME=true to show a
+#                                     marketing page before sign-in.
+#               • Push notifications — sets VITE_VAPID_PUBLIC_KEY and collects the
+#                                     full VAPID key pair for use in steps 4b–4d.
+#             Skipped (with prompt) if .env.local already exists.
+#
+#   Step 4  Apply the database schema
+#             Runs supabase/sql/self_host_bootstrap.sql against the project via the
+#             Supabase Management API (POST /v1/projects/{ref}/database/query).
+#             The bootstrap SQL is fully idempotent (CREATE IF NOT EXISTS, ADD COLUMN
+#             IF NOT EXISTS, etc.), so it is safe to re-run on an existing project.
+#             Falls back to manual instructions if the user skips or curl is absent.
+#
+#   Step 4b  Schedule push notification edge functions with pg_cron   [push only]
+#             Enables the pg_cron and pg_net Postgres extensions, then creates three
+#             cron jobs that call the check-* edge functions via net.http_post():
+#               • mne-check-prices        — hourly  (0 * * * *)
+#               • mne-check-vests         — hourly  (30 * * * *)
+#               • mne-check-capital-gains — daily 9am UTC (0 9 * * *)
+#             Safe to re-run: existing jobs with these names are unscheduled first.
+#             Falls back to ready-to-paste SQL if the auto-apply fails.
+#
+#   Step 4c  Set VAPID secrets on Supabase edge functions             [push only]
+#             Uses the Management API (POST /v1/projects/{ref}/secrets) to set the
+#             three secrets required by the send-push function:
+#               VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+#             Falls back to manual dashboard instructions if the API call fails.
+#
+#   Step 4d  Deploy edge functions                                    [push only]
+#             Zips each function's index.ts and uploads it to the Management API
+#             (PATCH to update an existing function, POST to create a new one).
+#             Requires the `zip` command; falls back to Supabase CLI instructions
+#             if zip is not available.
+#
+#   Step 5  Print Google OAuth setup instructions
+#             The app authenticates via Google OAuth through Supabase Auth.
+#             This step cannot be automated — it prints the exact callback URL and
+#             walks through the Google Cloud Console steps needed.
+#
+#   Step 6  Edge function deployment summary                          [push only]
+#             Confirms what was automated in steps 4b–4d, or prints manual fallback
+#             instructions for any parts that could not be completed automatically.
+#
+#   Step 7  Email allowlist reminder                         [VITE_RESTRICT_SIGNUPS]
+#             Reminds the user to add their email to the allowed_emails table.
+#
+# WHAT IT DOES NOT DO:
+#   - Configure Google OAuth (manual — see Step 5)
+#   - Sign in or create a Supabase account
+#   - Deploy the app to a public host (run `bash run.sh` for local dev)
+#
+# REQUIREMENTS:
+#   - Node.js 22.x + npm
+#   - curl (for Supabase Management API calls)
+#   - zip (only for automatic edge function deployment)
+#   - A Supabase project (free tier is sufficient)
+#   - A Supabase Personal Access Token (only for automatic schema/function setup)
+#
 set -euo pipefail
 
 # ─── Color helpers ────────────────────────────────────────────────────────────
@@ -200,7 +273,9 @@ if command -v curl &>/dev/null && [ -n "$PROJECT_REF" ]; then
     echo ""
     echo "  Applying schema..."
 
-    # Build JSON body using Node (guaranteed available) to safely encode the SQL
+    # Use Node to JSON-encode the SQL body. The bootstrap SQL contains single
+    # quotes, dollar signs, and backslashes that would require complex escaping
+    # in pure bash. Node's JSON.stringify handles all of that safely.
     JSON_BODY=$(node -e "
       const fs = require('fs');
       const sql = fs.readFileSync('supabase/sql/self_host_bootstrap.sql', 'utf8');
@@ -242,11 +317,18 @@ if [ "$SCHEMA_APPLIED" = "false" ]; then
 fi
 
 # ─── Step 4b: pg_cron schedules (push notifications only) ─────────────────────
+# pg_cron is a Postgres extension (pre-installed on Supabase Cloud) that runs
+# scheduled SQL commands inside the database. Combined with pg_net, it makes
+# outbound HTTP POST requests to the edge function URLs on a cron schedule.
+# This avoids any external scheduler — the DB itself fires the jobs.
 CRON_APPLIED=false
 if [ "$ENABLE_PUSH" = "true" ] && [ -n "$PAT" ] && [ -n "$PROJECT_REF" ] && [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_ANON_KEY:-}" ]; then
   echo ""
   echo "  Setting up pg_cron schedules for push notification edge functions..."
 
+  # The anon key is embedded directly in the HTTP header stored in the cron job.
+  # This is intentional: the check-* functions are deployed with verify_jwt:false
+  # and called by pg_cron (not a user), so the anon key is the right credential.
   CRON_SQL=$(node -e "
     const url = process.argv[1];
     const key = process.argv[2];
@@ -356,7 +438,9 @@ if [ "$ENABLE_PUSH" = "true" ] && [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
       FN_META="{\"slug\":\"${SLUG}\",\"name\":\"${SLUG}\",\"verify_jwt\":false}"
       (cd "supabase/functions/${SLUG}" && zip -qr "$FN_ZIP" index.ts)
 
-      # Try updating first; if the function doesn't exist yet, create it
+      # PATCH updates an existing function; if it doesn't exist the API returns
+      # 404, in which case we fall through to POST to create it. This avoids
+      # having to check existence first with a separate GET request.
       FN_STATUS=$(curl -s -o /tmp/mne_fn_response.json -w "%{http_code}" \
         -X PATCH \
         -H "Authorization: Bearer ${PAT}" \

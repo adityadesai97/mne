@@ -193,7 +193,9 @@ VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 
 **Push notifications in production**: Requires `VITE_VAPID_PUBLIC_KEY` in `.env.local` and the three VAPID secrets (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) set in Supabase dashboard → Settings → Edge Functions → Secrets.
 
-**DB migrations**: Applied via Supabase MCP (`apply_migration` tool) or the Supabase dashboard SQL editor. There is no local Supabase CLI setup — all schema changes go directly to the hosted project. `supabase/sql/self_host_bootstrap.sql` is a standalone script to initialize a fresh Supabase project for self-hosting.
+**DB migrations**: Applied via Supabase MCP (`apply_migration` tool) or the Supabase dashboard SQL editor. There is no local Supabase CLI setup — all schema changes go directly to the hosted project. `supabase/sql/self_host_bootstrap.sql` is a standalone idempotent script used by `setup.sh` and `upgrade.sh` to initialize or upgrade a self-hosted Supabase project.
+
+**Migration policy — keep bootstrap.sql in sync**: Every schema change must be reflected in BOTH `supabase/migrations/<timestamp>_<name>.sql` AND `supabase/sql/self_host_bootstrap.sql`. The bootstrap script is the source of truth for self-hosters; `upgrade.sh` re-runs it on every upgrade. Because the bootstrap uses `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, and `DROP COLUMN IF EXISTS` throughout, it is safe to re-run on any existing project at any version. New migrations that add columns should use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in the bootstrap. Migrations that drop columns should use `DROP COLUMN IF EXISTS`. Migrations that rename or change column types need a compatible idempotent form (e.g. a DO block that checks for the old column and backfills before altering).
 
 **`saveSettings` upsert**: Must include `{ onConflict: 'user_id' }` in the upsert call or updates silently fail with a unique constraint error when a row already exists.
 
