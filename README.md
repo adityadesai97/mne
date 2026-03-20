@@ -77,7 +77,11 @@ supabase functions deploy check-capital-gains --project-ref <your-project-ref>
 
 #### Upgrading an existing instance
 
-See [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md).
+```bash
+bash upgrade.sh
+```
+
+See [`docs/self-host-upgrade.md`](docs/self-host-upgrade.md) for what the script does and manual steps.
 
 ---
 

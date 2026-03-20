@@ -1,21 +1,26 @@
 # Self-Host Upgrade Guide
 
-This guide is for users running their own Supabase project after cloning the repository.
+## Quickstart
 
-## Upgrade order (always)
+```bash
+bash upgrade.sh
+```
 
-1. Back up your database.
-2. Pull code updates.
-3. Apply DB updates.
-4. Update edge functions (if used).
-5. Build/restart app.
-6. Verify core flows.
+The script:
+1. Pulls the latest code (`git pull --ff-only`)
+2. Runs `npm ci`
+3. Applies the database schema automatically via the Supabase Management API (prompts for a Personal Access Token; falls back to manual instructions)
+4. Redeploys edge functions automatically if push notifications are set up (detected from `VITE_VAPID_PUBLIC_KEY` in `.env.local`)
 
-## 1. Back up before upgrading
+---
+
+## Manual steps (if you prefer not to use upgrade.sh)
+
+### 1. Back up before upgrading
 
 Use a DB backup/export process you trust for your Supabase project.
 
-## 2. Pull code updates
+### 2. Pull code updates
 
 ```bash
 git fetch --tags
@@ -25,18 +30,16 @@ npm ci
 
 If you prefer stable points, check out a release tag instead of `main`.
 
-## 3. Apply DB updates
+### 3. Apply DB updates
 
-Use one approach consistently.
+Two approaches — use whichever you started with.
 
-- Approach A (safest for this repo): run the full bootstrap SQL each upgrade.
-  - Open `supabase/sql/self_host_bootstrap.sql`.
-  - Run its contents in Supabase SQL Editor.
-  - It is idempotent (`create/alter ... if not exists`).
+**Approach A** (recommended): run the full bootstrap SQL — it's idempotent.
+```
+Supabase dashboard → SQL Editor → paste supabase/sql/self_host_bootstrap.sql → Run
+```
 
-- Approach B (migration-driven): apply all new files in `supabase/migrations/` since your last upgrade.
-  - Fresh installs can start from `20260302000000_baseline.sql`.
-  - This baseline was created pre-release to unify prior migration history.
+**Approach B** (migration-driven): apply new files in `supabase/migrations/` since your last upgrade.
 
 If you see schema-cache errors such as missing columns, run:
 
@@ -44,7 +47,7 @@ If you see schema-cache errors such as missing columns, run:
 notify pgrst, 'reload schema';
 ```
 
-## 4. Update edge functions (if using notifications)
+### 4. Update edge functions (if using notifications)
 
 When files under `supabase/functions/` change, redeploy functions using the [Supabase CLI](https://supabase.com/docs/guides/cli).
 
@@ -56,19 +59,21 @@ supabase functions deploy check-vests         --project-ref <project-ref>
 supabase functions deploy check-capital-gains --project-ref <project-ref>
 ```
 
-## 5. Build and run
+### 5. Build and run
 
 ```bash
 npm run build
 npm run dev
 ```
 
-## 6. Verify
+### 6. Verify
 
 1. Sign in.
 2. Open Settings and save once.
 3. Run one command-bar action.
 4. Add/edit one asset.
+
+---
 
 ## Troubleshooting
 

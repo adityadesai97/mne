@@ -342,6 +342,59 @@ if [ "$ENABLE_PUSH" = "true" ] && [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
   fi
 fi
 
+# ─── Step 4d: Deploy edge functions (push notifications only) ─────────────────
+FUNCTIONS_DEPLOYED=false
+if [ "$ENABLE_PUSH" = "true" ] && [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
+  if ! command -v zip &>/dev/null; then
+    warn "zip not found — edge functions must be deployed manually (see Step 6)."
+  else
+    echo ""
+    echo "  Deploying edge functions..."
+    DEPLOY_FAILED_FUNCS=""
+    for SLUG in send-push check-prices check-vests check-capital-gains; do
+      FN_ZIP="/tmp/mne_fn_${SLUG}.zip"
+      FN_META="{\"slug\":\"${SLUG}\",\"name\":\"${SLUG}\",\"verify_jwt\":false}"
+      (cd "supabase/functions/${SLUG}" && zip -qr "$FN_ZIP" index.ts)
+
+      # Try updating first; if the function doesn't exist yet, create it
+      FN_STATUS=$(curl -s -o /tmp/mne_fn_response.json -w "%{http_code}" \
+        -X PATCH \
+        -H "Authorization: Bearer ${PAT}" \
+        -F "metadata=${FN_META}" \
+        -F "file=@${FN_ZIP};type=application/zip" \
+        "https://api.supabase.com/v1/projects/${PROJECT_REF}/functions/${SLUG}")
+
+      if [ "$FN_STATUS" = "404" ]; then
+        FN_STATUS=$(curl -s -o /tmp/mne_fn_response.json -w "%{http_code}" \
+          -X POST \
+          -H "Authorization: Bearer ${PAT}" \
+          -F "metadata=${FN_META}" \
+          -F "file=@${FN_ZIP};type=application/zip" \
+          "https://api.supabase.com/v1/projects/${PROJECT_REF}/functions")
+      fi
+
+      rm -f "$FN_ZIP"
+
+      if [ "$FN_STATUS" = "200" ] || [ "$FN_STATUS" = "201" ]; then
+        ok "  Deployed ${SLUG}."
+      else
+        FN_MSG=$(node -e "
+          try {
+            const r = require('fs').readFileSync('/tmp/mne_fn_response.json','utf8');
+            const j = JSON.parse(r);
+            process.stdout.write(j.message || j.error || r);
+          } catch(e) { process.stdout.write('unknown error'); }
+        " 2>/dev/null || echo "unknown error")
+        warn "Failed to deploy ${SLUG} (HTTP ${FN_STATUS}): ${FN_MSG}"
+        DEPLOY_FAILED_FUNCS="${DEPLOY_FAILED_FUNCS} ${SLUG}"
+      fi
+    done
+    if [ -z "$DEPLOY_FAILED_FUNCS" ]; then
+      FUNCTIONS_DEPLOYED=true
+    fi
+  fi
+fi
+
 # ─── Step 5: Google OAuth setup ───────────────────────────────────────────────
 header "Step 5: Enable Google sign-in"
 
@@ -378,24 +431,28 @@ echo ""
 if [ "$SKIP_ENV" = "false" ] && [ "$ENABLE_PUSH" = "true" ]; then
   header "Step 6: Deploy edge functions for push notifications"
 
-  echo "  Four Supabase edge functions must be deployed to your project:"
-  echo "    send-push, check-prices, check-vests, check-capital-gains"
-  echo ""
-  echo "  Deploy using the Supabase CLI (install at https://supabase.com/docs/guides/cli):"
-  echo ""
-  echo "    supabase login"
-  if [ -n "$PROJECT_REF" ]; then
-    echo "    supabase functions deploy send-push           --project-ref ${PROJECT_REF}"
-    echo "    supabase functions deploy check-prices        --project-ref ${PROJECT_REF}"
-    echo "    supabase functions deploy check-vests         --project-ref ${PROJECT_REF}"
-    echo "    supabase functions deploy check-capital-gains --project-ref ${PROJECT_REF}"
+  if [ "$FUNCTIONS_DEPLOYED" = "true" ]; then
+    ok "Edge functions were deployed automatically."
   else
-    echo "    supabase functions deploy send-push           --project-ref <your-project-ref>"
-    echo "    supabase functions deploy check-prices        --project-ref <your-project-ref>"
-    echo "    supabase functions deploy check-vests         --project-ref <your-project-ref>"
-    echo "    supabase functions deploy check-capital-gains --project-ref <your-project-ref>"
+    echo "  Four Supabase edge functions must be deployed to your project:"
+    echo "    send-push, check-prices, check-vests, check-capital-gains"
+    echo ""
+    echo "  Deploy using the Supabase CLI (install at https://supabase.com/docs/guides/cli):"
+    echo ""
+    echo "    supabase login"
+    if [ -n "$PROJECT_REF" ]; then
+      echo "    supabase functions deploy send-push           --project-ref ${PROJECT_REF}"
+      echo "    supabase functions deploy check-prices        --project-ref ${PROJECT_REF}"
+      echo "    supabase functions deploy check-vests         --project-ref ${PROJECT_REF}"
+      echo "    supabase functions deploy check-capital-gains --project-ref ${PROJECT_REF}"
+    else
+      echo "    supabase functions deploy send-push           --project-ref <your-project-ref>"
+      echo "    supabase functions deploy check-prices        --project-ref <your-project-ref>"
+      echo "    supabase functions deploy check-vests         --project-ref <your-project-ref>"
+      echo "    supabase functions deploy check-capital-gains --project-ref <your-project-ref>"
+    fi
+    echo ""
   fi
-  echo ""
 
   if [ "$SECRETS_APPLIED" = "true" ]; then
     ok "VAPID secrets were set automatically in Step 4c."
