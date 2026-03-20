@@ -1,5 +1,6 @@
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import type { NormalizedResponse } from './llm'
+import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
 import { getAllAssets } from './db/assets'
 import { getSnapshots } from './db/snapshots'
@@ -1165,7 +1166,7 @@ function extractTextFromResponse(response: NormalizedResponse): string {
   return response.choices[0]?.message?.content ?? ''
 }
 
-export function buildSystemPrompt(assets: any[], userName?: string): string {
+export function buildSystemPrompt(assets: any[], userName?: string, attachmentFilename?: string): string {
   return `You are a portfolio assistant for a personal finance app called mne.
 The user will issue commands in natural language to read or write to their portfolio.
 ${userName ? `The user's name is ${userName}. Address them by name when appropriate.` : ''}
@@ -1188,7 +1189,10 @@ If required details are missing in a multi-item request, ask follow-up questions
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
-Today's date is ${new Date().toISOString().split('T')[0]}`
+Today's date is ${new Date().toISOString().split('T')[0]}${attachmentFilename ? `
+
+---
+A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, or account balances it contains. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.` : ''}`
 }
 
 const tools = [
@@ -2622,7 +2626,7 @@ async function executeMockNotification(type: string, userId: string): Promise<vo
   }
 }
 
-export async function runCommand(messages: Message[]): Promise<any> {
+export async function runCommand(messages: Message[], attachment?: FileAttachment): Promise<any> {
   const lastUserContent = messages.findLast(m => m.role === 'user')?.content ?? ''
   const traceSteps: AgentTraceStep[] = []
   const addTrace = (label: string, detail?: string) => {
@@ -2677,7 +2681,7 @@ export async function runCommand(messages: Message[]): Promise<any> {
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
-  const baseSystemPrompt = buildSystemPrompt(assets, userName)
+  const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename)
 
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
@@ -2708,6 +2712,43 @@ ${JSON.stringify(analysisContext, null, 2)}`
   }
 
   let claudeMessages: any[] = [...messages]
+
+  // Inject file attachment into the last user message and system prompt
+  if (attachment) {
+    const lastIdx = claudeMessages.length - 1
+    const lastMsg = claudeMessages[lastIdx]
+    const userText = typeof lastMsg?.content === 'string' ? lastMsg.content : ''
+
+    if (attachment.type === 'csv') {
+      claudeMessages[lastIdx] = {
+        ...lastMsg,
+        content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
+      }
+    } else if (attachment.type === 'pdf') {
+      if (config.llmProvider === 'claude') {
+        // Send PDF as native document content block — Claude understands it directly
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: attachment.content } },
+            { type: 'text', text: userText },
+          ],
+        }
+      } else {
+        // Groq doesn't support document blocks — extract text via pdfjs-dist
+        addTrace('Extracting PDF text for Groq provider')
+        const { extractTextFromPdf } = await import('./fileParser')
+        const extractedText = await extractTextFromPdf(attachment)
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
+        }
+      }
+    }
+
+    addTrace('File attachment injected', `${attachment.filename} (${attachment.type.toUpperCase()})`)
+  }
+
   let response = await runLLM(systemPrompt, claudeMessages)
   addTrace('Initial model pass complete')
 

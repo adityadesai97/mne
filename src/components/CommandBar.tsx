@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
-import { X } from 'lucide-react'
+import { X, Paperclip } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
+import { parseFileAttachment, type FileAttachment } from '@/lib/fileParser'
 
 function normalizeErrorMessage(message: string): string {
   if (/Cannot coerce the result to a single JSON object|JSON object requested, multiple \(or no\) rows returned/i.test(message)) {
@@ -168,10 +169,12 @@ export function CommandBar({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null)
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth < 768)
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const msgIdRef = useRef(0)
 
   function nextId() { return ++msgIdRef.current }
@@ -260,6 +263,7 @@ export function CommandBar({ open, onClose }: Props) {
       setIsExpanded(false)
       setCompactResult(null)
       setDone(false)
+      setAttachment(null)
       msgIdRef.current = 0
     }
   }, [open])
@@ -290,8 +294,10 @@ export function CommandBar({ open, onClose }: Props) {
       setDisplayMessages(prev => [...prev, { id: nextId(), role: 'user', content: userContent }])
     }
 
+    const pendingAttachment = attachment
+    setAttachment(null)
     try {
-      const action = await runCommand(buildHistory(userContent))
+      const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined)
       if (action.type === 'text') {
         setDisplayMessages(prev => [
           ...prev,
@@ -369,7 +375,7 @@ export function CommandBar({ open, onClose }: Props) {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.12, delay: 0.08 }}
                 >
-                  <div className="flex items-center border-b border-border px-4 py-3">
+                  <div className="flex items-center border-b border-border px-4 py-3 gap-2">
                     <textarea
                       ref={inputRef}
                       autoFocus
@@ -381,10 +387,27 @@ export function CommandBar({ open, onClose }: Props) {
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
                         if (e.key === 'Escape') onClose()
                       }}
-                      className="w-full border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                      className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
                       style={{ maxHeight: '144px' }}
                     />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      title="Attach CSV or PDF"
+                    >
+                      <Paperclip size={16} />
+                    </button>
                   </div>
+                  {attachment && (
+                    <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                      <Paperclip size={11} className="shrink-0" />
+                      <span className="truncate max-w-[220px]">{attachment.filename}</span>
+                      <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
                   {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
                   {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
                   {compactResult && !loading && !done && (
@@ -445,25 +468,61 @@ export function CommandBar({ open, onClose }: Props) {
                       )}
                     </AnimatePresence>
                   </div>
-                  <div className="border-t border-border px-4 py-3">
-                    <textarea
-                      ref={inputRef}
-                      rows={1}
-                      placeholder="Reply..."
-                      value={query}
-                      onChange={e => setQuery(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                        if (e.key === 'Escape') onClose()
-                      }}
-                      className="w-full border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
-                      style={{ maxHeight: '144px' }}
-                    />
+                  <div className="border-t border-border flex-shrink-0">
+                    {attachment && (
+                      <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                        <Paperclip size={11} className="shrink-0" />
+                        <span className="truncate max-w-[220px]">{attachment.filename}</span>
+                        <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 px-4 py-3">
+                      <textarea
+                        ref={inputRef}
+                        rows={1}
+                        placeholder="Reply..."
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                          if (e.key === 'Escape') onClose()
+                        }}
+                        className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                        style={{ maxHeight: '144px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Attach CSV or PDF"
+                      >
+                        <Paperclip size={16} />
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               )}
             </motion.div>
           </div>
+          <input
+            type="file"
+            accept=".csv,.pdf"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={async e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              try {
+                const parsed = await parseFileAttachment(file)
+                setAttachment(parsed)
+              } catch (err: any) {
+                console.error('File parse error:', err)
+              }
+              e.target.value = ''
+            }}
+          />
         </>
       )}
     </AnimatePresence>
