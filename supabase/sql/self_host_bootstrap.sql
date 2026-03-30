@@ -11,6 +11,11 @@ create table if not exists public.allowed_emails (
   created_at timestamptz not null default now()
 );
 
+-- Admin users: emails that can manage the allowed_emails list via the Settings UI
+create table if not exists public.admin_users (
+  email text primary key
+);
+
 create table if not exists public.locations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -245,6 +250,7 @@ create unique index if not exists net_worth_snapshots_user_id_date_key
 
 -- RLS
 alter table public.allowed_emails enable row level security;
+alter table public.admin_users enable row level security;
 alter table public.locations enable row level security;
 alter table public.tickers enable row level security;
 alter table public.themes enable row level security;
@@ -261,6 +267,31 @@ alter table public.net_worth_snapshots enable row level security;
 drop policy if exists allowlist_self_read on public.allowed_emails;
 create policy allowlist_self_read
   on public.allowed_emails
+  for select
+  to authenticated
+  using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));
+
+drop policy if exists allowlist_admin_manage on public.allowed_emails;
+create policy allowlist_admin_manage
+  on public.allowed_emails
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1 from public.admin_users
+      where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.admin_users
+      where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  );
+
+drop policy if exists admin_self_read on public.admin_users;
+create policy admin_self_read
+  on public.admin_users
   for select
   to authenticated
   using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));

@@ -8,7 +8,7 @@ import { exportData, importData, setActiveImportController } from '@/lib/importE
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
-import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info } from 'lucide-react'
+import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus } from 'lucide-react'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -113,6 +113,12 @@ export default function Settings() {
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
   const [providerWarning, setProviderWarning] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [allowedEmails, setAllowedEmails] = useState<{ id: string; email: string }[]>([])
+  const [newAllowedEmail, setNewAllowedEmail] = useState('')
+  const [allowlistLoading, setAllowlistLoading] = useState(false)
+  const [allowlistError, setAllowlistError] = useState('')
+
   const [importLoading, setImportLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importAbortRef = useRef<AbortController | null>(null)
@@ -132,6 +138,22 @@ export default function Settings() {
       })
       .catch(console.error)
     getPushEnabled().then(setPushEnabled)
+
+    // Check admin status
+    getSupabaseClient().auth.getUser().then(({ data: { user } }) => {
+      if (!user?.email) return
+      getSupabaseClient()
+        .from('admin_users')
+        .select('email')
+        .eq('email', user.email.toLowerCase())
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setIsAdmin(true)
+            loadAllowedEmails()
+          }
+        })
+    })
   }, [])
 
   useEffect(() => {
@@ -213,6 +235,36 @@ export default function Settings() {
     } finally {
       setKeySaving(false)
     }
+  }
+
+  async function loadAllowedEmails() {
+    const { data } = await getSupabaseClient()
+      .from('allowed_emails')
+      .select('id, email')
+      .order('email')
+    if (data) setAllowedEmails(data)
+  }
+
+  async function handleAddAllowedEmail() {
+    const email = newAllowedEmail.trim().toLowerCase()
+    if (!email) return
+    setAllowlistLoading(true)
+    setAllowlistError('')
+    const { error } = await getSupabaseClient()
+      .from('allowed_emails')
+      .insert({ email })
+    setAllowlistLoading(false)
+    if (error) {
+      setAllowlistError(error.message)
+    } else {
+      setNewAllowedEmail('')
+      await loadAllowedEmails()
+    }
+  }
+
+  async function handleRemoveAllowedEmail(id: string) {
+    await getSupabaseClient().from('allowed_emails').delete().eq('id', id)
+    setAllowedEmails(prev => prev.filter(e => e.id !== id))
   }
 
   async function handleSignOut() {
@@ -530,6 +582,55 @@ export default function Settings() {
             <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
           </div>
         </div>
+      )}
+
+      {/* Admin */}
+      {isAdmin && (
+        <>
+          <SectionHeader><Shield size={10} className="inline mr-1.5 mb-0.5" />Admin — Allowed Users</SectionHeader>
+          <div className="bg-card rounded-xl p-4 space-y-3">
+            {allowedEmails.length > 0 && (
+              <div className="space-y-1">
+                {allowedEmails.map(e => (
+                  <div key={e.id} className="flex items-center gap-2 px-1 py-1">
+                    <span className="text-sm flex-1 truncate">{e.email}</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveAllowedEmail(e.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0"
+                      aria-label="Remove"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {allowedEmails.length === 0 && (
+              <p className="text-xs text-muted-foreground">No allowed emails yet.</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <input
+                type="email"
+                placeholder="user@example.com"
+                value={newAllowedEmail}
+                onChange={e => setNewAllowedEmail(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void handleAddAllowedEmail() }}
+                className="flex-1 bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAddAllowedEmail()}
+                disabled={allowlistLoading || !newAllowedEmail.trim()}
+                className="flex items-center gap-1 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {allowlistLoading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                Add
+              </button>
+            </div>
+            {allowlistError && <p className="text-xs text-destructive">{allowlistError}</p>}
+          </div>
+        </>
       )}
 
       {/* Account */}
