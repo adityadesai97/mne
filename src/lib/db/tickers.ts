@@ -22,6 +22,9 @@ export async function deleteTicker(id: string) {
     throw new Error('Cannot delete an owned ticker')
   }
 
+  const { error: themeError } = await supabase.from('ticker_themes').delete().eq('ticker_id', id)
+  if (themeError) throw themeError
+
   const { error } = await supabase.from('tickers').delete().eq('id', id)
   if (error) throw error
 }
