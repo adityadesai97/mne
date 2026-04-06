@@ -1229,7 +1229,7 @@ The app will show a confirmation dialog before anything is saved, so calling the
       attachmentSection = `
 
 ---
-A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, account balances, RSU grants, and RSU vesting events it contains. Summarize what you found, then call the appropriate write tool(s) in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
+A financial document (${attachmentFilename}) has been attached as page image(s). Examine every page image carefully — read every table row, every column, every section header — to identify every transaction, position, account balance, RSU grant, and RSU vesting event it contains. Do not stop after the first few grants or transactions; extract every one you can see. Summarize what you found, then call the appropriate write tool(s) in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
 - RSU data requires both grant records (add_rsu_grant / add_rsu_grants) AND individual vesting transactions (add_stock_transactions with subtype 'RSU'). Follow the RSU inference rules in your instructions.
 - Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
 - If required grant fields (vest_end, total_shares) cannot be inferred from the document, ask the user before calling any write tool for that grant.
@@ -2851,14 +2851,32 @@ ${JSON.stringify(analysisContext, null, 2)}`
         content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
       }
     } else if (attachment.type === 'pdf') {
-      // Extract text via pdfjs-dist, preserving table row structure by grouping
-      // items on the same y-coordinate before joining.
-      addTrace('Extracting PDF text')
-      const { extractTextFromPdf } = await import('./fileParser')
-      const extractedText = await extractTextFromPdf(attachment)
-      claudeMessages[lastIdx] = {
-        ...lastMsg,
-        content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
+      if (config.llmProvider === 'claude') {
+        // Render each page as a JPEG and send as image blocks.
+        // ~1,450 tokens/page at 1.5× scale — far cheaper than native document
+        // blocks while giving Claude full visual fidelity for tables.
+        addTrace('Rendering PDF pages')
+        const { renderPdfPages } = await import('./fileParser')
+        const pages = await renderPdfPages(attachment.content)
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: [
+            ...(userText ? [{ type: 'text', text: userText }] : []),
+            ...pages.map(pg => ({
+              type: 'image',
+              source: { type: 'base64', media_type: pg.mediaType, data: pg.data },
+            })),
+          ],
+        }
+      } else {
+        // Groq cannot process image blocks — fall back to structured text extraction.
+        addTrace('Extracting PDF text')
+        const { extractTextFromPdf } = await import('./fileParser')
+        const extractedText = await extractTextFromPdf(attachment)
+        claudeMessages[lastIdx] = {
+          ...lastMsg,
+          content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
+        }
       }
     } else if (attachment.type === 'image') {
       if (config.llmProvider !== 'claude') {
