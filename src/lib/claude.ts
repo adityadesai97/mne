@@ -1220,7 +1220,7 @@ export function buildSystemPrompt(assets: any[], userName?: string, attachmentFi
       attachmentSection = `
 
 ---
-An image (${attachmentFilename}) has been attached. Use your vision capabilities to examine it carefully. Identify all transactions, positions, account balances, or financial data visible in the image. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.`
+An image (${attachmentFilename}) has been attached. Use your vision capabilities to examine it carefully. Identify all transactions, positions, account balances, or financial data visible in the image. Briefly summarize what you found, then immediately call the appropriate write tool(s) — do NOT ask the user for permission first. Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type. The app will show a confirmation dialog before anything is saved.`
     } else {
       attachmentSection = `
 
