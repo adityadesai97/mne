@@ -2767,7 +2767,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
 
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
-    max_tokens: 1024,
+    max_tokens: 8192,
     messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
     tools,
   })
