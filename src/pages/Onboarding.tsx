@@ -112,14 +112,14 @@ export default function Onboarding({ onComplete }: Props) {
       const { user } = session
 
       // Email allowlist check — only runs when VITE_RESTRICT_SIGNUPS=true
-      // Admins (in admin_users) are always allowed through
       if (import.meta.env.VITE_RESTRICT_SIGNUPS === 'true') {
         const supabase = getSupabaseClient()
-        const [{ data: allowed }, { data: admin }] = await Promise.all([
-          supabase.from('allowed_emails').select('email').eq('email', user.email).maybeSingle(),
-          supabase.from('admin_users').select('email').eq('email', user.email!.toLowerCase()).maybeSingle(),
-        ])
-        if (!allowed && !admin) {
+        const { data: allowed } = await supabase
+          .from('allowed_emails')
+          .select('email')
+          .eq('email', user.email)
+          .maybeSingle()
+        if (!allowed) {
           await supabase.auth.signOut()
           setError(UNAUTHORIZED_MESSAGE)
           setStep('auth')

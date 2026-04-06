@@ -5,16 +5,13 @@
 create extension if not exists pgcrypto;
 
 -- Optional allowlist table (used only when VITE_RESTRICT_SIGNUPS=true)
+-- is_admin=true grants access to the admin UI in Settings
 create table if not exists public.allowed_emails (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
   created_at timestamptz not null default now()
 );
-
--- Admin users: emails that can manage the allowed_emails list via the Settings UI
-create table if not exists public.admin_users (
-  email text primary key
-);
+alter table public.allowed_emails add column if not exists is_admin boolean not null default false;
 
 create table if not exists public.locations (
   id uuid primary key default gen_random_uuid(),
@@ -271,30 +268,27 @@ create policy allowlist_self_read
   to authenticated
   using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));
 
+-- Helper function used by RLS to check admin status without self-referential recursion
+create or replace function public.is_allowed_email_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.allowed_emails
+    where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      and is_admin = true
+  )
+$$;
+
 drop policy if exists allowlist_admin_manage on public.allowed_emails;
 create policy allowlist_admin_manage
   on public.allowed_emails
   for all
   to authenticated
-  using (
-    exists (
-      select 1 from public.admin_users
-      where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
-    )
-  )
-  with check (
-    exists (
-      select 1 from public.admin_users
-      where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
-    )
-  );
-
-drop policy if exists admin_self_read on public.admin_users;
-create policy admin_self_read
-  on public.admin_users
-  for select
-  to authenticated
-  using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));
+  using (public.is_allowed_email_admin())
+  with check (public.is_allowed_email_admin());
 
 drop policy if exists own_locations on public.locations;
 create policy own_locations

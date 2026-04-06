@@ -114,8 +114,9 @@ export default function Settings() {
   const [keyError, setKeyError] = useState('')
   const [providerWarning, setProviderWarning] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
-  const [allowedEmails, setAllowedEmails] = useState<{ id: string; email: string }[]>([])
+  const [allowedEmails, setAllowedEmails] = useState<{ id: string; email: string; is_admin: boolean }[]>([])
   const [newAllowedEmail, setNewAllowedEmail] = useState('')
+  const [newAllowedEmailIsAdmin, setNewAllowedEmailIsAdmin] = useState(false)
   const [allowlistLoading, setAllowlistLoading] = useState(false)
   const [allowlistError, setAllowlistError] = useState('')
 
@@ -143,9 +144,10 @@ export default function Settings() {
     getSupabaseClient().auth.getUser().then(({ data: { user } }) => {
       if (!user?.email) return
       getSupabaseClient()
-        .from('admin_users')
+        .from('allowed_emails')
         .select('email')
         .eq('email', user.email.toLowerCase())
+        .eq('is_admin', true)
         .maybeSingle()
         .then(({ data }) => {
           if (data) {
@@ -240,7 +242,7 @@ export default function Settings() {
   async function loadAllowedEmails() {
     const { data } = await getSupabaseClient()
       .from('allowed_emails')
-      .select('id, email')
+      .select('id, email, is_admin')
       .order('email')
     if (data) setAllowedEmails(data)
   }
@@ -252,14 +254,20 @@ export default function Settings() {
     setAllowlistError('')
     const { error } = await getSupabaseClient()
       .from('allowed_emails')
-      .insert({ email })
+      .insert({ email, is_admin: newAllowedEmailIsAdmin })
     setAllowlistLoading(false)
     if (error) {
       setAllowlistError(error.message)
     } else {
       setNewAllowedEmail('')
+      setNewAllowedEmailIsAdmin(false)
       await loadAllowedEmails()
     }
+  }
+
+  async function handleToggleAdmin(id: string, is_admin: boolean) {
+    await getSupabaseClient().from('allowed_emails').update({ is_admin }).eq('id', id)
+    setAllowedEmails(prev => prev.map(e => e.id === id ? { ...e, is_admin } : e))
   }
 
   async function handleRemoveAllowedEmail(id: string) {
@@ -596,6 +604,14 @@ export default function Settings() {
                     <span className="text-sm flex-1 truncate">{e.email}</span>
                     <button
                       type="button"
+                      onClick={() => void handleToggleAdmin(e.id, !e.is_admin)}
+                      className={`text-xs px-1.5 py-0.5 rounded font-medium transition-colors flex-shrink-0 ${e.is_admin ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                      title={e.is_admin ? 'Remove admin' : 'Make admin'}
+                    >
+                      Admin
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void handleRemoveAllowedEmail(e.id)}
                       className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0"
                       aria-label="Remove"
@@ -618,6 +634,15 @@ export default function Settings() {
                 onKeyDown={e => { if (e.key === 'Enter') void handleAddAllowedEmail() }}
                 className="flex-1 bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
               />
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground flex-shrink-0 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={newAllowedEmailIsAdmin}
+                  onChange={e => setNewAllowedEmailIsAdmin(e.target.checked)}
+                  className="accent-primary"
+                />
+                Admin
+              </label>
               <button
                 type="button"
                 onClick={() => void handleAddAllowedEmail()}
