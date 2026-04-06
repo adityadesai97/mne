@@ -1742,9 +1742,11 @@ function mergePreviewSections(sections: ConfirmationPreviewSection[]): Confirmat
   }
   const result = [...merged.values()]
   result.sort((a, b) => {
-    const gkA = a.groupKey ?? ''
-    const gkB = b.groupKey ?? ''
+    // Sections with no groupKey (e.g. ESPP) sort after all grouped sections
+    const gkA = a.groupKey ?? '\uFFFF'
+    const gkB = b.groupKey ?? '\uFFFF'
     if (gkA !== gkB) return gkA.localeCompare(gkB)
+    // Within the same group, grants come before transactions
     const isGrantA = a.title.includes('Grant') ? 0 : 1
     const isGrantB = b.title.includes('Grant') ? 0 : 1
     return isGrantA - isGrantB
@@ -1759,27 +1761,46 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (transactions.length === 0) return []
 
-    const bySymbol = new Map<string, any[]>()
+    const txColumns = ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
+    const txRow = (tx: any) => [
+      String(tx?.symbol ?? '').toUpperCase() || '-',
+      numberToText(tx?.count),
+      moneyToText(tx?.cost_price),
+      dateToText(tx?.purchase_date),
+      String(tx?.subtype ?? 'Market'),
+      String(tx?.location_name ?? '').trim() || '-',
+      String(tx?.account_type ?? '').trim() || '-',
+    ]
+
+    const rsuBySymbol = new Map<string, any[]>()
+    const esppTxs: any[] = []
+    const otherBySymbol = new Map<string, any[]>()
+
     for (const tx of transactions) {
+      const subtype = String(tx?.subtype ?? '').toUpperCase()
       const symbol = String(tx?.symbol ?? '').toUpperCase() || '-'
-      if (!bySymbol.has(symbol)) bySymbol.set(symbol, [])
-      bySymbol.get(symbol)!.push(tx)
+      if (subtype === 'RSU') {
+        if (!rsuBySymbol.has(symbol)) rsuBySymbol.set(symbol, [])
+        rsuBySymbol.get(symbol)!.push(tx)
+      } else if (subtype === 'ESPP') {
+        esppTxs.push(tx)
+      } else {
+        if (!otherBySymbol.has(symbol)) otherBySymbol.set(symbol, [])
+        otherBySymbol.get(symbol)!.push(tx)
+      }
     }
 
-    return [...bySymbol.entries()].map(([symbol, txs]) => ({
-      title: 'Stock Transactions',
-      groupKey: symbol,
-      columns: ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account'],
-      rows: txs.map((tx: any) => [
-        String(tx?.symbol ?? '').toUpperCase() || '-',
-        numberToText(tx?.count),
-        moneyToText(tx?.cost_price),
-        dateToText(tx?.purchase_date),
-        String(tx?.subtype ?? 'Market'),
-        String(tx?.location_name ?? '').trim() || '-',
-        String(tx?.account_type ?? '').trim() || '-',
-      ]),
-    }))
+    const sections: ConfirmationPreviewSection[] = []
+    for (const [symbol, txs] of rsuBySymbol) {
+      sections.push({ title: 'RSU Transactions', groupKey: symbol, columns: txColumns, rows: txs.map(txRow) })
+    }
+    if (esppTxs.length > 0) {
+      sections.push({ title: 'ESPP Transactions', columns: txColumns, rows: esppTxs.map(txRow) })
+    }
+    for (const [symbol, txs] of otherBySymbol) {
+      sections.push({ title: 'Stock Transactions', groupKey: symbol, columns: txColumns, rows: txs.map(txRow) })
+    }
+    return sections
   }
 
   if (toolName === 'add_cash_asset' || toolName === 'add_cash_assets') {
