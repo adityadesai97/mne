@@ -68,6 +68,53 @@ function normalizeSymbol(value: unknown): string {
   return String(value ?? '').trim().toUpperCase()
 }
 
+function isAccountType(value: unknown): value is 'Investment' | 'Checking' | 'Savings' | 'Misc' {
+  return value === 'Investment' || value === 'Checking' || value === 'Savings' || value === 'Misc'
+}
+
+export function inferCashAccountType(input: {
+  name?: unknown
+  asset_type?: unknown
+  location_name?: unknown
+  account_type?: unknown
+}): 'Investment' | 'Checking' | 'Savings' | 'Misc' {
+  const explicit = String(input.account_type ?? '').trim()
+  const assetType = String(input.asset_type ?? '').trim().toLowerCase()
+  const combined = [
+    String(input.name ?? ''),
+    String(input.location_name ?? ''),
+    assetType,
+  ].join(' ').toLowerCase()
+
+  if (/\bchecking\b|\bcheckings?\b/.test(combined)) return 'Checking'
+  if (/\bsavings?\b|\bhysa\b|\bhigh[- ]yield savings\b/.test(combined)) return 'Savings'
+  if (assetType === 'cd' || /\bcd\b|certificate of deposit/.test(combined)) return 'Misc'
+  if (assetType === '401k' || /\b401k\b|\bira\b|\bbroker(age)?\b|\binvest(ment|ing)?\b/.test(combined)) return 'Investment'
+  if (assetType === 'hsa') return 'Misc'
+  if (isAccountType(explicit)) return explicit
+  return 'Misc'
+}
+
+function normalizeWriteToolInput(toolName: string, input: any): any {
+  if (toolName === 'add_cash_asset') {
+    return {
+      ...input,
+      account_type: inferCashAccountType(input ?? {}),
+    }
+  }
+  if (toolName === 'add_cash_assets') {
+    const assets = Array.isArray(input?.assets) ? input.assets : []
+    return {
+      ...input,
+      assets: assets.map((asset: any) => ({
+        ...asset,
+        account_type: inferCashAccountType(asset ?? {}),
+      })),
+    }
+  }
+  return input
+}
+
 function isAnalyticalQuestion(text: string): boolean {
   const normalized = text.toLowerCase()
   return /\b(what if|impact|implication|analy[sz]e|analysis|how would|what happens|affect|allocation|exposure|concentration|risk|scenario|if i buy|if i sell)\b/.test(normalized)
@@ -1178,7 +1225,13 @@ For read-only questions involving exact numbers, trends, simulations, or recomme
 Never estimate portfolio totals, allocations, or tax-lot values without using a read tool.
 Prefer short sections and bullet lists over markdown tables. Do not output pipe-table syntax.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
-Never infer location_name or account_type from existing portfolio data — always ask the user explicitly.
+  Never infer location_name from existing portfolio data unless the user or attached document clearly identifies it.
+  For non-stock assets, infer account_type when the account name or document makes it obvious:
+  - names containing "checking" -> Checking
+  - names containing "savings" or "HYSA" -> Savings
+  - CDs / certificate of deposit accounts -> Misc
+  - 401k / IRA / brokerage accounts -> Investment
+  Ask a follow-up only when location_name or account_type is genuinely ambiguous.
 For sell_shares, require the source account/location name. For lot selection, require either:
 - single-lot: purchase_date + count
 - multi-lot: lots[] with purchase_date + count for each lot
@@ -2891,16 +2944,17 @@ ${JSON.stringify(expandedContext, null, 2)}`
   }
 
   const buildWriteConfirmation = (name: string, input: any) => {
-    const validationError = validateWriteToolInput(name, input)
+    const normalizedInput = normalizeWriteToolInput(name, input)
+    const validationError = validateWriteToolInput(name, normalizedInput)
     if (validationError) throw new Error(validationError)
     return {
-      confirmationMessage: confirmationMessageFor(name, input),
-      previewSections: buildPreviewSectionsFor(name, input),
+      confirmationMessage: confirmationMessageFor(name, normalizedInput),
+      previewSections: buildPreviewSectionsFor(name, normalizedInput),
       execute: async () => {
         const supabase = getSupabaseClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) throw new Error('Not authenticated')
-        await executeTool(name, input, user.id)
+        await executeTool(name, normalizedInput, user.id)
       },
     }
   }
