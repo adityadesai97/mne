@@ -2807,24 +2807,14 @@ ${JSON.stringify(analysisContext, null, 2)}`
         content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
       }
     } else if (attachment.type === 'pdf') {
-      if (config.llmProvider === 'claude') {
-        // Send PDF as native document content block — Claude understands it directly
-        claudeMessages[lastIdx] = {
-          ...lastMsg,
-          content: [
-            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: attachment.content } },
-            { type: 'text', text: userText },
-          ],
-        }
-      } else {
-        // Groq doesn't support document blocks — extract text via pdfjs-dist
-        addTrace('Extracting PDF text for Groq provider')
-        const { extractTextFromPdf } = await import('./fileParser')
-        const extractedText = await extractTextFromPdf(attachment)
-        claudeMessages[lastIdx] = {
-          ...lastMsg,
-          content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
-        }
+      // Always extract text via pdfjs-dist — native document blocks consume 10–50K tokens
+      // for multi-page PDFs and easily hit API rate limits.
+      addTrace('Extracting PDF text')
+      const { extractTextFromPdf } = await import('./fileParser')
+      const extractedText = await extractTextFromPdf(attachment)
+      claudeMessages[lastIdx] = {
+        ...lastMsg,
+        content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
       }
     } else if (attachment.type === 'image') {
       if (config.llmProvider !== 'claude') {
