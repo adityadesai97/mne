@@ -411,7 +411,9 @@ export function CommandBar({ open, onClose }: Props) {
                   {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
                   {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
                   {compactResult && !loading && !done && (
-                    <CommandResult action={compactResult} onDone={() => setDone(true)} onClose={onClose} />
+                    <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
+                      <CommandResult action={compactResult} onDone={() => setDone(true)} onClose={onClose} />
+                    </div>
                   )}
                   {!compactResult && !loading && !done && (
                     <p className="p-4 text-muted-foreground text-xs">
@@ -548,7 +550,7 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
           return (
             <div key={`${title}-${idx}`} className="rounded-md border border-border/70 overflow-hidden">
               <p className="px-2 py-1 text-[11px] font-medium bg-muted/40">{title}</p>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-56">
                 <table className="min-w-full text-xs">
                   <thead className="bg-muted/20">
                     <tr>
