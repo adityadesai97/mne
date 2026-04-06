@@ -24,7 +24,10 @@ function readAsDataURL(file: File): Promise<string> {
   })
 }
 
-/** Extracts plain text from a PDF using pdfjs-dist (lazy loaded). */
+/** Extracts plain text from a PDF using pdfjs-dist (lazy loaded).
+ *  Groups text items by their y-coordinate so table rows are reconstructed
+ *  correctly instead of all items being joined into one unreadable string.
+ */
 async function extractPdfText(base64: string): Promise<string> {
   const pdfjs = await import('pdfjs-dist')
   // Set up the worker — use the bundled fake worker for simplicity
@@ -39,9 +42,28 @@ async function extractPdfText(base64: string): Promise<string> {
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
-    pages.push(content.items.map((item: any) => ('str' in item ? item.str : '')).join(' '))
+
+    // Each item's transform is [scaleX, skewY, skewX, scaleY, x, y].
+    // Group by rounded y (row), sort rows top-to-bottom, sort items left-to-right.
+    const rowMap = new Map<number, Array<{ x: number; text: string }>>()
+    for (const item of content.items) {
+      if (!('str' in item) || !(item as any).str.trim()) continue
+      const [, , , , x, y] = (item as any).transform as number[]
+      const row = Math.round(y)
+      if (!rowMap.has(row)) rowMap.set(row, [])
+      rowMap.get(row)!.push({ x, text: (item as any).str })
+    }
+    const lines = [...rowMap.entries()]
+      .sort((a, b) => b[0] - a[0]) // descending y → top to bottom
+      .map(([, items]) =>
+        items
+          .sort((a, b) => a.x - b.x) // left to right
+          .map(i => i.text)
+          .join('  '), // double-space suggests column separation
+      )
+    pages.push(lines.join('\n'))
   }
-  return pages.join('\n')
+  return pages.join('\n\n')
 }
 
 /**

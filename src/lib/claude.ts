@@ -2851,8 +2851,8 @@ ${JSON.stringify(analysisContext, null, 2)}`
         content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
       }
     } else if (attachment.type === 'pdf') {
-      // Always extract text via pdfjs-dist — native document blocks consume 10–50K tokens
-      // for multi-page PDFs and easily hit API rate limits.
+      // Extract text via pdfjs-dist, preserving table row structure by grouping
+      // items on the same y-coordinate before joining.
       addTrace('Extracting PDF text')
       const { extractTextFromPdf } = await import('./fileParser')
       const extractedText = await extractTextFromPdf(attachment)
