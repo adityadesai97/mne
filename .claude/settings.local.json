@@ -65,7 +65,10 @@
       "Bash(which convert:*)",
       "Bash(vercel --version 2>&1 && vercel whoami 2>&1)",
       "Bash(vercel whoami:*)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__list_teams",
+      "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__list_deployments",
+      "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__get_deployment_build_logs"
     ]
   }
 }
