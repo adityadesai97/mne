@@ -38,6 +38,8 @@ On every app load, `src/layouts/AppLayout.tsx` runs a startup effect: loads asse
 
 The current schema baseline lives in `supabase/migrations/20260302000000_baseline.sql`. Key relationships:
 
+`allowed_emails` — email allowlist used when `VITE_RESTRICT_SIGNUPS=true`. Includes an `is_admin boolean` column (the former `admin_users` table was merged in migration `20260331000000`). Admin check uses `public.is_allowed_email_admin()` (SECURITY DEFINER) to avoid self-referential RLS recursion. Managed via the Settings UI.
+
 ```
 assets ──→ locations      (account lives at a brokerage/bank)
 assets ──→ tickers        (stocks only; null for 401k/cash/etc.)
@@ -103,7 +105,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 
 ### AI Command Bar
 
-`src/lib/claude.ts` is the core AI feature. The command bar (⌘K / Cmd+K) collects natural language input and routes it through the LLM. The agent runs a read-tool loop until a write or navigation tool is selected.
+`src/lib/claude.ts` is the core AI feature. The command bar (⌘K / Cmd+K) collects natural language input and routes it through the LLM. File attachments (CSV, PDF, image) are parsed by `src/lib/fileParser.ts` and injected into the prompt. The agent runs a read-tool loop until a write or navigation tool is selected.
 
 **Read tools** (loop freely, no confirmation):
 - `get_portfolio_summary` — high-level net worth + allocation stats
@@ -130,6 +132,8 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 Write operations display a structured preview table in the UI before the user confirms. Multiple write tools in one agent turn are batched into a single confirmation dialog. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
 
 The command bar requires the user to be signed in; if not, it prompts re-authentication.
+
+**File attachment support**: The command bar accepts CSV (text-injected), PDF (pdfjs-dist text extraction + base64 for Claude), and image files. Images require the Claude provider — switching to Groq while an image is attached will throw.
 
 ### In-App Alerts
 
@@ -186,6 +190,10 @@ VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 ```
 
 ## Gotchas
+
+**Image attachments require Claude**: Attaching an image in the command bar throws if the active LLM provider is Groq. CSV and PDF work with both providers.
+
+**`is_allowed_email_admin()` bypasses RLS intentionally**: The helper function is SECURITY DEFINER so it can query `allowed_emails` without triggering recursive policy evaluation. Don't remove this without replacing with a safe equivalent.
 
 **RLS on new tables**: Every new Supabase table needs an explicit RLS policy or all writes silently fail with a policy violation. Check `supabase/migrations/` for the pattern used on existing tables.
 
