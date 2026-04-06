@@ -1213,7 +1213,21 @@ function extractTextFromResponse(response: NormalizedResponse): string {
   return response.choices[0]?.message?.content ?? ''
 }
 
-export function buildSystemPrompt(assets: any[], userName?: string, attachmentFilename?: string): string {
+export function buildSystemPrompt(assets: any[], userName?: string, attachmentFilename?: string, attachmentType?: 'csv' | 'pdf' | 'image'): string {
+  let attachmentSection = ''
+  if (attachmentFilename) {
+    if (attachmentType === 'image') {
+      attachmentSection = `
+
+---
+An image (${attachmentFilename}) has been attached. Use your vision capabilities to examine it carefully. Identify all transactions, positions, account balances, or financial data visible in the image. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.`
+    } else {
+      attachmentSection = `
+
+---
+A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, or account balances it contains. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.`
+    }
+  }
   return `You are a portfolio assistant for a personal finance app called mne.
 The user will issue commands in natural language to read or write to their portfolio.
 ${userName ? `The user's name is ${userName}. Address them by name when appropriate.` : ''}
@@ -1242,10 +1256,7 @@ If required details are missing in a multi-item request, ask follow-up questions
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
-Today's date is ${new Date().toISOString().split('T')[0]}${attachmentFilename ? `
-
----
-A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, or account balances it contains. Summarize what you found, then propose the appropriate write tool calls (use plural batch tools like add_stock_transactions, add_cash_assets, or add_rsu_grants when there are multiple items of the same type). The user will confirm each write operation before it executes.` : ''}`
+Today's date is ${new Date().toISOString().split('T')[0]}${attachmentSection}`
 }
 
 const tools = [
@@ -2734,7 +2745,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
-  const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename)
+  const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename, attachment?.type)
 
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
@@ -2801,6 +2812,11 @@ ${JSON.stringify(analysisContext, null, 2)}`
       if (config.llmProvider !== 'claude') {
         throw new Error('Image attachments currently require the Claude provider. Switch providers in Settings and try again.')
       }
+      const supportedMediaTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+      const mediaType = attachment.mediaType ?? 'image/png'
+      if (!supportedMediaTypes.includes(mediaType)) {
+        throw new Error(`Unsupported image format: ${mediaType}. Please use JPEG, PNG, GIF, or WebP.`)
+      }
       claudeMessages[lastIdx] = {
         ...lastMsg,
         content: [
@@ -2808,7 +2824,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
             type: 'image',
             source: {
               type: 'base64',
-              media_type: attachment.mediaType ?? 'image/png',
+              media_type: mediaType,
               data: attachment.content,
             },
           },
