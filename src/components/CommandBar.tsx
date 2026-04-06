@@ -509,7 +509,7 @@ export function CommandBar({ open, onClose }: Props) {
           </div>
           <input
             type="file"
-            accept=".csv,.pdf,image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+            accept=".csv,.pdf,image/*"
             ref={fileInputRef}
             className="hidden"
             onChange={async e => {

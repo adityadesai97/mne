@@ -51,6 +51,16 @@ async function extractPdfText(base64: string): Promise<string> {
  */
 export async function parseFileAttachment(file: File): Promise<FileAttachment & { extractedText?: string }> {
   const ext = file.name.split('.').pop()?.toLowerCase()
+  const isImageByExt = ext === 'png'
+    || ext === 'jpg'
+    || ext === 'jpeg'
+    || ext === 'webp'
+    || ext === 'gif'
+    || ext === 'bmp'
+    || ext === 'svg'
+    || ext === 'heic'
+    || ext === 'heif'
+  const isImageByMime = file.type.startsWith('image/')
   if (ext === 'csv') {
     const content = await readAsText(file)
     return { type: 'csv', filename: file.name, content }
@@ -61,10 +71,11 @@ export async function parseFileAttachment(file: File): Promise<FileAttachment & 
     const base64 = dataUrl.split(',')[1]
     return { type: 'pdf', filename: file.name, content: base64, mediaType: 'application/pdf' }
   }
-  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp' || ext === 'gif') {
+  if (isImageByExt || isImageByMime) {
     const dataUrl = await readAsDataURL(file)
     const [prefix, base64] = dataUrl.split(',')
-    const mediaType = prefix.match(/^data:([^;]+);base64$/)?.[1] || file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`
+    const fallbackExt = ext === 'jpg' ? 'jpeg' : (ext || 'png')
+    const mediaType = prefix.match(/^data:([^;]+);base64$/)?.[1] || file.type || `image/${fallbackExt}`
     return { type: 'image', filename: file.name, content: base64, mediaType }
   }
   throw new Error(`Unsupported file type: .${ext ?? 'unknown'}. Please upload a .csv, .pdf, or image file.`)
