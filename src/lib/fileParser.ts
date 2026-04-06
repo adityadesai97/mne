@@ -32,7 +32,7 @@ function readAsDataURL(file: File): Promise<string> {
  */
 export async function renderPdfPages(
   base64: string,
-  scale = 2.0,
+  scale = 1.5,
 ): Promise<Array<{ data: string; mediaType: 'image/jpeg' }>> {
   const pdfjs = await import('pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()

@@ -1229,10 +1229,7 @@ The app will show a confirmation dialog before anything is saved, so calling the
       attachmentSection = `
 
 ---
-A financial document (${attachmentFilename}) has been attached as page image(s). Follow these steps in order:
-1. Scan every page image from start to finish. List every grant number / grant ID you can see (e.g. "Grants found: 00112452, 00162479, 00186111, 00210746, 00242130"). Do not start generating tool calls until you have listed them all.
-2. For each listed grant, extract its full details and all its vesting transactions.
-3. Call the appropriate write tool(s) in the same response — do not wait for the user to confirm before calling them. Important:
+A financial document (${attachmentFilename}) has been attached as page image(s). Examine every page image carefully before responding — read every table row and column on every page. Before calling any write tools, first state how many grants you found and list their grant IDs/numbers. Then call the appropriate write tool(s) in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
 - RSU data requires both grant records (add_rsu_grant / add_rsu_grants) AND individual vesting transactions (add_stock_transactions with subtype 'RSU'). Follow the RSU inference rules in your instructions.
 - Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
 - If required grant fields (vest_end, total_shares) cannot be inferred from the document, ask the user before calling any write tool for that grant.
