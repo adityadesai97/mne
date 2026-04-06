@@ -1,8 +1,9 @@
 export type FileAttachment = {
-  type: 'csv' | 'pdf'
+  type: 'csv' | 'pdf' | 'image'
   filename: string
-  /** CSV: raw text content. PDF: base64-encoded binary (no data-URL prefix). */
+  /** CSV: raw text content. Binary files: base64-encoded content (no data-URL prefix). */
   content: string
+  mediaType?: string
 }
 
 function readAsText(file: File): Promise<string> {
@@ -58,9 +59,15 @@ export async function parseFileAttachment(file: File): Promise<FileAttachment & 
     const dataUrl = await readAsDataURL(file)
     // Strip the "data:application/pdf;base64," prefix
     const base64 = dataUrl.split(',')[1]
-    return { type: 'pdf', filename: file.name, content: base64 }
+    return { type: 'pdf', filename: file.name, content: base64, mediaType: 'application/pdf' }
   }
-  throw new Error(`Unsupported file type: .${ext ?? 'unknown'}. Please upload a .csv or .pdf file.`)
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp' || ext === 'gif') {
+    const dataUrl = await readAsDataURL(file)
+    const [prefix, base64] = dataUrl.split(',')
+    const mediaType = prefix.match(/^data:([^;]+);base64$/)?.[1] || file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`
+    return { type: 'image', filename: file.name, content: base64, mediaType }
+  }
+  throw new Error(`Unsupported file type: .${ext ?? 'unknown'}. Please upload a .csv, .pdf, or image file.`)
 }
 
 /**

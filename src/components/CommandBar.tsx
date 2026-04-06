@@ -3,6 +3,7 @@ import { X, Paperclip } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, type FileAttachment } from '@/lib/fileParser'
+import { showAppAlert } from '@/lib/appAlerts'
 
 function normalizeErrorMessage(message: string): string {
   if (/Cannot coerce the result to a single JSON object|JSON object requested, multiple \(or no\) rows returned/i.test(message)) {
@@ -394,7 +395,7 @@ export function CommandBar({ open, onClose }: Props) {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                      title="Attach CSV or PDF"
+                      title="Attach CSV, PDF, or image"
                     >
                       <Paperclip size={16} />
                     </button>
@@ -496,7 +497,7 @@ export function CommandBar({ open, onClose }: Props) {
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
                         className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Attach CSV or PDF"
+                        title="Attach CSV, PDF, or image"
                       >
                         <Paperclip size={16} />
                       </button>
@@ -508,7 +509,7 @@ export function CommandBar({ open, onClose }: Props) {
           </div>
           <input
             type="file"
-            accept=".csv,.pdf"
+            accept=".csv,.pdf,image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
             ref={fileInputRef}
             className="hidden"
             onChange={async e => {
@@ -519,6 +520,7 @@ export function CommandBar({ open, onClose }: Props) {
                 setAttachment(parsed)
               } catch (err: any) {
                 console.error('File parse error:', err)
+                showAppAlert(normalizeErrorMessage(err?.message || 'Failed to read attachment'), { variant: 'error', durationMs: 5000 })
               }
               e.target.value = ''
             }}

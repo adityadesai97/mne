@@ -2744,6 +2744,24 @@ ${JSON.stringify(analysisContext, null, 2)}`
           content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
         }
       }
+    } else if (attachment.type === 'image') {
+      if (config.llmProvider !== 'claude') {
+        throw new Error('Image attachments currently require the Claude provider. Switch providers in Settings and try again.')
+      }
+      claudeMessages[lastIdx] = {
+        ...lastMsg,
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: attachment.mediaType ?? 'image/png',
+              data: attachment.content,
+            },
+          },
+          { type: 'text', text: userText },
+        ],
+      }
     }
 
     addTrace('File attachment injected', `${attachment.filename} (${attachment.type.toUpperCase()})`)
