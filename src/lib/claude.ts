@@ -1704,6 +1704,7 @@ type ConfirmationPreviewSection = {
   title: string
   columns: string[]
   rows: string[][]
+  groupKey?: string
 }
 
 function numberToText(value: unknown, maxFractionDigits = 4): string {
@@ -1726,11 +1727,12 @@ function dateToText(value: unknown): string {
 function mergePreviewSections(sections: ConfirmationPreviewSection[]): ConfirmationPreviewSection[] {
   const merged = new Map<string, ConfirmationPreviewSection>()
   for (const section of sections) {
-    const key = `${section.title}::${section.columns.join('|')}`
+    const key = `${section.groupKey ?? ''}::${section.title}::${section.columns.join('|')}`
     const existing = merged.get(key)
     if (!existing) {
       merged.set(key, {
         title: section.title,
+        groupKey: section.groupKey,
         columns: [...section.columns],
         rows: [...section.rows],
       })
@@ -1738,7 +1740,16 @@ function mergePreviewSections(sections: ConfirmationPreviewSection[]): Confirmat
     }
     existing.rows.push(...section.rows)
   }
-  return [...merged.values()]
+  const result = [...merged.values()]
+  result.sort((a, b) => {
+    const gkA = a.groupKey ?? ''
+    const gkB = b.groupKey ?? ''
+    if (gkA !== gkB) return gkA.localeCompare(gkB)
+    const isGrantA = a.title.includes('Grant') ? 0 : 1
+    const isGrantB = b.title.includes('Grant') ? 0 : 1
+    return isGrantA - isGrantB
+  })
+  return result
 }
 
 function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPreviewSection[] {
@@ -1748,10 +1759,18 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (transactions.length === 0) return []
 
-    return [{
+    const bySymbol = new Map<string, any[]>()
+    for (const tx of transactions) {
+      const symbol = String(tx?.symbol ?? '').toUpperCase() || '-'
+      if (!bySymbol.has(symbol)) bySymbol.set(symbol, [])
+      bySymbol.get(symbol)!.push(tx)
+    }
+
+    return [...bySymbol.entries()].map(([symbol, txs]) => ({
       title: 'Stock Transactions',
+      groupKey: symbol,
       columns: ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account'],
-      rows: transactions.map((tx: any) => [
+      rows: txs.map((tx: any) => [
         String(tx?.symbol ?? '').toUpperCase() || '-',
         numberToText(tx?.count),
         moneyToText(tx?.cost_price),
@@ -1760,7 +1779,7 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
         String(tx?.location_name ?? '').trim() || '-',
         String(tx?.account_type ?? '').trim() || '-',
       ]),
-    }]
+    }))
   }
 
   if (toolName === 'add_cash_asset' || toolName === 'add_cash_assets') {
@@ -1789,20 +1808,24 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (grants.length === 0) return []
 
-    return [{
-      title: 'RSU Grants',
-      columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Location', 'Account'],
-      rows: grants.map((grant: any) => [
-        String(grant?.symbol ?? '').toUpperCase() || '-',
-        numberToText(grant?.total_shares),
-        dateToText(grant?.grant_date),
-        dateToText(grant?.vest_start),
-        dateToText(grant?.vest_end),
-        dateToText(grant?.cliff_date),
-        String(grant?.location_name ?? '').trim() || '-',
-        String(grant?.account_type ?? '').trim() || '-',
-      ]),
-    }]
+    return grants.map((grant: any) => {
+      const symbol = String(grant?.symbol ?? '').toUpperCase() || '-'
+      return {
+        title: 'RSU Grant',
+        groupKey: symbol,
+        columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Location', 'Account'],
+        rows: [[
+          symbol,
+          numberToText(grant?.total_shares),
+          dateToText(grant?.grant_date),
+          dateToText(grant?.vest_start),
+          dateToText(grant?.vest_end),
+          dateToText(grant?.cliff_date),
+          String(grant?.location_name ?? '').trim() || '-',
+          String(grant?.account_type ?? '').trim() || '-',
+        ]],
+      }
+    })
   }
 
   return []
