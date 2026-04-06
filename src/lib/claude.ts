@@ -1229,11 +1229,11 @@ The app will show a confirmation dialog before anything is saved, so calling the
       attachmentSection = `
 
 ---
-A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, account balances, RSU grants, and RSU vesting events it contains. Summarize what you found, then propose the appropriate write tool calls. Important:
+A financial document (${attachmentFilename}) has been attached. Parse it to identify all transactions, positions, account balances, RSU grants, and RSU vesting events it contains. Summarize what you found, then call the appropriate write tool(s) in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
 - RSU data requires both grant records (add_rsu_grant / add_rsu_grants) AND individual vesting transactions (add_stock_transactions with subtype 'RSU'). Follow the RSU inference rules in your instructions.
 - Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
-- If required grant fields (vest_end, total_shares) cannot be inferred from the document, ask the user before proposing the tool call.
-The user will confirm each write operation before it executes.`
+- If required grant fields (vest_end, total_shares) cannot be inferred from the document, ask the user before calling any write tool for that grant.
+The app will show a confirmation dialog before anything is saved, so calling the tool is not the same as executing it.`
     }
   }
   return `You are a portfolio assistant for a personal finance app called mne.
@@ -1266,11 +1266,11 @@ RSU data from documents or user messages: RSU data requires TWO types of records
   1. Grant record (add_rsu_grant / add_rsu_grants): captures the overall grant structure. Infer fields from the transaction history when not explicitly stated:
      - grant_date: look for "grant date" or "award date"; if absent, estimate as vest_start minus the cliff period (typically 1 year for a standard 1-year cliff)
      - vest_start: the date of the first vesting event (the cliff vest date, or the first regular vest if there is no cliff)
-     - vest_end: the date of the last scheduled vest; if future vests are not listed in the document, extrapolate from the pattern (e.g. quarterly vesting over 4 years → vest_end = grant_date + 4 years)
+     - vest_end: the date of the last scheduled vest. Extrapolation is only valid when ALL THREE of the following are known from the document: (a) the cliff date and cliff share amount, (b) the post-cliff vesting cadence (requires 2+ post-cliff events to confirm the interval), and (c) the total number of scheduled vest events or an explicit grant end date. If any of these three is unknown, ask the user for vest_end rather than guessing.
      - cliff_date: set to the date of the first vest when that date is >= 9 months after grant_date (standard 1-year cliff); leave null otherwise
-     - total_shares: use the stated grant total; if absent, sum all listed vest amounts and project forward to vest_end using the established cadence
+     - total_shares: use the stated grant total when explicitly shown in the document. If absent, you may calculate it only when ALL THREE are known: (a) cliff share amount, (b) post-cliff cadence and per-event share amount (requires 2+ post-cliff events), and (c) total vest count or vest_end. Missing any one of these means you must ask the user rather than guess.
   2. Individual vesting transactions (add_stock_transactions with subtype 'RSU'): one entry per vesting event that has already occurred, using the vest date as purchase_date and the fair-market value (FMV) at vest as cost_price.
-  If a grant has too few vesting events to confidently determine vest_end or total_shares, ask the user for those values before calling any write tool for that grant.
+  If vest_end or total_shares cannot be determined from the document without guessing, ask the user for those values before calling any write tool for that grant. Never state an assumption and proceed anyway.
   Do not add only the grant record without the individual transactions, or vice versa, unless the document contains only one of the two.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
