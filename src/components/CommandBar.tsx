@@ -296,7 +296,6 @@ export function CommandBar({ open, onClose }: Props) {
     }
 
     const pendingAttachment = attachment
-    setAttachment(null)
     try {
       const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined)
       if (action.type === 'text') {
