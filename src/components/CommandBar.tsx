@@ -169,6 +169,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  const [writesDone, setWritesDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
   const [attachment, setAttachment] = useState<FileAttachment | null>(null)
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
@@ -177,6 +178,19 @@ export function CommandBar({ open, onClose }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const msgIdRef = useRef(0)
+
+  const handleClose = () => {
+    if (writesDone) {
+      window.location.reload()
+    } else {
+      onClose()
+    }
+  }
+
+  const handleWriteDone = () => {
+    setDone(true)
+    setWritesDone(true)
+  }
 
   function nextId() { return ++msgIdRef.current }
   const focusInput = useCallback(() => {
@@ -346,7 +360,7 @@ export function CommandBar({ open, onClose }: Props) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           {/* Panel — shares layoutId with CmdKFab pill */}
@@ -385,7 +399,7 @@ export function CommandBar({ open, onClose }: Props) {
                       onChange={e => setQuery(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                        if (e.key === 'Escape') onClose()
+                        if (e.key === 'Escape') handleClose()
                       }}
                       className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
                       style={{ maxHeight: '144px' }}
@@ -412,7 +426,7 @@ export function CommandBar({ open, onClose }: Props) {
                   {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
                   {compactResult && !loading && !done && (
                     <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
-                      <CommandResult action={compactResult} onDone={() => setDone(true)} onClose={onClose} />
+                      <CommandResult action={compactResult} onDone={handleWriteDone} onClose={handleClose} />
                     </div>
                   )}
                   {!compactResult && !loading && !done && (
@@ -437,7 +451,7 @@ export function CommandBar({ open, onClose }: Props) {
                   {/* Header with close button */}
                   <div className="flex items-center justify-end px-3 pt-2 pb-1 flex-shrink-0">
                     <button
-                      onClick={onClose}
+                      onClick={handleClose}
                       className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
                       aria-label="Close"
                     >
@@ -453,7 +467,7 @@ export function CommandBar({ open, onClose }: Props) {
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         >
-                          <MessageBubble message={m} onDone={() => setDone(true)} onClose={onClose} />
+                          <MessageBubble message={m} onDone={handleWriteDone} onClose={handleClose} />
                         </motion.div>
                       ))}
                     </AnimatePresence>
@@ -489,7 +503,7 @@ export function CommandBar({ open, onClose }: Props) {
                         onChange={e => setQuery(e.target.value)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                          if (e.key === 'Escape') onClose()
+                          if (e.key === 'Escape') handleClose()
                         }}
                         className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
                         style={{ maxHeight: '144px' }}
@@ -626,7 +640,6 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
                   return
                 }
                 onDone()
-                setTimeout(() => window.location.reload(), 800)
               } catch (e: any) {
                 setError(normalizeErrorMessage(e.message || 'Write failed'))
                 setExecuting(false)
@@ -663,7 +676,6 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
               try {
                 await action.execute()
                 onDone()
-                setTimeout(() => window.location.reload(), 800)
               } catch (e: any) {
                 setError(normalizeErrorMessage(e.message || 'Write failed'))
                 setExecuting(false)
