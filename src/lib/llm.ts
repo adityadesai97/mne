@@ -20,7 +20,7 @@ export interface NormalizedResponse {
 export interface LLMClient {
   chat: {
     completions: {
-      create(params: { model: string; max_tokens?: number; messages: any[]; tools?: any[] }): Promise<NormalizedResponse>
+      create(params: { model: string; max_tokens?: number; temperature?: number; messages: any[]; tools?: any[] }): Promise<NormalizedResponse>
     }
   }
 }
@@ -85,6 +85,7 @@ class ClaudeAdapter {
       create: async (params: {
         model: string
         max_tokens?: number
+        temperature?: number
         messages: any[]
         tools?: any[]
       }): Promise<NormalizedResponse> => {
@@ -99,6 +100,7 @@ class ClaudeAdapter {
         const response = await this.anthropic.messages.create({
           model: params.model,
           max_tokens: params.max_tokens ?? 1024,
+          ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
           ...(system ? { system } : {}),
           messages: conversationMessages,
           ...(tools?.length ? { tools } : {}),

@@ -2812,6 +2812,9 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
     max_tokens: 8192,
+    // Use temperature=0 when processing a file attachment for deterministic extraction.
+    // For regular conversational queries no temperature is set (API default).
+    ...(attachment ? { temperature: 0 } : {}),
     messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
     tools,
   })
