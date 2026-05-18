@@ -68,7 +68,9 @@
       "Bash(vercel:*)",
       "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__list_teams",
       "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__list_deployments",
-      "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__get_deployment_build_logs"
+      "mcp__6d72c8df-0d74-4838-b9f7-a11bf5572081__get_deployment_build_logs",
+      "mcp__46e9950a-b649-43a2-b7c8-a2432d032640__list_projects",
+      "mcp__46e9950a-b649-43a2-b7c8-a2432d032640__apply_migration"
     ]
   }
 }

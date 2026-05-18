@@ -1,4 +1,4 @@
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, netCount } from './portfolio'
 
 // ── Portfolio Allocation ──────────────────────────────────────
 
@@ -21,9 +21,9 @@ function filteredStockValue(asset: any, activeSubtypes: Set<string>): number {
   const price = asset.ticker?.current_price
   if (!price) {
     // No live price yet — show cost basis so stocks still appear in charts
-    return lots.reduce((sum: number, t: any) => sum + Number(t.count) * Number(t.cost_price), 0)
+    return lots.reduce((sum: number, t: any) => sum + netCount(t) * Number(t.cost_price), 0)
   }
-  const shares = lots.reduce((sum: number, t: any) => sum + Number(t.count), 0)
+  const shares = lots.reduce((sum: number, t: any) => sum + netCount(t), 0)
   return Math.round(price * shares * 100) / 100
 }
 
@@ -60,7 +60,7 @@ export function computeCapitalGainsExposure(assets: any[]) {
     const price = a.ticker?.current_price ?? 0
     for (const st of a.stock_subtypes ?? []) {
       for (const t of st.transactions ?? []) {
-        const gain = Number(t.count) * (price - Number(t.cost_price))
+        const gain = netCount(t) * (price - Number(t.cost_price))
         if (t.capital_gains_status === 'Short Term') shortTerm += gain
         // Transactions with any status other than 'Short Term' (including Long Term) count as long-term
         else longTerm += gain

@@ -8,6 +8,7 @@ interface EditValues {
   cost_price: string
   purchase_date: string
   capital_gains_status: string
+  sold_at_vest: string
 }
 
 type EditTransactionUpdates = {
@@ -15,6 +16,7 @@ type EditTransactionUpdates = {
   cost_price: number
   purchase_date: string
   capital_gains_status: string
+  sold_at_vest?: number
 }
 
 export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
@@ -38,17 +40,21 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
 
   async function handleSave(tId: string) {
     if (!onEditTransaction) return
+    const soldAtVest = parseFloat(editValues.sold_at_vest) || 0
     await onEditTransaction(tId, {
       count: parseFloat(editValues.count),
       cost_price: parseFloat(editValues.cost_price),
       purchase_date: editValues.purchase_date,
       capital_gains_status: editValues.capital_gains_status,
+      sold_at_vest: soldAtVest > 0 ? soldAtVest : undefined,
     })
     setEditingId(null)
   }
 
   function renderTransactionCard(t: any) {
-    const shares = Number(t.count)
+    const totalVested = Number(t.count)
+    const soldAtVest = Number(t.sold_at_vest ?? 0)
+    const shares = Math.max(0, totalVested - soldAtVest)
     const costPerShare = Number(t.cost_price)
     const currentPrice = ticker?.current_price ?? null
     const totalCost = shares * costPerShare
@@ -99,6 +105,18 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                 <option value="Long Term">Long Term</option>
               </select>
             </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Sold at vest</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={editValues.sold_at_vest}
+                onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))}
+                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                placeholder="0"
+              />
+            </div>
           </div>
           <div className="flex gap-2">
             <button onClick={() => handleSave(t.id)} className="text-xs bg-primary text-primary-foreground hover:opacity-90 px-3 py-1.5 rounded-md transition-opacity font-medium">Save</button>
@@ -116,6 +134,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <p className="text-xs font-medium">{formatDateLabel(t.purchase_date)}</p>
               <p className="text-[11px] text-muted-foreground">
                 {shares.toFixed(shares % 1 === 0 ? 0 : 4)} shares @ {fmt(costPerShare)}
+                {soldAtVest > 0 && <span className="text-muted-foreground/70"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -129,7 +148,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
 
         <div className="px-3 pb-3">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-2.5">
-            <Metric label="Shares" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
+            <Metric label="Shares held" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
             <Metric label="Cost / share" value={fmt(costPerShare)} />
             <Metric label="Amount paid" value={fmt(totalCost)} />
             <Metric
@@ -143,6 +162,12 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
               className={gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
             />
+            {soldAtVest > 0 && (
+              <>
+                <Metric label="Vested" value={totalVested.toFixed(totalVested % 1 === 0 ? 0 : 4)} />
+                <Metric label="Sold at vest" value={soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} />
+              </>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
@@ -162,6 +187,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                       cost_price: String(t.cost_price),
                       purchase_date: t.purchase_date,
                       capital_gains_status: t.capital_gains_status,
+                      sold_at_vest: String(t.sold_at_vest ?? 0),
                     })
                   }}
                   className="text-muted-foreground hover:text-foreground transition-colors"
@@ -287,6 +313,13 @@ function groupRsuActivityByGrant(grants: any[], transactions: any[]) {
   const unassignedTransactions: any[] = []
 
   for (const transaction of transactions) {
+    if (transaction.rsu_grant_id) {
+      const group = grantGroups.find(g => g.grant.id === transaction.rsu_grant_id)
+      if (group) {
+        group.transactions.push(transaction)
+        continue
+      }
+    }
     const targetGroup = pickGrantForTransaction(grantGroups, transaction)
     if (targetGroup) {
       targetGroup.transactions.push(transaction)
