@@ -7,3 +7,11 @@ export async function endGrant(grantId: string, endedAt: string) {
     .eq('id', grantId)
   if (error) throw error
 }
+
+export async function deleteGrant(grantId: string) {
+  const { error } = await getSupabaseClient()
+    .from('rsu_grants')
+    .delete()
+    .eq('id', grantId)
+  if (error) throw error
+}
