@@ -17,12 +17,13 @@ type EditTransactionUpdates = {
   capital_gains_status: string
 }
 
-export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransaction, onEndGrant }: {
+export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
   subtypes: any[]
   ticker: any
   onDeleteTransaction?: (id: string) => Promise<void>
   onEditTransaction?: (id: string, updates: EditTransactionUpdates) => Promise<void>
   onEndGrant?: (id: string) => Promise<void>
+  onDeleteGrant?: (id: string) => Promise<void>
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<EditValues>({
@@ -215,16 +216,27 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                       <div className="mt-2 rounded-md border border-border/60 bg-card px-2.5 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-medium tabular-nums">{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</p>
-                          {group.grant.ended_at ? (
-                            <Badge variant="outline" className="text-[10px]">Ended</Badge>
-                          ) : onEndGrant ? (
-                            <button
-                              onClick={() => { void onEndGrant(group.grant.id) }}
-                              className="text-[11px] text-loss bg-loss/10 px-2 py-1 rounded hover:bg-loss/20 transition-colors"
-                            >
-                              End Grant
-                            </button>
-                          ) : null}
+                          <div className="flex items-center gap-2">
+                            {group.grant.ended_at ? (
+                              <Badge variant="outline" className="text-[10px]">Ended</Badge>
+                            ) : onEndGrant ? (
+                              <button
+                                onClick={() => { void onEndGrant(group.grant.id) }}
+                                className="text-[11px] text-loss bg-loss/10 px-2 py-1 rounded hover:bg-loss/20 transition-colors"
+                              >
+                                End Grant
+                              </button>
+                            ) : null}
+                            {onDeleteGrant && (
+                              <button
+                                onClick={() => { void onDeleteGrant(group.grant.id) }}
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                aria-label="Delete grant"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">
                           {fmtShares(vesting.unvestedShares)} unvested

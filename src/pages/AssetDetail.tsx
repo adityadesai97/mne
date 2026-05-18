@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { TaxLotList } from '@/components/TaxLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, updateTransaction } from '@/lib/db/transactions'
-import { endGrant } from '@/lib/db/grants'
+import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 
@@ -60,6 +60,23 @@ export default function AssetDetail() {
   async function handleEditTransaction(txId: string, updates: { count: number; cost_price: number; purchase_date: string; capital_gains_status: string }) {
     try {
       await updateTransaction(txId, updates)
+      if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function handleDeleteGrant(grantId: string) {
+    const confirmed = await requestAppConfirm({
+      title: 'Delete RSU grant?',
+      message: 'Delete this grant? Vesting transactions will remain but become unmatched.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await deleteGrant(grantId)
       if (id) setAsset(await getAssetById(id))
     } catch (err: any) {
       setError(err.message)
@@ -307,6 +324,7 @@ export default function AssetDetail() {
               onDeleteTransaction={handleDeleteTransaction}
               onEditTransaction={handleEditTransaction}
               onEndGrant={handleEndGrant}
+              onDeleteGrant={handleDeleteGrant}
             />
           </section>
         )}
