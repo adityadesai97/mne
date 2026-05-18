@@ -275,6 +275,13 @@ function groupRsuActivityByGrant(grants: any[], transactions: any[]) {
   const unassignedTransactions: any[] = []
 
   for (const transaction of transactions) {
+    if (transaction.rsu_grant_id) {
+      const group = grantGroups.find(g => g.grant.id === transaction.rsu_grant_id)
+      if (group) {
+        group.transactions.push(transaction)
+        continue
+      }
+    }
     const targetGroup = pickGrantForTransaction(grantGroups, transaction)
     if (targetGroup) {
       targetGroup.transactions.push(transaction)

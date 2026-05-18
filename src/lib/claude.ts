@@ -1221,17 +1221,17 @@ export function buildSystemPrompt(assets: any[], userName?: string, attachmentFi
 
 ---
 An image (${attachmentFilename}) has been attached. Use your vision capabilities to examine it carefully. Identify all transactions, positions, account balances, RSU grants, RSU vesting events, or other financial data visible in the image. Summarize what you found, then call the appropriate write tool(s) in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
-- RSU data requires both grant records (add_rsu_grant / add_rsu_grants) AND individual vesting transactions (add_stock_transactions with subtype 'RSU'). Follow the RSU inference rules in your instructions.
-- Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
+- RSU data: use add_rsu_grant / add_rsu_grants and include all vesting transactions in the transactions array for each grant. Do NOT call add_stock_transactions separately for RSU vests.
+- Use plural batch tools (add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
 - If required grant fields (vest_end, total_shares) cannot be inferred from the image, ask the user before calling the tool.
 The app will show a confirmation dialog before anything is saved, so calling the tool is not the same as executing it.`
     } else {
       attachmentSection = `
 
 ---
-A financial document (${attachmentFilename}) has been attached. Read every page carefully — every table row, every column, every section. Before calling any write tools, first state how many grants you found, list their grant IDs/numbers, and count the vesting transactions per grant. Then call BOTH add_rsu_grants AND add_stock_transactions together in the same response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
-- RSU data requires both grant records (add_rsu_grant / add_rsu_grants) AND individual vesting transactions (add_stock_transactions with subtype 'RSU') called together in the same response. Follow the RSU inference rules in your instructions.
-- Use plural batch tools (add_stock_transactions, add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
+A financial document (${attachmentFilename}) has been attached. Read every page carefully — every table row, every column, every section. Before calling any write tools, first state how many grants you found, list their grant IDs/numbers, and count the vesting transactions per grant. Then call add_rsu_grants (or add_rsu_grant) in a single response — do not wait for the user to say "yes" or "go ahead" before calling them. Important:
+- RSU data: use add_rsu_grants and include all vesting transactions in the transactions array for each grant. Do NOT call add_stock_transactions separately for RSU vests.
+- Use plural batch tools (add_cash_assets, add_rsu_grants) when there are multiple items of the same type.
 - If required grant fields (vest_end, total_shares) cannot be inferred from the document, ask the user before calling any write tool for that grant.
 The app will show a confirmation dialog before anything is saved, so calling the tool is not the same as executing it.`
     }
@@ -1262,16 +1262,15 @@ When the user provides 2 or more stock purchases and all details are present, us
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
 If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
-RSU data from documents or user messages: RSU data requires TWO types of records — a grant record plus individual vesting transactions. Always add both:
-  1. Grant record (add_rsu_grant / add_rsu_grants): captures the overall grant structure. Infer fields from the transaction history when not explicitly stated:
+RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. Include the grant structure AND all vesting transactions that have already occurred in the transactions array for each grant. Do NOT call add_stock_transactions separately for RSU vests.
+  Grant fields — infer from transaction history when not explicitly stated:
      - grant_date: look for "grant date" or "award date"; if absent, estimate as vest_start minus the cliff period (typically 1 year for a standard 1-year cliff)
      - vest_start: the date of the first vesting event (the cliff vest date, or the first regular vest if there is no cliff)
      - vest_end: the date of the last scheduled vest. Extrapolation is only valid when ALL THREE of the following are known from the document: (a) the cliff date and cliff share amount, (b) the post-cliff vesting cadence (requires 2+ post-cliff events to confirm the interval), and (c) the total number of scheduled vest events or an explicit grant end date. If any of these three is unknown, ask the user for vest_end rather than guessing.
      - cliff_date: set to the date of the first vest when that date is >= 9 months after grant_date (standard 1-year cliff); leave null otherwise
      - total_shares: use the stated grant total when explicitly shown in the document. If absent, you may calculate it only when ALL THREE are known: (a) cliff share amount, (b) post-cliff cadence and per-event share amount (requires 2+ post-cliff events), and (c) total vest count or vest_end. Missing any one of these means you must ask the user rather than guess.
-  2. Individual vesting transactions (add_stock_transactions with subtype 'RSU'): one entry per vesting event that has already occurred, using the vest date as purchase_date and the fair-market value (FMV) at vest as cost_price.
+  Transaction fields: purchase_date = vest date, cost_price = FMV at vest, count = shares vested.
   If vest_end or total_shares cannot be determined from the document without guessing, ask the user for those values before calling any write tool for that grant. Never state an assumption and proceed anyway.
-  Do not add only the grant record without the individual transactions, or vice versa, unless the document contains only one of the two.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
 Today's date is ${new Date().toISOString().split('T')[0]}${attachmentSection}`
@@ -1574,7 +1573,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_rsu_grants',
-      description: 'Record multiple RSU grant awards at once (grant structure only — vest schedule, not individual vesting events). Use this when the user provides 2 or more RSU grants in a single message. Individual vesting transactions must be added separately via add_stock_transactions with subtype RSU.',
+      description: 'Record multiple RSU grant awards at once, including their vesting transactions. Use this when the user provides 2 or more RSU grants in a single message. Include all vesting transactions that have already occurred in the transactions array for each grant.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1594,6 +1593,19 @@ const tools = [
                 location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
                 account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
                 ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+                transactions: {
+                  type: 'array',
+                  description: 'Vesting transactions that have already occurred for this grant. Each entry uses the vest date as purchase_date and FMV at vest as cost_price.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD of the vest event' },
+                      cost_price: { type: 'number', description: 'Fair market value (FMV) per share at vest' },
+                      count: { type: 'number', description: 'Number of shares vested' },
+                    },
+                    required: ['purchase_date', 'cost_price', 'count'],
+                  },
+                },
               },
               required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
             },
@@ -1607,7 +1619,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_rsu_grant',
-      description: 'Record a single RSU grant award (grant structure only — vest schedule, not individual vesting events). Use add_rsu_grants (plural) instead when adding 2 or more grants. Individual vesting transactions must be added separately via add_stock_transactions with subtype RSU.',
+      description: 'Record a single RSU grant award including its vesting transactions. Use add_rsu_grants (plural) instead when adding 2 or more grants. Include all vesting transactions that have already occurred in the transactions array.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1621,6 +1633,19 @@ const tools = [
           location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
           account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
           ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+          transactions: {
+            type: 'array',
+            description: 'Vesting transactions that have already occurred for this grant. Each entry uses the vest date as purchase_date and FMV at vest as cost_price.',
+            items: {
+              type: 'object',
+              properties: {
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD of the vest event' },
+                cost_price: { type: 'number', description: 'Fair market value (FMV) per share at vest' },
+                count: { type: 'number', description: 'Number of shares vested' },
+              },
+              required: ['purchase_date', 'cost_price', 'count'],
+            },
+          },
         },
         required: ['symbol', 'grant_date', 'total_shares', 'vest_start', 'vest_end', 'location_name', 'account_type'],
       },
@@ -1829,9 +1854,11 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (grants.length === 0) return []
 
-    return grants.map((grant: any) => {
+    const txColumns = ['Purchase Date', 'Shares', 'Cost/Share']
+    const sections: ConfirmationPreviewSection[] = []
+    for (const grant of grants) {
       const symbol = String(grant?.symbol ?? '').toUpperCase() || '-'
-      return {
+      sections.push({
         title: 'RSU Grant',
         groupKey: symbol,
         columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Location', 'Account'],
@@ -1845,8 +1872,22 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
           String(grant?.location_name ?? '').trim() || '-',
           String(grant?.account_type ?? '').trim() || '-',
         ]],
+      })
+      const txs = Array.isArray(grant?.transactions) ? grant.transactions : []
+      if (txs.length > 0) {
+        sections.push({
+          title: 'RSU Transactions',
+          groupKey: symbol,
+          columns: txColumns,
+          rows: txs.map((tx: any) => [
+            dateToText(tx?.purchase_date),
+            numberToText(tx?.count),
+            moneyToText(tx?.cost_price),
+          ]),
+        })
       }
-    })
+    }
+    return sections
   }
 
   return []
@@ -2255,15 +2296,33 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     }
 
     // 4. Insert the grant record
-    const { error } = await supabase.from('rsu_grants').insert({
+    const { data: grantData, error } = await supabase.from('rsu_grants').insert({
       subtype_id: subtypeId,
       grant_date: input.grant_date,
       total_shares: input.total_shares,
       vest_start: input.vest_start,
       vest_end: input.vest_end,
       cliff_date: input.cliff_date ?? null,
-    })
+    }).select('id').single()
     if (error) throw new Error(`Failed to create RSU grant: ${error.message}`)
+
+    // 5. Insert vesting transactions linked to this grant
+    const grantTransactions = Array.isArray(input.transactions) ? input.transactions : []
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    for (const tx of grantTransactions) {
+      const purchaseDate = new Date(tx.purchase_date)
+      const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
+      const { error: txError } = await supabase.from('transactions').insert({
+        subtype_id: subtypeId,
+        rsu_grant_id: grantData.id,
+        count: tx.count,
+        cost_price: tx.cost_price,
+        purchase_date: tx.purchase_date,
+        capital_gains_status,
+      })
+      if (txError) throw new Error(`Failed to create RSU transaction: ${txError.message}`)
+    }
   }
 
   if (toolName === 'add_rsu_grants') {
