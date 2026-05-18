@@ -2,8 +2,12 @@ import type { getAllAssets } from './db/assets'
 
 export type Asset = Awaited<ReturnType<typeof getAllAssets>>[number]
 
-type Transaction = { count: number | string; cost_price: number | string }
+type Transaction = { count: number | string; cost_price: number | string; sold_at_vest?: number | string | null }
 type StockSubtype = { transactions: Transaction[] | null; rsu_grants: unknown[] | null }
+
+export function netCount(t: Transaction): number {
+  return Math.max(0, Number(t.count) - Number(t.sold_at_vest ?? 0))
+}
 type Ticker = { current_price: number | null }
 
 export type AssetTyped = {
@@ -19,13 +23,13 @@ export function computeAssetValue(asset: AssetTyped): number {
   if (asset.ticker?.current_price == null) return 0
   const price = asset.ticker.current_price
   const shares = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
-    .reduce((sum, t) => sum + Number(t.count), 0) ?? 0
+    .reduce((sum, t) => sum + netCount(t), 0) ?? 0
   return Math.round(price * shares * 100) / 100
 }
 
 export function computeCostBasis(asset: AssetTyped): number {
   const raw = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
-    .reduce((sum, t) => sum + Number(t.count) * Number(t.cost_price), 0) ?? 0
+    .reduce((sum, t) => sum + netCount(t) * Number(t.cost_price), 0) ?? 0
   return Math.round(raw * 100) / 100
 }
 

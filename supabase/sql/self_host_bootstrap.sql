@@ -176,6 +176,8 @@ alter table public.rsu_grants add column if not exists ended_at date;
 
 -- Link transactions to their specific RSU grant for accurate grouping
 alter table public.transactions add column if not exists rsu_grant_id uuid references public.rsu_grants(id) on delete set null;
+-- Shares sold at vest to cover taxes (net held = count - sold_at_vest)
+alter table public.transactions add column if not exists sold_at_vest numeric(12,6) not null default 0;
 
 do $$
 begin

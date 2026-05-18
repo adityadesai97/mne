@@ -242,7 +242,9 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
     for (const subtype of asset?.stock_subtypes ?? []) {
       const subtypeName = String(subtype?.subtype ?? 'Market')
       for (const tx of subtype?.transactions ?? []) {
-        const shares = Number(tx?.count ?? 0) || 0
+        const vestedShares = Number(tx?.count ?? 0) || 0
+        const soldAtVest = Number(tx?.sold_at_vest ?? 0) || 0
+        const shares = Math.max(0, vestedShares - soldAtVest)
         const costPrice = Number(tx?.cost_price ?? 0) || 0
         accountShares += shares
         accountCostBasis += shares * costPrice
@@ -252,6 +254,7 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
           shares,
           costPrice,
           capitalGainsStatus: String(tx?.capital_gains_status ?? ''),
+          ...(soldAtVest > 0 ? { soldAtVest } : {}),
         })
       }
 
@@ -433,7 +436,7 @@ function buildPositionRows(assets: any[]): PositionRow[] {
 
     const shares = (asset?.stock_subtypes ?? [])
       .flatMap((st: any) => st?.transactions ?? [])
-      .reduce((sum: number, tx: any) => sum + toNumber(tx?.count, 0), 0)
+      .reduce((sum: number, tx: any) => sum + Math.max(0, toNumber(tx?.count, 0) - toNumber(tx?.sold_at_vest, 0)), 0)
     const costBasis = computeCostBasis(asset)
     const marketValue = computeAssetValue(asset)
     const unrealizedGain = computeUnrealizedGain(asset)
@@ -491,7 +494,9 @@ function buildTransactionRows(assets: any[]): TransactionRow[] {
     for (const subtype of asset?.stock_subtypes ?? []) {
       const subtypeName = String(subtype?.subtype ?? 'Market')
       for (const tx of subtype?.transactions ?? []) {
-        const shares = toNumber(tx?.count, 0)
+        const vestedShares = toNumber(tx?.count, 0)
+        const soldAtVest = toNumber(tx?.sold_at_vest, 0)
+        const shares = Math.max(0, vestedShares - soldAtVest)
         const costPrice = toNumber(tx?.cost_price, 0)
         rows.push({
           symbol,
@@ -504,6 +509,7 @@ function buildTransactionRows(assets: any[]): TransactionRow[] {
           costPrice: Math.round(costPrice * 100) / 100,
           lotCostBasis: Math.round(shares * costPrice * 100) / 100,
           capitalGainsStatus: String(tx?.capital_gains_status ?? ''),
+          ...(soldAtVest > 0 ? { soldAtVest: Math.round(soldAtVest * 10000) / 10000 } : {}),
         })
       }
     }
@@ -1269,7 +1275,7 @@ RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. In
      - vest_end: the date of the last scheduled vest. Extrapolation is only valid when ALL THREE of the following are known from the document: (a) the cliff date and cliff share amount, (b) the post-cliff vesting cadence (requires 2+ post-cliff events to confirm the interval), and (c) the total number of scheduled vest events or an explicit grant end date. If any of these three is unknown, ask the user for vest_end rather than guessing.
      - cliff_date: set to the date of the first vest when that date is >= 9 months after grant_date (standard 1-year cliff); leave null otherwise
      - total_shares: use the stated grant total when explicitly shown in the document. If absent, you may calculate it only when ALL THREE are known: (a) cliff share amount, (b) post-cliff cadence and per-event share amount (requires 2+ post-cliff events), and (c) total vest count or vest_end. Missing any one of these means you must ask the user rather than guess.
-  Transaction fields: purchase_date = vest date, cost_price = FMV at vest, count = shares vested.
+  Transaction fields: purchase_date = vest date, cost_price = FMV at vest, count = TOTAL shares vested (before any sell-to-cover), sold_at_vest = shares immediately sold at vest to cover taxes (omit or set 0 if none). Net shares held = count - sold_at_vest. total_shares in the grant always reflects the full grant regardless of sold_at_vest.
   If vest_end or total_shares cannot be determined from the document without guessing, ask the user for those values before calling any write tool for that grant. Never state an assumption and proceed anyway.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
@@ -1447,6 +1453,7 @@ const tools = [
           cost_price: { type: 'number', description: 'Price per share at purchase' },
           purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
           subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+          sold_at_vest: { type: 'number', description: 'For RSU: shares sold at vest to cover taxes. Net held = count - sold_at_vest.' },
           asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
           location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
           account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
@@ -1474,6 +1481,7 @@ const tools = [
                 cost_price: { type: 'number', description: 'Price per share at purchase' },
                 purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
                 subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+                sold_at_vest: { type: 'number', description: 'For RSU: shares sold at vest to cover taxes. Net held = count - sold_at_vest.' },
                 asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
                 location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
                 account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
@@ -1601,7 +1609,8 @@ const tools = [
                     properties: {
                       purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD of the vest event' },
                       cost_price: { type: 'number', description: 'Fair market value (FMV) per share at vest' },
-                      count: { type: 'number', description: 'Number of shares vested' },
+                      count: { type: 'number', description: 'Total shares vested (before any sell-to-cover)' },
+                      sold_at_vest: { type: 'number', description: 'Shares immediately sold at vest to cover taxes. Net held = count - sold_at_vest.' },
                     },
                     required: ['purchase_date', 'cost_price', 'count'],
                   },
@@ -1786,16 +1795,23 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (transactions.length === 0) return []
 
-    const txColumns = ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
-    const txRow = (tx: any) => [
-      String(tx?.symbol ?? '').toUpperCase() || '-',
-      numberToText(tx?.count),
-      moneyToText(tx?.cost_price),
-      dateToText(tx?.purchase_date),
-      String(tx?.subtype ?? 'Market'),
-      String(tx?.location_name ?? '').trim() || '-',
-      String(tx?.account_type ?? '').trim() || '-',
-    ]
+    const hasSoldAtVest = transactions.some((tx: any) => Number(tx?.sold_at_vest ?? 0) > 0)
+    const txColumns = hasSoldAtVest
+      ? ['Symbol', 'Shares', 'Sold at Vest', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
+      : ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
+    const txRow = (tx: any) => {
+      const base = [
+        String(tx?.symbol ?? '').toUpperCase() || '-',
+        numberToText(tx?.count),
+        moneyToText(tx?.cost_price),
+        dateToText(tx?.purchase_date),
+        String(tx?.subtype ?? 'Market'),
+        String(tx?.location_name ?? '').trim() || '-',
+        String(tx?.account_type ?? '').trim() || '-',
+      ]
+      if (hasSoldAtVest) base.splice(2, 0, numberToText(tx?.sold_at_vest ?? 0))
+      return base
+    }
 
     const rsuBySymbol = new Map<string, any[]>()
     const esppTxs: any[] = []
@@ -1854,7 +1870,6 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (grants.length === 0) return []
 
-    const txColumns = ['Purchase Date', 'Shares', 'Cost/Share']
     const sections: ConfirmationPreviewSection[] = []
     for (const grant of grants) {
       const symbol = String(grant?.symbol ?? '').toUpperCase() || '-'
@@ -1875,15 +1890,19 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       })
       const txs = Array.isArray(grant?.transactions) ? grant.transactions : []
       if (txs.length > 0) {
+        const grantHasSoldAtVest = txs.some((tx: any) => Number(tx?.sold_at_vest ?? 0) > 0)
+        const grantTxColumns = grantHasSoldAtVest
+          ? ['Purchase Date', 'Shares', 'Sold at Vest', 'Cost/Share']
+          : ['Purchase Date', 'Shares', 'Cost/Share']
         sections.push({
           title: 'RSU Transactions',
           groupKey: symbol,
-          columns: txColumns,
-          rows: txs.map((tx: any) => [
-            dateToText(tx?.purchase_date),
-            numberToText(tx?.count),
-            moneyToText(tx?.cost_price),
-          ]),
+          columns: grantTxColumns,
+          rows: txs.map((tx: any) => {
+            const row = [dateToText(tx?.purchase_date), numberToText(tx?.count), moneyToText(tx?.cost_price)]
+            if (grantHasSoldAtVest) row.splice(2, 0, numberToText(tx?.sold_at_vest ?? 0))
+            return row
+          }),
         })
       }
     }
@@ -2220,12 +2239,14 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
 
     // 5. Create the transaction (tax lot)
+    const soldAtVest = Number(input.sold_at_vest ?? 0)
     const { error } = await supabase.from('transactions').insert({
       subtype_id: subtypeId,
       count: input.count,
       cost_price: input.cost_price,
       purchase_date: input.purchase_date,
       capital_gains_status,
+      ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
     })
     if (error) throw new Error(`Failed to create transaction: ${error.message}`)
   }
@@ -2313,6 +2334,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     for (const tx of grantTransactions) {
       const purchaseDate = new Date(tx.purchase_date)
       const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
+      const soldAtVest = Number(tx.sold_at_vest ?? 0)
       const { error: txError } = await supabase.from('transactions').insert({
         subtype_id: subtypeId,
         rsu_grant_id: grantData.id,
@@ -2320,6 +2342,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
         cost_price: tx.cost_price,
         purchase_date: tx.purchase_date,
         capital_gains_status,
+        ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
       })
       if (txError) throw new Error(`Failed to create RSU transaction: ${txError.message}`)
     }
@@ -2394,7 +2417,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     let totalSharesSold = 0
     for (const lotSpec of saleLots) {
       const { data: lots } = await supabase.from('transactions')
-        .select('id, count')
+        .select('id, count, sold_at_vest')
         .in('subtype_id', subtypeIds)
         .eq('purchase_date', lotSpec.purchase_date)
         .order('id', { ascending: true })
@@ -2402,7 +2425,9 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
         throw new Error(`No ${symbol} lots found in "${sourceAccount}" for purchase date ${lotSpec.purchase_date}`)
       }
 
-      const availableShares = lots.reduce((sum: number, lot: any) => sum + Number(lot.count ?? 0), 0)
+      const availableShares = lots.reduce((sum: number, lot: any) => {
+        return sum + Math.max(0, Number(lot.count ?? 0) - Number(lot.sold_at_vest ?? 0))
+      }, 0)
       if (availableShares < lotSpec.count) {
         throw new Error(
           `Not enough shares in selected lot: ${availableShares} available on ${lotSpec.purchase_date} in "${sourceAccount}", tried to sell ${lotSpec.count}`,
@@ -2412,12 +2437,12 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       let remaining = lotSpec.count
       for (const lot of lots) {
         if (remaining <= 0) break
-        const lotCount = Number(lot.count)
-        if (lotCount <= remaining) {
+        const lotNet = Math.max(0, Number(lot.count) - Number(lot.sold_at_vest ?? 0))
+        if (lotNet <= remaining) {
           await supabase.from('transactions').delete().eq('id', lot.id)
-          remaining -= lotCount
+          remaining -= lotNet
         } else {
-          await supabase.from('transactions').update({ count: lotCount - remaining }).eq('id', lot.id)
+          await supabase.from('transactions').update({ count: Number(lot.count) - remaining }).eq('id', lot.id)
           remaining = 0
         }
       }
@@ -2434,7 +2459,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       const assetId = String((subtype as any).asset_id)
       const current = assetState.get(assetId) ?? { shares: 0, hasActiveGrant: false }
       const txShares = ((subtype as any).transactions ?? []).reduce(
-        (sum: number, tx: any) => sum + Number(tx.count ?? 0),
+        (sum: number, tx: any) => sum + Math.max(0, Number(tx.count ?? 0) - Number(tx.sold_at_vest ?? 0)),
         0,
       )
       const hasActiveGrant = ((subtype as any).rsu_grants ?? []).some((grant: any) => !grant.ended_at)

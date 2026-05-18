@@ -5,6 +5,7 @@ export async function updateTransaction(id: string, updates: {
   cost_price: number
   purchase_date: string
   capital_gains_status: string
+  sold_at_vest?: number
 }) {
   const { error } = await getSupabaseClient()
     .from('transactions')
