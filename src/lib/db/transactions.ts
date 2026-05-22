@@ -19,6 +19,12 @@ export async function deleteTransaction(id: string) {
   if (error) throw error
 }
 
+export async function deleteTransactions(ids: string[]) {
+  if (ids.length === 0) return
+  const { error } = await getSupabaseClient().from('transactions').delete().in('id', ids)
+  if (error) throw error
+}
+
 export async function promoteStaleShortTermLots(): Promise<number> {
   const cutoff = new Date()
   cutoff.setFullYear(cutoff.getFullYear() - 1)
