@@ -1219,6 +1219,39 @@ function extractTextFromResponse(response: NormalizedResponse): string {
   return response.choices[0]?.message?.content ?? ''
 }
 
+function buildCompactAssetContext(assets: any[]): any[] {
+  return (assets ?? []).map((asset: any) => {
+    const base: any = {
+      name: asset.name,
+      asset_type: asset.asset_type,
+      ownership: asset.ownership,
+      location: asset.location
+        ? { name: asset.location.name, account_type: asset.location.account_type }
+        : undefined,
+    }
+    if (String(asset.asset_type ?? '') !== 'Stock') {
+      base.price = asset.price
+      return base
+    }
+    return {
+      ...base,
+      ticker: asset.ticker
+        ? { symbol: asset.ticker.symbol, current_price: asset.ticker.current_price }
+        : undefined,
+      stock_subtypes: (asset.stock_subtypes ?? []).map((st: any) => ({
+        subtype: st.subtype,
+        transaction_count: (st.transactions ?? []).length,
+        rsu_grants: (st.rsu_grants ?? []).map((g: any) => ({
+          grant_date: g.grant_date,
+          vest_start: g.vest_start,
+          vest_end: g.vest_end,
+          total_shares: g.total_shares,
+        })),
+      })),
+    }
+  })
+}
+
 export function buildSystemPrompt(assets: any[], userName?: string, attachmentFilename?: string, attachmentType?: 'csv' | 'pdf' | 'image'): string {
   let attachmentSection = ''
   if (attachmentFilename) {
@@ -1246,7 +1279,7 @@ The app will show a confirmation dialog before anything is saved, so calling the
 The user will issue commands in natural language to read or write to their portfolio.
 ${userName ? `The user's name is ${userName}. Address them by name when appropriate.` : ''}
 Current portfolio data (JSON):
-${JSON.stringify(assets, null, 2)}
+${JSON.stringify(buildCompactAssetContext(assets))}
 
 For read-only questions and analysis, respond directly in plain text.
 For read-only questions involving exact numbers, trends, simulations, or recommendations, call read tools first and base your answer on tool outputs.
