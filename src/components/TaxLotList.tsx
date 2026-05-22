@@ -33,6 +33,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     cost_price: '',
     purchase_date: '',
     capital_gains_status: '',
+    sold_at_vest: '',
   })
   const subtypesWithActivity = subtypes.filter(
     (st: any) => (st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0,
