@@ -51,7 +51,9 @@ async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<voi
 }
 
 function isSaleUtterance(text: string): boolean {
-  const normalized = text.toLowerCase()
+  // Strip "sold-to-cover" / "sold to cover" (RSU tax withholding) before checking,
+  // otherwise RSU entry prompts falsely trigger the sale-proceeds clarification.
+  const normalized = text.toLowerCase().replace(/\bsold[- ]to[- ]cover\b/g, '')
   return /\b(sell|sold)\b/.test(normalized) && /\bshare(s)?\b/.test(normalized)
 }
 
