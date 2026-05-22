@@ -33,6 +33,11 @@ export function computeCostBasis(asset: AssetTyped): number {
   return Math.round(raw * 100) / 100
 }
 
+export function computeShareCount(asset: AssetTyped): number {
+  return asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
+    .reduce((sum, t) => sum + netCount(t), 0) ?? 0
+}
+
 export function computeUnrealizedGain(asset: AssetTyped): number {
   return computeAssetValue(asset) - computeCostBasis(asset)
 }

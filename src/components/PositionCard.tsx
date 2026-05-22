@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronRight, Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeCashGain, computeCashGainPct } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeCashGain, computeCashGainPct, computeShareCount } from '@/lib/portfolio'
 
 function AssetIcon({ asset }: { asset: any }) {
   if (asset.asset_type === 'Stock') {
@@ -47,6 +47,7 @@ export function PositionCard({ asset }: { asset: any }) {
   const basis = computeCostBasis(asset)
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
+  const shareCount = isStock ? computeShareCount(asset) : 0
   const cashGain = computeCashGain(asset)
   const cashGainPct = computeCashGainPct(asset)
   const hasCashChange = !isStock && asset.initial_price != null && asset.price !== asset.initial_price
@@ -69,7 +70,10 @@ export function PositionCard({ asset }: { asset: any }) {
                 </>
               ) : (
                 <>
-                  <p className="font-medium">{fmt(value)}</p>
+                  <p className="font-medium">
+                    {fmt(value)}
+                    <span className="text-xs text-muted-foreground font-normal ml-1.5">{fmtShares(shareCount)} sh</span>
+                  </p>
                   <p className={`text-sm ${isGain ? 'text-gain' : 'text-loss'}`}>
                     {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
                   </p>
@@ -107,4 +111,8 @@ export function PositionCard({ asset }: { asset: any }) {
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+}
+
+function fmtShares(n: number) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
