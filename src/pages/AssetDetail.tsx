@@ -7,7 +7,7 @@ import { TaxLotList } from '@/components/TaxLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 
 interface EditAssetValues {
@@ -163,6 +163,7 @@ export default function AssetDetail() {
 
   const isStock = asset.asset_type === 'Stock'
   const value = computeAssetValue(asset)
+  const shareCount = isStock ? computeShareCount(asset) : 0
   const gain = computeUnrealizedGain(asset)
   const basis = computeCostBasis(asset)
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
@@ -300,7 +301,12 @@ export default function AssetDetail() {
             </>
           ) : (
             <>
-              <p className="text-3xl font-bold">{fmt(value)}</p>
+              <p className="text-3xl font-bold">
+                {fmt(value)}
+                {isStock && (
+                  <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} sh</span>
+                )}
+              </p>
               {isStock && (
                 <p className={`text-base mt-1 ${isGain ? 'text-gain' : 'text-loss'}`}>
                   {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
@@ -347,4 +353,8 @@ export default function AssetDetail() {
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+}
+
+function fmtShares(n: number) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
