@@ -25,7 +25,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   onDeleteTransaction?: (id: string) => Promise<void>
   onEditTransaction?: (id: string, updates: EditTransactionUpdates) => Promise<void>
   onEndGrant?: (id: string) => Promise<void>
-  onDeleteGrant?: (id: string) => Promise<void>
+  onDeleteGrant?: (grantId: string, transactionIds: string[]) => Promise<void>
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<EditValues>({
@@ -256,7 +256,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                             ) : null}
                             {onDeleteGrant && (
                               <button
-                                onClick={() => { void onDeleteGrant(group.grant.id) }}
+                                onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
                                 className="text-muted-foreground hover:text-destructive transition-colors"
                                 aria-label="Delete grant"
                               >

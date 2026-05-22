@@ -5,7 +5,7 @@ import { ChevronLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { TaxLotList } from '@/components/TaxLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
-import { deleteTransaction, updateTransaction } from '@/lib/db/transactions'
+import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
@@ -66,16 +66,20 @@ export default function AssetDetail() {
     }
   }
 
-  async function handleDeleteGrant(grantId: string) {
+  async function handleDeleteGrant(grantId: string, transactionIds: string[]) {
+    const txCount = transactionIds.length
     const confirmed = await requestAppConfirm({
       title: 'Delete RSU grant?',
-      message: 'Delete this grant? Vesting transactions will remain but become unmatched.',
+      message: txCount > 0
+        ? `Delete this grant and its ${txCount} vesting transaction${txCount === 1 ? '' : 's'}? This cannot be undone.`
+        : 'Delete this grant? This cannot be undone.',
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
       destructive: true,
     })
     if (!confirmed) return
     try {
+      await deleteTransactions(transactionIds)
       await deleteGrant(grantId)
       if (id) setAsset(await getAssetById(id))
     } catch (err: any) {
