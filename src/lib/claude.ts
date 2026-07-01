@@ -2040,7 +2040,9 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const oneYearAgo = new Date()
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
       const gainStatus = date < oneYearAgo ? 'Long Term' : 'Short Term'
-      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${input.purchase_date} (${gainStatus}, ${input.subtype || 'Market'})`
+      const subtype = input.subtype || 'Market'
+      const grantSuffix = subtype === 'RSU' && input.grant_date ? `, grant ${input.grant_date}` : ''
+      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${input.purchase_date} (${gainStatus}, ${subtype}${grantSuffix})`
     }
     case 'add_stock_transactions': {
       const transactions = Array.isArray(input.transactions) ? input.transactions : []
