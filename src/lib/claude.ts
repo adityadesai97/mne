@@ -2273,7 +2273,28 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
     const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
 
-    // 5. Create the transaction (tax lot)
+    // 5. RSU transactions must fall within an existing grant's vesting window
+    let rsuGrantId: string | null = null
+    if (subtype === 'RSU') {
+      const { data: grants, error: grantsError } = await supabase
+        .from('rsu_grants')
+        .select('id, vest_start, vest_end, ended_at')
+        .eq('subtype_id', subtypeId)
+      if (grantsError) throw new Error(`Failed to look up RSU grants: ${grantsError.message}`)
+
+      const purchaseDateStr = input.purchase_date
+      const matches = (grants ?? []).filter((grant) => {
+        const effectiveEnd = grant.ended_at && grant.ended_at < grant.vest_end ? grant.ended_at : grant.vest_end
+        return purchaseDateStr >= grant.vest_start && purchaseDateStr <= effectiveEnd
+      })
+      if (matches.length === 0) {
+        throw new Error(`No RSU grant found for ${symbol} covering vest date ${purchaseDateStr}. Add the grant first with add_rsu_grant.`)
+      }
+      matches.sort((a, b) => b.vest_start.localeCompare(a.vest_start))
+      rsuGrantId = matches[0].id
+    }
+
+    // 6. Create the transaction (tax lot)
     const soldAtVest = Number(input.sold_at_vest ?? 0)
     const { error } = await supabase.from('transactions').insert({
       subtype_id: subtypeId,
@@ -2282,6 +2303,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       purchase_date: input.purchase_date,
       capital_gains_status,
       ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
+      ...(rsuGrantId ? { rsu_grant_id: rsuGrantId } : {}),
     })
     if (error) throw new Error(`Failed to create transaction: ${error.message}`)
   }
