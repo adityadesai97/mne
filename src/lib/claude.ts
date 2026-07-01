@@ -1312,6 +1312,7 @@ RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. In
      - total_shares: use the stated grant total when explicitly shown in the document. If absent, you may calculate it only when ALL THREE are known: (a) cliff share amount, (b) post-cliff cadence and per-event share amount (requires 2+ post-cliff events), and (c) total vest count or vest_end. Missing any one of these means you must ask the user rather than guess.
   Transaction fields: purchase_date = vest date, cost_price = FMV at vest, count = TOTAL shares vested (before any sell-to-cover), sold_at_vest = shares immediately sold at vest to cover taxes (omit or set 0 if none). Net shares held = count - sold_at_vest. total_shares in the grant always reflects the full grant regardless of sold_at_vest.
   If vest_end or total_shares cannot be determined from the document without guessing, ask the user for those values before calling any write tool for that grant. Never state an assumption and proceed anyway.
+Adding a single new vest to an EXISTING grant (not creating a new grant): use add_stock_transaction/add_stock_transactions with subtype RSU. grant_date is required in this case — it must be the exact grant_date (award date) already on record for that grant, not the vest date. Never guess or infer grant_date from the vest date or from context. If the user does not explicitly state which grant (by its award date) a vest belongs to, call get_positions first to see the recorded grant dates for that symbol, and ask the user to confirm if it's still ambiguous.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
 Today's date is ${new Date().toISOString().split('T')[0]}${attachmentSection}`
@@ -1488,6 +1489,7 @@ const tools = [
           cost_price: { type: 'number', description: 'Price per share at purchase' },
           purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
           subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+          grant_date: { type: 'string', description: 'Required when subtype is RSU. ISO date YYYY-MM-DD of the existing RSU grant this vest belongs to — must exactly match the grant_date of a previously recorded grant. Never guess or infer this; ask the user if it is not explicitly known.' },
           sold_at_vest: { type: 'number', description: 'For RSU: shares sold at vest to cover taxes. Net held = count - sold_at_vest.' },
           asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
           location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
@@ -1516,6 +1518,7 @@ const tools = [
                 cost_price: { type: 'number', description: 'Price per share at purchase' },
                 purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
                 subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market' },
+                grant_date: { type: 'string', description: 'Required when subtype is RSU. ISO date YYYY-MM-DD of the existing RSU grant this vest belongs to — must exactly match the grant_date of a previously recorded grant. Never guess or infer this; ask the user if it is not explicitly known.' },
                 sold_at_vest: { type: 'number', description: 'For RSU: shares sold at vest to cover taxes. Net held = count - sold_at_vest.' },
                 asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
                 location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
@@ -1831,20 +1834,20 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
     if (transactions.length === 0) return []
 
     const hasSoldAtVest = transactions.some((tx: any) => Number(tx?.sold_at_vest ?? 0) > 0)
-    const txColumns = hasSoldAtVest
-      ? ['Symbol', 'Shares', 'Sold at Vest', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
-      : ['Symbol', 'Shares', 'Cost/Share', 'Purchase Date', 'Subtype', 'Location', 'Account']
-    const txRow = (tx: any) => {
-      const base = [
-        String(tx?.symbol ?? '').toUpperCase() || '-',
-        numberToText(tx?.count),
-        moneyToText(tx?.cost_price),
-        dateToText(tx?.purchase_date),
-        String(tx?.subtype ?? 'Market'),
-        String(tx?.location_name ?? '').trim() || '-',
-        String(tx?.account_type ?? '').trim() || '-',
-      ]
-      if (hasSoldAtVest) base.splice(2, 0, numberToText(tx?.sold_at_vest ?? 0))
+    const columnsFor = (withGrantDate: boolean) => {
+      const cols = ['Symbol', 'Shares']
+      if (hasSoldAtVest) cols.push('Sold at Vest')
+      cols.push('Cost/Share', 'Purchase Date')
+      if (withGrantDate) cols.push('Grant Date')
+      cols.push('Subtype', 'Location', 'Account')
+      return cols
+    }
+    const txRow = (tx: any, withGrantDate: boolean) => {
+      const base = [String(tx?.symbol ?? '').toUpperCase() || '-', numberToText(tx?.count)]
+      if (hasSoldAtVest) base.push(numberToText(tx?.sold_at_vest ?? 0))
+      base.push(moneyToText(tx?.cost_price), dateToText(tx?.purchase_date))
+      if (withGrantDate) base.push(dateToText(tx?.grant_date))
+      base.push(String(tx?.subtype ?? 'Market'), String(tx?.location_name ?? '').trim() || '-', String(tx?.account_type ?? '').trim() || '-')
       return base
     }
 
@@ -1868,13 +1871,13 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
 
     const sections: ConfirmationPreviewSection[] = []
     for (const [symbol, txs] of rsuBySymbol) {
-      sections.push({ title: 'RSU Transactions', groupKey: symbol, columns: txColumns, rows: txs.map(txRow) })
+      sections.push({ title: 'RSU Transactions', groupKey: symbol, columns: columnsFor(true), rows: txs.map((tx) => txRow(tx, true)) })
     }
     if (esppTxs.length > 0) {
-      sections.push({ title: 'ESPP Transactions', columns: txColumns, rows: esppTxs.map(txRow) })
+      sections.push({ title: 'ESPP Transactions', columns: columnsFor(false), rows: esppTxs.map((tx) => txRow(tx, false)) })
     }
     for (const [symbol, txs] of otherBySymbol) {
-      sections.push({ title: 'Stock Transactions', groupKey: symbol, columns: txColumns, rows: txs.map(txRow) })
+      sections.push({ title: 'Stock Transactions', groupKey: symbol, columns: columnsFor(false), rows: txs.map((tx) => txRow(tx, false)) })
     }
     return sections
   }
@@ -1959,6 +1962,9 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
     if (!Number.isFinite(Number(input.cost_price)) || Number(input.cost_price) < 0) return 'Cost price must be a non-negative number'
     if (!isValidIsoDate(input.purchase_date)) return `Invalid purchase date: "${input.purchase_date}". Use YYYY-MM-DD format`
     if (new Date(input.purchase_date) > new Date()) return 'Purchase date cannot be in the future'
+    if (String(input.subtype ?? '').toUpperCase() === 'RSU' && !isValidIsoDate(input.grant_date)) {
+      return `Grant date is required to add an RSU transaction. Provide the grant_date (YYYY-MM-DD) of the existing grant.`
+    }
   }
 
   if (toolName === 'add_stock_transactions') {
@@ -1971,6 +1977,9 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
       if (!Number.isFinite(Number(tx.cost_price)) || Number(tx.cost_price) < 0) return `Transaction ${i + 1}: cost price must be a non-negative number`
       if (!isValidIsoDate(tx.purchase_date)) return `Transaction ${i + 1}: invalid purchase date "${tx.purchase_date}". Use YYYY-MM-DD`
       if (new Date(tx.purchase_date) > new Date()) return `Transaction ${i + 1}: purchase date cannot be in the future`
+      if (String(tx.subtype ?? '').toUpperCase() === 'RSU' && !isValidIsoDate(tx.grant_date)) {
+        return `Transaction ${i + 1}: grant date is required to add an RSU transaction. Provide the grant_date (YYYY-MM-DD) of the existing grant.`
+      }
     }
   }
 
@@ -2273,25 +2282,25 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
     const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
 
-    // 5. RSU transactions must fall within an existing grant's vesting window
+    // 5. RSU transactions must identify their grant explicitly by grant_date — never inferred
     let rsuGrantId: string | null = null
     if (subtype === 'RSU') {
+      if (!isValidIsoDate(input.grant_date)) {
+        throw new Error(`Grant date is required to add an RSU transaction for ${symbol}.`)
+      }
       const { data: grants, error: grantsError } = await supabase
         .from('rsu_grants')
-        .select('id, vest_start, vest_end, ended_at')
+        .select('id')
         .eq('subtype_id', subtypeId)
+        .eq('grant_date', input.grant_date)
       if (grantsError) throw new Error(`Failed to look up RSU grants: ${grantsError.message}`)
-
-      const purchaseDateStr = input.purchase_date
-      const matches = (grants ?? []).filter((grant) => {
-        const effectiveEnd = grant.ended_at && grant.ended_at < grant.vest_end ? grant.ended_at : grant.vest_end
-        return purchaseDateStr >= grant.vest_start && purchaseDateStr <= effectiveEnd
-      })
-      if (matches.length === 0) {
-        throw new Error(`No RSU grant found for ${symbol} covering vest date ${purchaseDateStr}. Add the grant first with add_rsu_grant.`)
+      if (!grants || grants.length === 0) {
+        throw new Error(`No RSU grant found for ${symbol} with grant date ${input.grant_date}. Add the grant first with add_rsu_grant.`)
       }
-      matches.sort((a, b) => b.vest_start.localeCompare(a.vest_start))
-      rsuGrantId = matches[0].id
+      if (grants.length > 1) {
+        throw new Error(`Multiple RSU grants found for ${symbol} with grant date ${input.grant_date}. Cannot determine which one this transaction belongs to.`)
+      }
+      rsuGrantId = grants[0].id
     }
 
     // 6. Create the transaction (tax lot)
