@@ -550,6 +550,7 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   const [executing, setExecuting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queueIndex, setQueueIndex] = useState(0)
+  const [completed, setCompleted] = useState(false)
 
   const PreviewSections = ({ sections }: { sections: any[] }) => {
     if (!Array.isArray(sections) || sections.length === 0) return null
@@ -619,6 +620,10 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
     const current = confirmations[Math.min(queueIndex, confirmations.length - 1)]
     const progress = `${Math.min(queueIndex + 1, confirmations.length)} of ${confirmations.length}`
 
+    if (completed) {
+      return <p className="p-4 text-sm text-gain">Saved ✓</p>
+    }
+
     return (
       <div className="p-4 space-y-3">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Confirm Action {progress}</p>
@@ -634,11 +639,12 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
               setError(null)
               try {
                 await current.execute()
+                setExecuting(false)
                 if (queueIndex < confirmations.length - 1) {
                   setQueueIndex((prev) => prev + 1)
-                  setExecuting(false)
                   return
                 }
+                setCompleted(true)
                 onDone()
               } catch (e: any) {
                 setError(normalizeErrorMessage(e.message || 'Write failed'))
@@ -660,6 +666,10 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   }
 
   if (action.type === 'write_confirm') {
+    if (completed) {
+      return <p className="p-4 text-sm text-gain">Saved ✓</p>
+    }
+
     return (
       <div className="p-4 space-y-3">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Confirm Action</p>
@@ -675,6 +685,8 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
               setError(null)
               try {
                 await action.execute()
+                setExecuting(false)
+                setCompleted(true)
                 onDone()
               } catch (e: any) {
                 setError(normalizeErrorMessage(e.message || 'Write failed'))
