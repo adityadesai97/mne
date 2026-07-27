@@ -29,3 +29,9 @@ test('infers savings account type from account name', () => {
 test('infers cd account type as misc', () => {
   expect(inferCashAccountType({ name: 'CD 3 Months', asset_type: 'CD', account_type: 'Savings' })).toBe('Misc')
 })
+
+test('system prompt requires grant_date whenever shares are described as vested', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toContain('"vested"/"just vested"/"vesting"')
+  expect(prompt).toContain('ask for all three together (FMV, vest date, and which grant/grant date)')
+})
