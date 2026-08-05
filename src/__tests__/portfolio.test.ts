@@ -46,3 +46,13 @@ test('returns 0 for stock asset with no lots', () => {
   expect(computeAssetValue(assetWithNoLots)).toBe(0)
   expect(computeCostBasis(assetWithNoLots)).toBe(0)
 })
+
+test('never reports a gain/loss for a non-stock asset, even with a price change baked in', () => {
+  const cashAssetWithStaleBaseline = {
+    ...mockCashAsset,
+    price: 871.77,
+    initial_price: 10775.85,
+  } as any
+  expect(computeUnrealizedGain(cashAssetWithStaleBaseline)).toBe(0)
+  expect(computeUnrealizedGain(mockCashAsset)).toBe(0)
+})

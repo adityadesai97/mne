@@ -13,7 +13,6 @@ type Ticker = { current_price: number | null }
 export type AssetTyped = {
   asset_type: string
   price: number | null
-  initial_price?: number | null
   ticker: Ticker | null
   stock_subtypes: StockSubtype[] | null
 }
@@ -38,20 +37,13 @@ export function computeShareCount(asset: AssetTyped): number {
     .reduce((sum, t) => sum + netCount(t), 0) ?? 0
 }
 
+// P&L is a stock-only concept — non-stock assets (Cash, 401k, CD, HSA, Deposit, etc.)
+// have no cost basis and must never contribute a gain/loss figure.
 export function computeUnrealizedGain(asset: AssetTyped): number {
+  if (asset.asset_type !== 'Stock') return 0
   return computeAssetValue(asset) - computeCostBasis(asset)
 }
 
 export function computeTotalNetWorth(assets: AssetTyped[]): number {
   return assets.reduce((sum, a) => sum + computeAssetValue(a), 0)
-}
-
-export function computeCashGain(asset: AssetTyped): number {
-  if (asset.asset_type === 'Stock' || asset.initial_price == null) return 0
-  return (asset.price ?? 0) - asset.initial_price
-}
-
-export function computeCashGainPct(asset: AssetTyped): number {
-  if (asset.asset_type === 'Stock' || !asset.initial_price) return 0
-  return (computeCashGain(asset) / asset.initial_price) * 100
 }

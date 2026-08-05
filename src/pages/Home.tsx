@@ -251,10 +251,12 @@ export default function Home() {
     ],
   }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues])
 
+  // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
+  // rather than re-deriving from separately-summed totals — keeps this tile always
+  // equal to the sum of the individual P/L numbers the user sees elsewhere.
   const stockAssets = assets.filter((asset) => asset.asset_type === 'Stock')
-  const stockTotalValue = stockAssets.reduce((sum, asset) => sum + computeAssetValue(asset), 0)
   const stockTotalCost = stockAssets.reduce((sum, asset) => sum + computeCostBasis(asset), 0)
-  const stockGainLoss = stockTotalValue - stockTotalCost
+  const stockGainLoss = stockAssets.reduce((sum, asset) => sum + computeUnrealizedGain(asset), 0)
   const stockGainLossPercent = stockTotalCost > 0 ? (stockGainLoss / stockTotalCost) * 100 : 0
   const stockIsGain = stockGainLoss >= 0
 
