@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronRight, Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeCashGain, computeCashGainPct, computeShareCount } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 
 function AssetIcon({ asset }: { asset: any }) {
   if (asset.asset_type === 'Stock') {
@@ -48,9 +48,6 @@ export function PositionCard({ asset }: { asset: any }) {
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
-  const cashGain = computeCashGain(asset)
-  const cashGainPct = computeCashGainPct(asset)
-  const hasCashChange = !isStock && asset.initial_price != null && asset.price !== asset.initial_price
 
   const cardInner = (
     <CardContent className="p-4">
@@ -80,14 +77,7 @@ export function PositionCard({ asset }: { asset: any }) {
                 </>
               )
             ) : (
-              <>
-                <p className="font-medium">{fmt(value)}</p>
-                {hasCashChange && (
-                  <p className={`text-sm ${cashGain >= 0 ? 'text-gain' : 'text-loss'}`}>
-                    {cashGain >= 0 ? '+' : ''}{fmt(cashGain)} ({cashGainPct.toFixed(1)}%)
-                  </p>
-                )}
-              </>
+              <p className="font-medium">{fmt(value)}</p>
             )}
           </div>
           <ChevronRight size={16} className="text-muted-foreground flex-shrink-0" aria-hidden="true" />

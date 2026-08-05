@@ -1054,14 +1054,12 @@ export async function exportCsv() {
         }
       }
     } else {
-      // Non-stock asset: single row
+      // Non-stock asset: single row. P&L is a stock-only concept — never reported for cash-like assets.
       const price = Number(asset.price ?? 0)
-      const initialPrice = Number((asset as any).initial_price ?? 0)
-      const gain = price - initialPrice
       csvRows.push([
         name, symbol, assetType, '', location, accountType, ownership,
         '', '', '', '',
-        price, price.toFixed(2), initialPrice > 0 ? gain.toFixed(2) : '',
+        price, price.toFixed(2), '',
       ].map(csvCell))
     }
   }

@@ -415,10 +415,9 @@ function buildPositionRows(assets: any[]): PositionRow[] {
     const accountType = String(asset?.location?.account_type ?? '')
 
     if (assetType !== 'Stock') {
+      // Non-stock assets (Cash, 401k, CD, HSA, Deposit, etc.) have no cost basis —
+      // P&L is a stock-only concept and must never be reported for them.
       const marketValue = toNumber(asset?.price, 0)
-      const initial = toNumber((asset as any)?.initial_price, marketValue)
-      const unrealizedGain = marketValue - initial
-      const unrealizedGainPct = initial > 0 ? (unrealizedGain / initial) * 100 : null
       return {
         assetName: String(asset?.name ?? ''),
         assetType,
@@ -428,9 +427,9 @@ function buildPositionRows(assets: any[]): PositionRow[] {
         shares: null,
         currentPrice: null,
         marketValue: Math.round(marketValue * 100) / 100,
-        costBasis: Math.round(initial * 100) / 100,
-        unrealizedGain: Math.round(unrealizedGain * 100) / 100,
-        unrealizedGainPct: unrealizedGainPct == null ? null : Math.round(unrealizedGainPct * 100) / 100,
+        costBasis: null,
+        unrealizedGain: null,
+        unrealizedGainPct: null,
         themes: [],
         subtypes: [],
       }
