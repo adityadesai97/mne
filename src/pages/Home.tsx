@@ -1,8 +1,7 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
-import { animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Sparkles } from 'lucide-react'
+import { motion, AnimatePresence, animate } from 'framer-motion'
+import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
@@ -14,9 +13,23 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MiniSparkline, MiniRing } from '@/components/MiniSparkline'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
+const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
+const LAST_VISIT_NET_WORTH_KEY = 'mne_last_visit_net_worth'
+const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
+type HomeChartRange = typeof HOME_CHART_RANGES[number]
+
+function getGreeting(): { text: string; Icon: typeof Sun } {
+  const hour = new Date().getHours()
+  if (hour < 5) return { text: 'Good night', Icon: Moon }
+  if (hour < 12) return { text: 'Good morning', Icon: Sunrise }
+  if (hour < 17) return { text: 'Good afternoon', Icon: Sun }
+  if (hour < 21) return { text: 'Good evening', Icon: Sunset }
+  return { text: 'Good night', Icon: Moon }
+}
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -72,11 +85,29 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
   }, [target])
 }
 
-const fadeUp = (delay: number) => ({
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  transition: { delay, duration: 0.3, ease: [0.25, 0.1, 0.25, 1] as const },
-})
+// Scroll-triggered reveal instead of animate-on-mount: above-the-fold cards
+// still animate in immediately (they're in the viewport as soon as the page
+// paints), but content further down the page — the stats row on mobile,
+// where the 3-column grid stacks to one column — animates in as the user
+// scrolls to it instead of firing (invisibly, off-screen) all at once on
+// mount. `once: true` means it never re-triggers on scroll-back, so it
+// can't get stuck re-animating.
+//
+// whileInView needs IntersectionObserver. Every evergreen browser has had it
+// for years, but falling back to a plain animate-on-mount rather than
+// assuming it's always there costs nothing and means an unsupported/odd
+// environment degrades to "no scroll reveal" instead of a crash.
+const supportsInView = typeof window !== 'undefined' && 'IntersectionObserver' in window
+
+const revealUp = (delay = 0) => {
+  const base = {
+    initial: { opacity: 0, y: 14 },
+    transition: { delay, duration: 0.35, ease: [0.25, 0.1, 0.25, 1] as const },
+  }
+  return supportsInView
+    ? { ...base, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '0px 0px -60px 0px' } }
+    : { ...base, animate: { opacity: 1, y: 0 } }
+}
 
 export default function Home() {
   const [assets, setAssets] = useState<any[]>([])
@@ -87,7 +118,18 @@ export default function Home() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
+  const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
+    () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
+  )
+  const [lastVisitDelta, setLastVisitDelta] = useState<number | null>(null)
+  const [insightIndex, setInsightIndex] = useState(0)
   const heroRef = useRef<HTMLParagraphElement>(null)
+  const greeting = useMemo(() => getGreeting(), [])
+
+  function handleRangeChange(range: HomeChartRange) {
+    localStorage.setItem(HOME_CHART_RANGE_KEY, range)
+    setHomeChartRangeState(range)
+  }
 
   useEffect(() => {
     getAllAssets()
@@ -95,6 +137,22 @@ export default function Home() {
       .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
       .finally(() => setAssetsLoaded(true))
   }, [])
+
+  // "Since last visit" delta — compares this session's opening net worth
+  // against the value stored on the *previous* visit, then overwrites it for
+  // next time. Gated on assetsLoaded (not on `assets` itself) so it fires
+  // once per mount/session, not on every pull-to-refresh within one visit.
+  useEffect(() => {
+    if (!assetsLoaded || assets.length === 0) return
+    const current = computeTotalNetWorth(assets)
+    const stored = localStorage.getItem(LAST_VISIT_NET_WORTH_KEY)
+    if (stored !== null) {
+      const prev = Number(stored)
+      if (Number.isFinite(prev)) setLastVisitDelta(current - prev)
+    }
+    localStorage.setItem(LAST_VISIT_NET_WORTH_KEY, String(current))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetsLoaded])
 
   useEffect(() => {
     getSupabaseClient().auth.getUser().then(({ data }) => {
@@ -154,25 +212,24 @@ export default function Home() {
       return [{ date: today, value: totalValue }]
     }
 
-    const range = (localStorage.getItem('mne_home_chart_range') ?? '1Y') as '1M' | '3M' | '6M' | '1Y' | 'ALL'
-    if (valid.length <= 1 || range === 'ALL') return valid
+    if (valid.length <= 1 || homeChartRange === 'ALL') return valid
 
     const latest = valid[valid.length - 1]
     const endDate = new Date(`${latest.date}T00:00:00`)
     if (Number.isNaN(endDate.getTime())) return valid
 
     const startDate = new Date(endDate)
-    if (range === '1M') startDate.setMonth(startDate.getMonth() - 1)
-    if (range === '3M') startDate.setMonth(startDate.getMonth() - 3)
-    if (range === '6M') startDate.setMonth(startDate.getMonth() - 6)
-    if (range === '1Y') startDate.setFullYear(startDate.getFullYear() - 1)
+    if (homeChartRange === '1M') startDate.setMonth(startDate.getMonth() - 1)
+    if (homeChartRange === '3M') startDate.setMonth(startDate.getMonth() - 3)
+    if (homeChartRange === '6M') startDate.setMonth(startDate.getMonth() - 6)
+    if (homeChartRange === '1Y') startDate.setFullYear(startDate.getFullYear() - 1)
 
     const filtered = valid.filter(point => {
       const d = new Date(`${point.date}T00:00:00`)
       return !Number.isNaN(d.getTime()) && d >= startDate
     })
     return filtered.length >= 2 ? filtered : valid.slice(Math.max(0, valid.length - 2))
-  }, [snapshots, totalValue])
+  }, [snapshots, totalValue, homeChartRange])
 
   const netWorthValues = useMemo(() => netWorthSeries.map((point) => point.value), [netWorthSeries])
   const netWorthCount = netWorthValues.length
@@ -194,6 +251,15 @@ export default function Home() {
       borderWidth: 1,
       textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
       trigger: 'axis',
+      // Scrub feel: a vertical crosshair follows the cursor/touch drag along
+      // the line, so you can trace net worth on any specific day rather than
+      // only seeing the overall shape.
+      axisPointer: {
+        type: 'line',
+        lineStyle: { color: LINE_COLOR, opacity: 0.35, width: 1.5 },
+        label: { show: false },
+      },
+      extraCssText: 'border-radius: 10px; padding: 6px 10px;',
       formatter: (params: unknown) => {
         const rows = params as Array<{ axisValue: string; value: number | [string, number] }>
         if (!rows.length) return ''
@@ -247,6 +313,10 @@ export default function Home() {
           color: LINE_COLOR,
           origin: 'start',
         },
+        emphasis: {
+          scale: 1.4,
+          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(224,13%,9%)', borderWidth: 2 },
+        },
         data: netWorthValues,
       },
     ],
@@ -293,6 +363,46 @@ export default function Home() {
     .sort((a, b) => b.value - a.value)
   const uniqueAssetTypes = typeEntries.length
 
+  // Today's change, from the tail of the net worth series — drives the
+  // ambient glow's color. Neutral (brand) glow until there's at least two
+  // points to compare.
+  const todayChange = netWorthValues.length >= 2
+    ? netWorthValues[netWorthValues.length - 1] - netWorthValues[netWorthValues.length - 2]
+    : 0
+  const hasMood = netWorthValues.length >= 2 && todayChange !== 0
+  const moodIsPositive = todayChange >= 0
+
+  // Short rotating one-liners for the insight ticker — all derived from data
+  // already on screen elsewhere, nothing fabricated.
+  const insights = useMemo(() => {
+    const list: string[] = []
+    if (bestAsset && bestAssetGainPct !== 0) {
+      const label = bestAsset.ticker?.symbol ?? bestAsset.name
+      list.push(`${label} is your best performer, ${bestAssetGain >= 0 ? 'up' : 'down'} ${Math.abs(bestAssetGainPct).toFixed(1)}%`)
+    }
+    if (largestAsset) {
+      list.push(`${largestAsset.name} makes up ${largestPct.toFixed(0)}% of your portfolio`)
+    }
+    if (stockGainLoss !== 0) {
+      list.push(`Your stocks are ${stockIsGain ? 'up' : 'down'} ${Math.abs(stockGainLossPercent).toFixed(1)}% overall`)
+    }
+    if (uniqueAssetTypes > 1) {
+      list.push(`Spread across ${uniqueAssetTypes} asset types`)
+    }
+    if (assets.length > 0) {
+      list.push(`Tracking ${assets.length} position${assets.length === 1 ? '' : 's'}`)
+    }
+    return list
+  }, [bestAsset, bestAssetGain, bestAssetGainPct, largestAsset, largestPct, stockGainLoss, stockGainLossPercent, stockIsGain, uniqueAssetTypes, assets.length])
+
+  useEffect(() => {
+    if (insights.length <= 1) return
+    const id = window.setInterval(() => {
+      setInsightIndex((i) => (i + 1) % insights.length)
+    }, 4500)
+    return () => window.clearInterval(id)
+  }, [insights.length])
+
   if (!assetsLoaded) {
     return (
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
@@ -322,7 +432,7 @@ export default function Home() {
     return (
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
         <motion.div
-          {...fadeUp(0)}
+          {...revealUp(0)}
           className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70 relative overflow-hidden"
         >
           <div className="absolute inset-0 pointer-events-none">
@@ -349,30 +459,77 @@ export default function Home() {
     <>
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
+
+      {/* GREETING */}
+      <motion.div {...revealUp(0)} className="flex items-center gap-1.5 px-1">
+        <greeting.Icon size={14} className="text-muted-foreground" aria-hidden="true" />
+        <p className="text-sm text-muted-foreground">
+          {greeting.text}{firstName ? `, ${firstName}` : ''}
+        </p>
+      </motion.div>
+
       {/* TOP GRID: Net Worth Hero + Allocation */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 
         {/* NET WORTH HERO */}
         <motion.div
-          {...fadeUp(0)}
+          {...revealUp(0)}
           className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 md:p-6 relative overflow-hidden"
         >
-          {/* Ambient glow */}
+          {/* Ambient glow — neutral brand color until there's a day-over-day
+              change to react to, then tints toward gain/loss color. */}
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute -top-8 left-1/4 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
+            <div
+              className={`absolute -top-8 left-1/4 w-72 h-36 rounded-full blur-3xl transition-colors duration-700 ${
+                hasMood ? (moodIsPositive ? 'bg-gain/[0.16] animate-pulse' : 'bg-loss/[0.16] animate-pulse') : 'bg-brand-subtle'
+              }`}
+            />
           </div>
 
           <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium relative">
-            {firstName ? `${firstName}'s Net Worth` : 'Net Worth'}
+            Net Worth
           </p>
 
-          <div className="mb-4 relative">
+          <div className="mb-1 relative">
             <p
               ref={heroRef}
               className="text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne"
             >
               {fmtCurrency(totalValue)}
             </p>
+          </div>
+
+          {lastVisitDelta !== null && Math.abs(lastVisitDelta) >= 1 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4, duration: 0.3 }}
+              className="mb-4 relative inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+            >
+              <History size={11} aria-hidden="true" />
+              <span>
+                {lastVisitDelta >= 0 ? '+' : ''}{fmtCurrency(lastVisitDelta)} since last visit
+              </span>
+            </motion.div>
+          )}
+          {(lastVisitDelta === null || Math.abs(lastVisitDelta) < 1) && <div className="mb-4" />}
+
+          {/* Chart range selector */}
+          <div className="flex items-center justify-end mb-1.5 relative">
+            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+              {HOME_CHART_RANGES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => handleRangeChange(r)}
+                  className={`text-[10px] px-1.5 py-0.5 rounded-md transition-colors ${
+                    homeChartRange === r ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="relative mb-4 -mx-1">
@@ -405,11 +562,30 @@ export default function Home() {
               </>
             )}
           </div>
+
+          {/* Rotating insight ticker */}
+          {insights.length > 0 && (
+            <div className="flex items-center gap-1.5 pt-2.5 mt-2.5 border-t border-white/[0.05] relative text-xs text-muted-foreground overflow-hidden">
+              <Lightbulb size={12} className="flex-shrink-0 text-primary/70" aria-hidden="true" />
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={insights[insightIndex % insights.length]}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25 }}
+                  className="truncate"
+                >
+                  {insights[insightIndex % insights.length]}
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          )}
         </motion.div>
 
         {/* ALLOCATION */}
         <motion.div
-          {...fadeUp(0.06)}
+          {...revealUp(0.06)}
           className="bg-card shadow-card rounded-2xl p-5 md:p-6"
         >
           <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-4 font-medium">
@@ -452,25 +628,35 @@ export default function Home() {
       {/* STATS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 
-        <motion.div {...fadeUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center gap-1.5 mb-2.5">
+        <motion.div {...revealUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="relative bg-card shadow-card rounded-xl p-4 overflow-hidden">
+          {netWorthValues.length >= 2 && (
+            <div className="absolute right-0 top-0 w-20 opacity-80 pointer-events-none">
+              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={26} />
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 mb-2.5 relative">
             {stockIsGain
               ? <TrendingUp size={11} className="text-gain" />
               : <TrendingDown size={11} className="text-loss" />}
             <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">P&L</p>
           </div>
-          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`relative text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
-          <p className={`text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`relative text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
 
-        <motion.div {...fadeUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <TrendingUp size={11} className="text-gain" />
-            <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Best Performer</p>
+        <motion.div {...revealUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center gap-1.5">
+              <TrendingUp size={11} className="text-gain" />
+              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Best Performer</p>
+            </div>
+            {bestAsset && (
+              <MiniRing pct={Math.abs(bestAssetGainPct)} color={bestAssetGain >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} size={22} />
+            )}
           </div>
           <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
           {bestAsset && (
@@ -480,9 +666,12 @@ export default function Home() {
           )}
         </motion.div>
 
-        <motion.div {...fadeUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center gap-1.5 mb-2.5">
+        <motion.div {...revealUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2.5">
             <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Largest Holding</p>
+            {largestAsset && (
+              <MiniRing pct={largestPct} color="hsl(var(--primary))" size={22} />
+            )}
           </div>
           <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
           {largestAsset && (
