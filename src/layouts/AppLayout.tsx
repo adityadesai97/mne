@@ -180,18 +180,22 @@ export default function AppLayout() {
             <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
           </div>
         )}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] as const }}
-            className="flex-1"
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
+        {/*
+          Plain CSS animation, not framer-motion AnimatePresence: this
+          wrapper sits around every single page in the app (it's the one
+          thing all routes share), so it needs to be as close to
+          impossible-to-break as possible. A JS-driven exit/enter state
+          machine here can — for reasons that were hard to pin down exactly,
+          but were confirmed to require no data loss/caching to reproduce —
+          end up stuck, which blanks out every page app-wide until a full
+          reload. `key`-based remount + a native CSS keyframe can't get
+          stuck in an unresolved animation state the way a JS library's
+          internal bookkeeping can; the browser just runs it once per DOM
+          node and that's it.
+        */}
+        <div key={location.pathname} className="flex-1 animate-pageIn">
+          <Outlet />
+        </div>
         <AnimatePresence>
           {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
         </AnimatePresence>
