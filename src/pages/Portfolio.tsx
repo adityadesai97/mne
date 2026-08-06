@@ -1,11 +1,14 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
+import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
+import { Skeleton } from '@/components/ui/skeleton'
 import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
 import { showAppAlert } from '@/lib/appAlerts'
 
@@ -23,6 +26,36 @@ function formatRelativeTime(isoString: string | null): string | null {
 }
 
 type SortOption = 'name' | 'value' | 'gain'
+
+const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] = [
+  { v: 'name', label: 'Name', icon: ArrowDownAZ },
+  { v: 'value', label: 'Value', icon: ArrowDownWideNarrow },
+  { v: 'gain', label: 'Gain', icon: TrendingUpDown },
+]
+
+function PortfolioSkeleton() {
+  return (
+    <div className="pt-6 pb-4">
+      <div className="flex justify-between items-center px-4 mb-3">
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-7 w-32 rounded-lg" />
+      </div>
+      <div className="px-4 mb-3">
+        <Skeleton className="h-10 w-full rounded-xl" />
+      </div>
+      <div className="flex gap-2 px-4 mb-3">
+        <Skeleton className="h-7 w-14 rounded-full" />
+        <Skeleton className="h-7 w-20 rounded-full" />
+        <Skeleton className="h-7 w-16 rounded-full" />
+      </div>
+      <div className="px-4 space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function Portfolio() {
   const [assets, setAssets] = useState<any[]>([])
@@ -104,24 +137,27 @@ export default function Portfolio() {
   }, [assets, search, activeType, sort])
 
   if (!assetsLoaded) {
-    return (
-      <div className="pt-6 pb-4 px-4">
-        <h1 className="text-xl font-bold">Portfolio</h1>
-        <p className="mt-4 text-sm text-muted-foreground">Loading portfolio...</p>
-      </div>
-    )
+    return <PortfolioSkeleton />
   }
 
   if (assetsLoaded && assets.length === 0) {
     return (
       <div className="pt-6 pb-4 px-4">
         <h1 className="text-xl font-bold">Portfolio</h1>
-        <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+          className="mt-4 rounded-2xl border border-border bg-card p-6 text-center"
+        >
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
+            <PackageOpen size={20} className="text-primary" />
+          </div>
           <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Portfolio data appears after your first asset is added.
           </p>
-        </div>
+        </motion.div>
       </div>
     )
   }
@@ -139,54 +175,107 @@ export default function Portfolio() {
             </p>
           )}
         </div>
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortOption)}
-          className="bg-card border border-border rounded text-xs px-2 py-1 text-muted-foreground"
-        >
-          <option value="name">Name (A–Z)</option>
-          <option value="value">Value ↓</option>
-          <option value="gain">Gain/Loss ↓</option>
-        </select>
+        <LayoutGroup id="sort">
+          <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
+            {SORT_OPTIONS.map(({ v, label, icon: Icon }) => {
+              const isActive = sort === v
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSort(v)}
+                  aria-pressed={isActive}
+                  title={`Sort by ${label}`}
+                  className={`relative flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
+                    isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="sort-pill"
+                      className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
+                      transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                    />
+                  )}
+                  <Icon size={12} />
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </LayoutGroup>
       </div>
 
       <div className="px-4 mb-3">
-        <input
-          type="text"
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-muted rounded-lg px-3 py-2 text-sm w-full border-0 focus:outline-none"
-        />
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search positions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-muted/70 rounded-xl pl-9 pr-9 py-2.5 text-sm w-full border border-transparent focus:border-primary/40 focus:bg-card transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
+          />
+          <AnimatePresence>
+            {search && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.7 }}
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={15} />
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto px-4 mb-3 pb-1 no-scrollbar">
-        {chips.map((type) => {
-          const isActive = activeType === type
-          return (
-            <button
-              key={type}
-              onClick={() => setActiveType(type)}
-              className={`text-xs px-3 py-1 rounded-full border shrink-0 ${
-                isActive
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-transparent text-muted-foreground border-border'
-              }`}
-            >
-              {type}
-            </button>
-          )
-        })}
-      </div>
+      <LayoutGroup id="type-chips">
+        <div className="flex gap-2 overflow-x-auto px-4 mb-3 pb-1 no-scrollbar">
+          {chips.map((type) => {
+            const isActive = activeType === type
+            return (
+              <button
+                key={type}
+                onClick={() => setActiveType(type)}
+                className={`relative text-xs px-3 py-1.5 rounded-full shrink-0 transition-colors duration-150 ${
+                  isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground border border-border'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="chip-pill"
+                    className="absolute inset-0 rounded-full bg-primary -z-10"
+                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                  />
+                )}
+                {type}
+              </button>
+            )
+          })}
+        </div>
+      </LayoutGroup>
 
-      {displayed.map((a) => (
-        <PositionCard key={a.id} asset={a} />
-      ))}
+      <AnimatePresence mode="popLayout">
+        {displayed.map((a, i) => (
+          <PositionCard key={a.id} asset={a} index={i} />
+        ))}
+      </AnimatePresence>
 
       {assets.length > 0 && displayed.length === 0 && (
-        <p className="text-muted-foreground text-center mt-16">
-          No results match your search.
-        </p>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center mt-16 px-4"
+        >
+          <SearchX size={22} className="text-muted-foreground/50 mb-3" />
+          <p className="text-muted-foreground text-center text-sm">
+            No results match your search.
+          </p>
+        </motion.div>
       )}
     </div>
     </>

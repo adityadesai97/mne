@@ -62,9 +62,18 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateY(-6px)' },
           to:   { opacity: '1', transform: 'translateY(0)' },
         },
+        shimmer: {
+          '100%': { transform: 'translateX(100%)' },
+        },
+        popIn: {
+          from: { opacity: '0', transform: 'scale(0.94)' },
+          to:   { opacity: '1', transform: 'scale(1)' },
+        },
       },
       animation: {
         slideDown: 'slideDown 0.15s ease-out',
+        shimmer: 'shimmer 1.6s ease-in-out infinite',
+        popIn: 'popIn 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
       },
     },
   },
