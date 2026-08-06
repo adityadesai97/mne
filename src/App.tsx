@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { router } from './router'
 import Onboarding from './pages/Onboarding'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { config } from './store/config'
 import { getSupabaseClient, isSupabaseReady, onAuthFailure } from './lib/supabase'
 import { initTheme } from './lib/theme'
@@ -42,19 +43,19 @@ export default function App() {
 
   if (!ready) {
     return (
-      <>
+      <ErrorBoundary>
         <Onboarding onComplete={() => setReady(true)} />
         <Analytics />
         <SpeedInsights />
-      </>
+      </ErrorBoundary>
     )
   }
 
   return (
-    <>
+    <ErrorBoundary>
       <RouterProvider router={router} />
       <Analytics />
       <SpeedInsights />
-    </>
+    </ErrorBoundary>
   )
 }

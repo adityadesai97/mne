@@ -259,11 +259,20 @@ export default function Portfolio() {
         </div>
       </LayoutGroup>
 
-      <AnimatePresence mode="popLayout">
-        {displayed.map((a, i) => (
-          <PositionCard key={a.id} asset={a} index={i} />
-        ))}
-      </AnimatePresence>
+      {/*
+        No AnimatePresence here: this list re-renders on every keystroke
+        (search) and filter/sort change, nested inside AppLayout's
+        route-transition AnimatePresence. That combination — an inner
+        AnimatePresence whose exit-tracking doesn't reliably resolve before
+        the outer one tries to unmount the whole page — is what caused the
+        production bug where visiting this page left every subsequent
+        page's content invisible until a reload. PositionCard still fades
+        in on mount/filter via its own initial/animate; it just doesn't get
+        an exit animation when filtered out.
+      */}
+      {displayed.map((a, i) => (
+        <PositionCard key={a.id} asset={a} index={i} />
+      ))}
 
       {assets.length > 0 && displayed.length === 0 && (
         <motion.div
