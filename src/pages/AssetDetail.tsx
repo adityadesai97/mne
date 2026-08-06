@@ -1,8 +1,10 @@
 // src/pages/AssetDetail.tsx
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { ChevronLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TaxLotList } from '@/components/TaxLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
@@ -147,17 +149,31 @@ export default function AssetDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full pt-20">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex flex-col min-h-full">
+        <header className="sticky top-0 bg-background z-10 flex items-center px-4 py-3 border-b border-border">
+          <Skeleton className="h-4 w-14" />
+        </header>
+        <main className="px-4 pt-6 pb-24 space-y-4">
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-2/3" />
+            <Skeleton className="h-4 w-1/3" />
+          </div>
+          <Skeleton className="h-10 w-1/2" />
+          <Skeleton className="h-40 w-full rounded-xl" />
+        </main>
       </div>
     )
   }
 
   if (error || !asset) {
     return (
-      <div className="flex items-center justify-center h-full pt-20">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex items-center justify-center h-full pt-20"
+      >
         <p className="text-destructive">{error ?? 'Asset not found.'}</p>
-      </div>
+      </motion.div>
     )
   }
 
@@ -186,10 +202,10 @@ export default function AssetDetail() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Sticky header */}
-      <header className="sticky top-0 bg-background z-10 flex items-center px-4 py-3 border-b border-border">
+      <header className="sticky top-0 bg-background/85 backdrop-blur-md z-10 flex items-center px-4 py-3 border-b border-border">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-muted-foreground text-sm"
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm transition-colors"
           aria-label="Go back"
         >
           <ChevronLeft size={16} aria-hidden="true" />
@@ -197,7 +213,8 @@ export default function AssetDetail() {
         </button>
         <h1 className="flex-1 text-center font-semibold pr-8 truncate">{asset.name}</h1>
         <div className="flex items-center gap-3">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.85 }}
             onClick={() => {
               setEditing(true)
               setEditValues({
@@ -211,19 +228,25 @@ export default function AssetDetail() {
             aria-label="Edit asset"
           >
             <Pencil size={16} />
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.85 }}
             onClick={handleDeleteAsset}
             className="text-muted-foreground hover:text-destructive transition-colors"
             aria-label="Delete asset"
           >
             <Trash2 size={16} />
-          </button>
+          </motion.button>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="px-4 pt-6 pb-24 space-y-4">
+      <motion.main
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        className="px-4 pt-6 pb-24 space-y-4"
+      >
         {/* Asset title + subtitle */}
         {editing ? (
           <div className="space-y-2">
@@ -346,7 +369,7 @@ export default function AssetDetail() {
           </div>
         )}
 
-      </main>
+      </motion.main>
     </div>
   )
 }

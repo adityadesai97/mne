@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { animate } from 'framer-motion'
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sparkles } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
@@ -13,6 +13,7 @@ import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -294,9 +295,24 @@ export default function Home() {
 
   if (!assetsLoaded) {
     return (
-      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
-        <div className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70">
-          <p className="text-sm text-muted-foreground">Loading portfolio...</p>
+      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 md:p-6 space-y-4">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-11 w-56" />
+            <Skeleton className="h-[130px] w-full rounded-xl" />
+          </div>
+          <div className="bg-card shadow-card rounded-2xl p-5 md:p-6 space-y-4">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
         </div>
       </div>
     )
@@ -307,15 +323,21 @@ export default function Home() {
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
         <motion.div
           {...fadeUp(0)}
-          className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70"
+          className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70 relative overflow-hidden"
         >
-          <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute -top-8 left-1/4 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
+          </div>
+          <div className="relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-subtle">
+            <Sparkles size={18} className="text-primary" />
+          </div>
+          <p className="relative text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">
             {firstName ? `${firstName}'s Workspace` : 'Workspace'}
           </p>
-          <h1 className="font-syne text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
+          <h1 className="relative font-syne text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
             Add your first asset to get started.
           </h1>
-          <p className="mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
+          <p className="relative mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
             Portfolio and Charts unlock after your first asset is added. Use the command button to record a position.
           </p>
         </motion.div>
@@ -430,7 +452,7 @@ export default function Home() {
       {/* STATS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 
-        <motion.div {...fadeUp(0.1)} className="bg-card shadow-card rounded-xl p-4">
+        <motion.div {...fadeUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             {stockIsGain
               ? <TrendingUp size={11} className="text-gain" />
@@ -445,7 +467,7 @@ export default function Home() {
           </p>
         </motion.div>
 
-        <motion.div {...fadeUp(0.13)} className="bg-card shadow-card rounded-xl p-4">
+        <motion.div {...fadeUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <TrendingUp size={11} className="text-gain" />
             <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Best Performer</p>
@@ -458,7 +480,7 @@ export default function Home() {
           )}
         </motion.div>
 
-        <motion.div {...fadeUp(0.16)} className="bg-card shadow-card rounded-xl p-4">
+        <motion.div {...fadeUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Largest Holding</p>
           </div>

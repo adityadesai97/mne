@@ -1,5 +1,6 @@
 // src/pages/Watchlist.tsx
 import { useCallback, useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { deleteTicker, getAllTickers, refreshAllPrices, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { config } from '@/store/config'
@@ -11,10 +12,18 @@ import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Plus, Sparkles, Star, Trash2, X } from 'lucide-react'
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  transition: { delay, duration: 0.25, ease: [0.25, 0.1, 0.25, 1] as const },
+})
 
 export default function Watchlist() {
   const [tickers, setTickers] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [symbol, setSymbol] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -43,7 +52,9 @@ export default function Watchlist() {
     setTickers(enriched)
   }
 
-  useEffect(() => { loadTickers().catch(console.error) }, [])
+  useEffect(() => {
+    loadTickers().catch(console.error).finally(() => setLoaded(true))
+  }, [])
 
   const handleRefresh = useCallback(async () => {
     if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
@@ -135,40 +146,72 @@ export default function Watchlist() {
     <div className="pt-6 pb-4">
       <div className="flex items-center justify-between px-4 mb-4">
         <h1 className="text-xl font-bold">Watchlist</h1>
-        <button
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={() => { setShowForm(v => !v); setError(null); setSymbol('') }}
           className="bg-primary/10 hover:bg-primary/20 text-foreground rounded-full p-1.5 transition-colors"
           aria-label={showForm ? 'Cancel' : 'Add ticker'}
         >
-          {showForm ? <X size={18} /> : <Plus size={18} />}
-        </button>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={showForm ? 'close' : 'open'}
+              initial={{ rotate: -90, opacity: 0 }}
+              animate={{ rotate: 0, opacity: 1 }}
+              exit={{ rotate: 90, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex"
+            >
+              {showForm ? <X size={18} /> : <Plus size={18} />}
+            </motion.span>
+          </AnimatePresence>
+        </motion.button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="mx-4 mb-4 bg-card border border-border rounded-lg p-3 flex flex-col gap-2">
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              type="text"
-              value={symbol}
-              onChange={e => setSymbol(e.target.value)}
-              placeholder="e.g. AAPL"
-              className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <button
-              type="submit"
-              disabled={submitting || !symbol.trim()}
-              className="bg-primary/10 hover:bg-primary/20 text-foreground text-sm font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
-            >
-              {submitting ? 'Adding…' : 'Add'}
-            </button>
-          </div>
-          {error && <p className="text-xs text-destructive">{error}</p>}
-        </form>
+      <AnimatePresence>
+        {showForm && (
+          <motion.form
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+            onSubmit={handleSubmit}
+            className="mx-4 mb-4 overflow-hidden"
+          >
+            <div className="bg-card border border-border rounded-lg p-3 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  value={symbol}
+                  onChange={e => setSymbol(e.target.value)}
+                  placeholder="e.g. AAPL"
+                  className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting || !symbol.trim()}
+                  className="bg-primary/10 hover:bg-primary/20 text-foreground text-sm font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+                >
+                  {submitting ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+              {error && <p className="text-xs text-destructive">{error}</p>}
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
+
+      {!loaded && (
+        <div className="px-4 space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
+          ))}
+        </div>
       )}
 
-      {tickers.map(t => (
-        <Card key={t.id} className="mx-4 mb-2">
+      {loaded && tickers.map((t, i) => (
+        <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} className="mx-4 mb-2">
+          <Card>
           <CardContent className="p-4 cursor-pointer" onClick={() => toggleExpanded(t.id)}>
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
@@ -204,16 +247,29 @@ export default function Watchlist() {
                 )}
               </div>
             </div>
-            {expanded.has(t.id) && (
-              <div onClick={e => e.stopPropagation()}>
-                <ThemeManager ticker={t} onUpdated={loadTickers} />
-              </div>
-            )}
+            <AnimatePresence initial={false}>
+              {expanded.has(t.id) && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                  onClick={e => e.stopPropagation()}
+                  className="overflow-hidden"
+                >
+                  <ThemeManager ticker={t} onUpdated={loadTickers} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </CardContent>
-        </Card>
+          </Card>
+        </motion.div>
       ))}
-      {tickers.length === 0 && !showForm && (
-        <p className="text-muted-foreground text-center mt-16">No tickers in watchlist yet.</p>
+      {loaded && tickers.length === 0 && !showForm && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center mt-16 px-4">
+          <Star size={22} className="text-muted-foreground/50 mb-3" />
+          <p className="text-muted-foreground text-center text-sm">No tickers in watchlist yet.</p>
+        </motion.div>
       )}
     </div>
     </>

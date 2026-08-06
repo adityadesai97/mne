@@ -39,7 +39,7 @@ function AssetIcon({ asset }: { asset: any }) {
   )
 }
 
-export function PositionCard({ asset }: { asset: any }) {
+export function PositionCard({ asset, index = 0 }: { asset: any; index?: number }) {
   const isStock = asset.asset_type === 'Stock'
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -89,8 +89,11 @@ export function PositionCard({ asset }: { asset: any }) {
   return (
     <motion.div
       className="mx-4 mb-2"
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] as const }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: Math.min(index, 10) * 0.03, ease: [0.25, 0.1, 0.25, 1] as const }}
+      whileHover={{ y: -2, transition: { duration: 0.15, ease: [0.25, 0.1, 0.25, 1] as const } }}
+      whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
     >
       <Link to={`/portfolio/${asset.id}`} className="block">
         <Card>{cardInner}</Card>

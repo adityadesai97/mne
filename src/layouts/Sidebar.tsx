@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { LayoutDashboard, BarChart2, PieChart, Star, Settings } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 
@@ -29,14 +30,25 @@ export default function Sidebar() {
             end={to === '/'}
             title={label}
             className={({ isActive }) =>
-              `flex items-center justify-center w-full aspect-square rounded-xl transition-all duration-150 ${
-                isActive
-                  ? 'bg-brand text-white shadow-brand'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
+              `relative flex items-center justify-center w-full aspect-square rounded-xl transition-colors duration-150 ${
+                isActive ? 'text-white' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
               }`
             }
           >
-            <Icon size={18} />
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <motion.div
+                    layoutId="sidebar-pill"
+                    className="absolute inset-0 -z-10 rounded-xl bg-brand shadow-brand"
+                    transition={{ type: 'spring', stiffness: 480, damping: 34 }}
+                  />
+                )}
+                <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="flex items-center justify-center">
+                  <Icon size={18} />
+                </motion.span>
+              </>
+            )}
           </NavLink>
         ))}
       </div>

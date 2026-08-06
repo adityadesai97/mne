@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
+import { PieChart } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   groupByAssetType,
   groupByLocation,
@@ -391,7 +394,11 @@ export default function Charts() {
     return (
       <div className="pt-6 pb-24 px-4 space-y-4">
         <h1 className="text-xl font-bold">Charts</h1>
-        <p className="text-sm text-muted-foreground">Loading charts...</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-64 w-full rounded-xl" />
+          ))}
+        </div>
       </div>
     )
   }
@@ -400,14 +407,19 @@ export default function Charts() {
     return (
       <div className="pt-6 pb-24 px-4 space-y-4">
         <h1 className="text-xl font-bold">Charts</h1>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Charts become available after your first asset is added.
-            </p>
-          </CardContent>
-        </Card>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
+                <PieChart size={20} className="text-primary" />
+              </div>
+              <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Charts become available after your first asset is added.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     )
   }
