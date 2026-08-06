@@ -13,7 +13,7 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MiniSparkline, MiniRing } from '@/components/MiniSparkline'
+import { MiniSparkline, RingStat } from '@/components/MiniSparkline'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -461,9 +461,11 @@ export default function Home() {
     <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
 
       {/* GREETING */}
-      <motion.div {...revealUp(0)} className="flex items-center gap-1.5 px-1">
-        <greeting.Icon size={14} className="text-muted-foreground" aria-hidden="true" />
-        <p className="text-sm text-muted-foreground">
+      <motion.div {...revealUp(0)} className="flex items-center gap-2.5 px-1">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
+          <greeting.Icon size={16} className="text-primary" aria-hidden="true" />
+        </div>
+        <p className="font-syne text-lg md:text-xl font-bold text-foreground tracking-tight">
           {greeting.text}{firstName ? `, ${firstName}` : ''}
         </p>
       </motion.div>
@@ -630,8 +632,11 @@ export default function Home() {
 
         <motion.div {...revealUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="relative bg-card shadow-card rounded-xl p-4 overflow-hidden">
           {netWorthValues.length >= 2 && (
-            <div className="absolute right-0 top-0 w-20 opacity-80 pointer-events-none">
-              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={26} />
+            // Inset from the card's edge and rounded corner (rather than
+            // flush at 0,0) so the line's own peak/trough doesn't get
+            // clipped by the corner radius — it previously looked cut off.
+            <div className="absolute right-3 top-3 w-16 opacity-70 pointer-events-none">
+              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={20} />
             </div>
           )}
           <div className="flex items-center gap-1.5 mb-2.5 relative">
@@ -649,13 +654,17 @@ export default function Home() {
         </motion.div>
 
         <motion.div {...revealUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp size={11} className="text-gain" />
-              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Best Performer</p>
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <TrendingUp size={11} className="text-gain flex-shrink-0" />
+              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em] truncate">Best Performer</p>
             </div>
             {bestAsset && (
-              <MiniRing pct={Math.abs(bestAssetGainPct)} color={bestAssetGain >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} size={22} />
+              <RingStat
+                pct={Math.abs(bestAssetGainPct)}
+                color={bestAssetGain >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'}
+                label="Gain"
+              />
             )}
           </div>
           <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
@@ -667,10 +676,10 @@ export default function Home() {
         </motion.div>
 
         <motion.div {...revealUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2.5">
-            <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Largest Holding</p>
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em] truncate">Largest Holding</p>
             {largestAsset && (
-              <MiniRing pct={largestPct} color="hsl(var(--primary))" size={22} />
+              <RingStat pct={largestPct} color="hsl(var(--primary))" label="Share" />
             )}
           </div>
           <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
