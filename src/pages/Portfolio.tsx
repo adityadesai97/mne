@@ -224,6 +224,16 @@ export default function Portfolio() {
 
   const portfolioTotal = useMemo(() => computeTotalNetWorth(assets), [assets])
 
+  // The Name/Value/Gain picker only changes anything meaningful in List —
+  // that's the one layout where row order is the whole story. Grid is a
+  // wall of same-size tiles where "largest first" is the only ordering
+  // that reads as intentional rather than arbitrary, and Treemap already
+  // determines box size (and therefore visual order) from value, so
+  // sorting it by name/gain would fight its own layout. So: List honors
+  // whatever the user picked; Grid and Treemap always order by value,
+  // regardless of what the (hidden, in those modes) sort control last held.
+  const effectiveSort: SortOption = layoutMode === 'list' ? sort : 'value'
+
   const displayed = useMemo(() => {
     let result = assets
 
@@ -237,26 +247,27 @@ export default function Portfolio() {
     }
 
     result = [...result].sort((a, b) => {
-      if (sort === 'name') {
+      if (effectiveSort === 'name') {
         return (a.name ?? '').localeCompare(b.name ?? '')
       }
-      if (sort === 'value') {
+      if (effectiveSort === 'value') {
         return computeAssetValue(b) - computeAssetValue(a)
       }
-      if (sort === 'gain') {
+      if (effectiveSort === 'gain') {
         return computeUnrealizedGain(b) - computeUnrealizedGain(a)
       }
       return 0
     })
 
     return result
-  }, [assets, search, activeType, sort])
+  }, [assets, search, activeType, effectiveSort])
 
   const treemapOption = useMemo<EChartsOption>(() => {
     // Same accent-color-per-type language as the grid's top bar and the
-    // list's left bar, plus the same gain/loss and "of portfolio" figures
-    // those two views show directly — here surfaced in the tooltip, since a
-    // treemap box has no room to print them. Zero-value positions (no price
+    // list's left bar, plus the same gain/loss figures those two views show
+    // directly — printed in-box below via the label formatter, with "of
+    // portfolio" (a figure the box's own size already communicates
+    // visually) reserved for the tooltip. Zero-value positions (no price
     // data yet) are excluded rather than rendered as an invisible sliver.
     const nodes = displayed
       .map((a, i) => ({ a, i, value: computeAssetValue(a), gain: computeUnrealizedGain(a) }))
@@ -301,7 +312,38 @@ export default function Portfolio() {
           roam: false,
           nodeClick: false,
           breadcrumb: { show: false },
-          label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600 },
+          // Boxes are big enough on most positions to carry the same figures
+          // Grid and List print directly (value, and gain% for stocks) —
+          // printing them here too means the tooltip is a hover nicety, not
+          // the only way to read a box. Anchored top-left (vs. centered) so
+          // it reads like a card header even on wide, short boxes; overflow
+          // is truncated rather than spilling past a small box's edge, and
+          // boxes too small to hold a line of text just drop it (ECharts'
+          // default behavior) rather than overlapping neighbors.
+          label: {
+            show: true,
+            position: 'insideTopLeft',
+            padding: 8,
+            overflow: 'truncate',
+            textShadowColor: 'rgba(0,0,0,0.35)',
+            textShadowBlur: 3,
+            rich: {
+              name: { fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 16 },
+              value: { fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.85)', lineHeight: 15 },
+              gain: { fontSize: 11, fontWeight: 600, color: 'hsl(var(--gain))', lineHeight: 15 },
+              loss: { fontSize: 11, fontWeight: 600, color: 'hsl(var(--loss))', lineHeight: 15 },
+            },
+            formatter: (params: unknown) => {
+              const p = params as { name: string; data: { value: number; gain: number; gainPct: number; isStock: boolean } }
+              const { value, gain, gainPct, isStock } = p.data
+              const lines = [`{name|${p.name}}`, `{value|${fmtCurrency(value)}}`]
+              if (isStock) {
+                const isGain = gain >= 0
+                lines.push(`{${isGain ? 'gain' : 'loss'}|${isGain ? '+' : ''}${gainPct.toFixed(1)}%}`)
+              }
+              return lines.join('\n')
+            },
+          },
           upperLabel: { show: false },
           // gapWidth mirrors the grid's gap-3 between cards; borderRadius
           // matches the rounded-2xl card language used everywhere else.
@@ -357,7 +399,9 @@ export default function Portfolio() {
         </div>
         <div className="flex items-center gap-1.5">
           <OptionDropdown value={layoutMode} options={LAYOUT_OPTIONS} onChange={setLayoutMode} ariaLabel="Layout" />
-          <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
+          {layoutMode === 'list' && (
+            <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
+          )}
         </div>
       </div>
 
