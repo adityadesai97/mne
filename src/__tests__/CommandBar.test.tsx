@@ -1,11 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CommandBar } from '../components/CommandBar'
 import { runCommand } from '../lib/claude'
+import { submitCommandFeedback } from '../lib/db/feedback'
 
 // Mock claude module to avoid actual API calls
 vi.mock('../lib/claude', () => ({
   runCommand: vi.fn(),
+}))
+
+vi.mock('../lib/db/feedback', () => ({
+  submitCommandFeedback: vi.fn(),
 }))
 
 test('CommandBar is not visible when closed', () => {
@@ -71,6 +76,34 @@ test('full screen toggle button expands and restores the panel', async () => {
 
   expect(panel).toHaveAttribute('data-fullscreen', 'false')
   expect(panel.className).toMatch(/\bmax-w-lg\b/)
+})
+
+test('feedback form submits the agent response, query, and free-text feedback', async () => {
+  vi.mocked(runCommand).mockResolvedValue({ type: 'text', message: 'Your net worth is $10,000.' })
+  vi.mocked(submitCommandFeedback).mockResolvedValue(undefined)
+
+  const user = userEvent.setup()
+  render(<CommandBar open={true} onClose={() => {}} />)
+  const input = screen.getByPlaceholderText(/ask anything/i)
+  await user.type(input, "what's my net worth?")
+  await user.keyboard('{Enter}')
+
+  expect(await screen.findByText('Your net worth is $10,000.')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Give feedback on this response' }))
+  const feedbackInput = screen.getByPlaceholderText(/what was wrong/i)
+  fireEvent.change(feedbackInput, { target: { value: 'This number looks stale' } })
+  await user.click(screen.getByRole('button', { name: 'Send' }))
+
+  expect(await screen.findByText('Thanks for the feedback ✓')).toBeInTheDocument()
+  expect(submitCommandFeedback).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userQuery: "what's my net worth?",
+      agentResponse: 'Your net worth is $10,000.',
+      feedbackText: 'This number looks stale',
+      attachment: null,
+    }),
+  )
 })
 
 test('closing the panel resets full screen for the next open', async () => {

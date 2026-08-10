@@ -1,7 +1,7 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb, RefreshCw } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb, RefreshCw, Wallet, PieChart, Activity, Crown } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
@@ -15,6 +15,7 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MiniSparkline, RingStat } from '@/components/MiniSparkline'
 import { revealUp } from '@/lib/motionPresets'
+import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -41,15 +42,6 @@ function formatRelativeTime(isoString: string | null): string | null {
   const hours = Math.floor(mins / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
-}
-
-const TYPE_COLORS: Record<string, string> = {
-  Stock: '#3B82F6',
-  Cash: '#10B981',
-  '401k': '#F59E0B',
-  CD: '#8B5CF6',
-  'Real Estate': '#EC4899',
-  Other: '#6B7280',
 }
 
 const AXIS_COLOR = 'hsl(215,14%,55%)'
@@ -84,6 +76,21 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
     })
     return () => controls.stop()
   }, [target])
+}
+
+// Shared eyebrow label (icon + uppercase caption) so every card on this page
+// uses the same icon-badge treatment, text scale, and tracking — some cards
+// previously had a leading icon and others didn't, which is what made the
+// grid feel inconsistent. Always used inside a `flex items-center
+// justify-between mb-3` wrapper so cards with trailing content (a RingStat,
+// a sort toggle) and cards without both get the same header spacing.
+function CardEyebrow({ icon: Icon, className = 'text-muted-foreground', children }: { icon: typeof Sun; className?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <Icon size={11} className={`flex-shrink-0 ${className}`} aria-hidden="true" />
+      <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium truncate">{children}</p>
+    </div>
+  )
 }
 
 export default function Home() {
@@ -506,9 +513,9 @@ export default function Home() {
             />
           </div>
 
-          <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium relative">
-            Net Worth
-          </p>
+          <div className="mb-3 relative">
+            <CardEyebrow icon={Wallet}>Net Worth</CardEyebrow>
+          </div>
 
           <div className="mb-1 relative">
             <p
@@ -618,16 +625,16 @@ export default function Home() {
           {...revealUp(0.06)}
           className="bg-card shadow-card rounded-2xl p-5 md:p-6"
         >
-          <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-4 font-medium">
-            Allocation
-          </p>
+          <div className="mb-3">
+            <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
+          </div>
 
           {typeEntries.length === 0 ? (
             <p className="text-muted-foreground text-xs mt-2">No assets yet</p>
           ) : (
             <div className="space-y-3.5">
               {typeEntries.map(({ name, value, pct }, i) => {
-                const color = TYPE_COLORS[name] ?? `hsl(${(i * 67 + 190) % 360}, 65%, 55%)`
+                const color = colorForAssetType(name, i)
                 return (
                   <div key={name}>
                     <div className="flex justify-between items-center mb-1.5">
@@ -661,10 +668,8 @@ export default function Home() {
           {...revealUp(0.08)}
           className="bg-card shadow-card rounded-2xl p-5 md:p-6"
         >
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">
-              Daily Movers
-            </p>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <CardEyebrow icon={Activity}>Daily Movers</CardEyebrow>
             <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
               <button
                 type="button"
@@ -719,10 +724,13 @@ export default function Home() {
         </motion.div>
       )}
 
-      {/* STATS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* STATS ROW — an intentionally uneven "bento" grid rather than three
+          equal thirds: P&L carries the most information (sparkline + two
+          figures) so it gets double width from the sm breakpoint up, while
+          Best Performer and Largest Holding stay compact beside/below it. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
 
-        <motion.div {...revealUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="relative bg-card shadow-card rounded-xl p-4 overflow-hidden">
+        <motion.div {...revealUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="relative bg-card shadow-card rounded-xl p-4 overflow-hidden sm:col-span-2">
           {netWorthValues.length >= 2 && (
             // Inset from the card's edge and rounded corner (rather than
             // flush at 0,0) so the line's own peak/trough doesn't get
@@ -731,11 +739,8 @@ export default function Home() {
               <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={20} />
             </div>
           )}
-          <div className="flex items-center gap-1.5 mb-2.5 relative">
-            {stockIsGain
-              ? <TrendingUp size={11} className="text-gain" />
-              : <TrendingDown size={11} className="text-loss" />}
-            <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">P&L</p>
+          <div className="mb-3 relative">
+            <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
           </div>
           <p className={`relative text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
@@ -746,11 +751,8 @@ export default function Home() {
         </motion.div>
 
         <motion.div {...revealUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <TrendingUp size={11} className="text-gain flex-shrink-0" />
-              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em] truncate">Best Performer</p>
-            </div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best Performer</CardEyebrow>
             {bestAsset && (
               <RingStat
                 pct={Math.abs(bestAssetGainPct)}
@@ -760,26 +762,27 @@ export default function Home() {
             )}
           </div>
           <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
+          {/* Dollar gain here, not the percent again — the ring above already
+              shows the percentage, so repeating it added nothing new. */}
           {bestAsset && (
             <p className={`text-[10px] tabular-nums mt-0.5 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
-              {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
+              {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
             </p>
           )}
         </motion.div>
 
         <motion.div {...revealUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em] truncate">Largest Holding</p>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <CardEyebrow icon={Crown} className="text-primary">Largest Holding</CardEyebrow>
             {largestAsset && (
               <RingStat pct={largestPct} color="hsl(var(--primary))" label="Share" />
             )}
           </div>
           <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
+          {/* Dollar value here only — the "% of portfolio" figure is already
+              the number printed inside the ring above. */}
           {largestAsset && (
-            <>
-              <p className="text-[10px] tabular-nums text-muted-foreground mt-0.5">{fmtCurrency(largestValue)}</p>
-              <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
-            </>
+            <p className="text-[10px] tabular-nums text-muted-foreground mt-0.5">{fmtCurrency(largestValue)}</p>
           )}
         </motion.div>
 

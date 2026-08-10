@@ -9,7 +9,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
+import { computeAssetValue, computeUnrealizedGain, computeTotalNetWorth } from '@/lib/portfolio'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -48,9 +48,9 @@ function PortfolioSkeleton() {
         <Skeleton className="h-7 w-20 rounded-full" />
         <Skeleton className="h-7 w-16 rounded-full" />
       </div>
-      <div className="px-4 space-y-2">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
+      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-[148px] w-full rounded-xl" />
         ))}
       </div>
     </div>
@@ -107,6 +107,8 @@ export default function Portfolio() {
   }, [assets])
 
   const chips = ['All', ...assetTypes]
+
+  const portfolioTotal = useMemo(() => computeTotalNetWorth(assets), [assets])
 
   const displayed = useMemo(() => {
     let result = assets
@@ -260,7 +262,7 @@ export default function Portfolio() {
       </LayoutGroup>
 
       {/*
-        No AnimatePresence here: this list re-renders on every keystroke
+        No AnimatePresence here: this grid re-renders on every keystroke
         (search) and filter/sort change, nested inside AppLayout's
         route-transition AnimatePresence. That combination — an inner
         AnimatePresence whose exit-tracking doesn't reliably resolve before
@@ -269,10 +271,15 @@ export default function Portfolio() {
         page's content invisible until a reload. PositionCard still fades
         in on mount/filter via its own initial/animate; it just doesn't get
         an exit animation when filtered out.
+
+        A multi-column grid (rather than one stacked column) reads as a
+        portfolio "wall" of tiles instead of a plain scrolling list.
       */}
-      {displayed.map((a, i) => (
-        <PositionCard key={a.id} asset={a} index={i} />
-      ))}
+      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {displayed.map((a, i) => (
+          <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} />
+        ))}
+      </div>
 
       {assets.length > 0 && displayed.length === 0 && (
         <motion.div

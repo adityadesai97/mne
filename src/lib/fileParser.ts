@@ -148,3 +148,20 @@ export async function extractTextFromPdf(attachment: FileAttachment & { content:
   if (attachment.type !== 'pdf') throw new Error('Not a PDF attachment')
   return extractPdfText(attachment.content)
 }
+
+const FEEDBACK_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024 // 5MB
+
+/**
+ * Reads any file into base64 for a command-response feedback attachment
+ * (e.g. a screenshot of the wrong output). Unlike parseFileAttachment, this
+ * isn't restricted to csv/pdf/image — feedback isn't fed to the LLM, it's
+ * stored as-is — but is size-capped since it's stored inline in the DB.
+ */
+export async function parseFeedbackAttachment(file: File): Promise<{ filename: string; mimeType: string; content: string }> {
+  if (file.size > FEEDBACK_ATTACHMENT_MAX_BYTES) {
+    throw new Error('Attachment is too large. Please attach a file under 5MB.')
+  }
+  const dataUrl = await readAsDataURL(file)
+  const base64 = dataUrl.split(',')[1] ?? ''
+  return { filename: file.name, mimeType: file.type || 'application/octet-stream', content: base64 }
+}
