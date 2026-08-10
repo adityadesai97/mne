@@ -476,7 +476,7 @@ export default function Portfolio() {
       {layoutMode === 'grid' && (
         <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {displayed.map((a, i) => (
-            <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} />
+            <PositionCard key={a.id} asset={a} index={i} />
           ))}
         </div>
       )}
@@ -484,7 +484,7 @@ export default function Portfolio() {
       {layoutMode === 'list' && (
         <div>
           {displayed.map((a, i) => (
-            <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} layout="list" />
+            <PositionCard key={a.id} asset={a} index={i} layout="list" />
           ))}
         </div>
       )}
