@@ -1,4 +1,4 @@
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeTotalNetWorth } from '../lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeDailyChange } from '../lib/portfolio'
 
 const mockStockAsset = {
   asset_type: 'Stock',
@@ -45,6 +45,37 @@ test('returns 0 for stock asset with no lots', () => {
   } as any
   expect(computeAssetValue(assetWithNoLots)).toBe(0)
   expect(computeCostBasis(assetWithNoLots)).toBe(0)
+})
+
+test('computes daily change from current price vs previous close', () => {
+  const asset = {
+    asset_type: 'Stock',
+    price: null,
+    ticker: { current_price: 110, previous_close: 100 },
+    stock_subtypes: [{ transactions: [{ count: '10', cost_price: '80' }], rsu_grants: [] }],
+  } as any
+  const change = computeDailyChange(asset)
+  expect(change).toEqual({ dollarChange: 100, percentChange: 10 })
+})
+
+test('returns null daily change when previous_close is missing or no shares held', () => {
+  const noPreviousClose = {
+    asset_type: 'Stock',
+    price: null,
+    ticker: { current_price: 110, previous_close: null },
+    stock_subtypes: [{ transactions: [{ count: '10', cost_price: '80' }], rsu_grants: [] }],
+  } as any
+  expect(computeDailyChange(noPreviousClose)).toBeNull()
+
+  const noShares = {
+    asset_type: 'Stock',
+    price: null,
+    ticker: { current_price: 110, previous_close: 100 },
+    stock_subtypes: [],
+  } as any
+  expect(computeDailyChange(noShares)).toBeNull()
+
+  expect(computeDailyChange(mockCashAsset)).toBeNull()
 })
 
 test('never reports a gain/loss for a non-stock asset, even with a price change baked in', () => {

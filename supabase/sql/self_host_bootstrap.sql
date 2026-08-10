@@ -35,6 +35,7 @@ create unique index if not exists tickers_user_id_symbol_key
   on public.tickers (user_id, symbol);
 alter table public.tickers add column if not exists logo text;
 alter table public.tickers add column if not exists watchlist_only boolean not null default false;
+alter table public.tickers add column if not exists previous_close numeric(12,4);
 
 create table if not exists public.themes (
   id uuid primary key default gen_random_uuid(),
