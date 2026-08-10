@@ -13,10 +13,13 @@ function normalizeErrorMessage(message: string): string {
 }
 
 function parseInlineMd(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={i}>{part.slice(1, -1)}</em>
     }
     if (part.startsWith('`') && part.endsWith('`')) {
       return (
@@ -27,6 +30,36 @@ function parseInlineMd(text: string): React.ReactNode {
     }
     return <Fragment key={i}>{part}</Fragment>
   })
+}
+
+// A table cell that's *only* a signed number/currency/percent (e.g. "+$500",
+// "-2.3%") is colored the same way the rest of the app colors gains/losses.
+// Scoped to a full-cell match (not run over arbitrary prose) so a hyphen in
+// a date or a range never gets miscolored.
+function parseTableCell(text: string): React.ReactNode {
+  const trimmed = text.trim()
+  const signed = /^([+-])\$?[\d,]+(?:\.\d+)?%?$/.exec(trimmed)
+  if (signed) {
+    return <span className={signed[1] === '+' ? 'text-gain' : 'text-loss'}>{trimmed}</span>
+  }
+  return parseInlineMd(text)
+}
+
+type TableAlign = 'left' | 'center' | 'right'
+
+function parseColumnAlign(dividerCell: string): TableAlign {
+  const trimmed = dividerCell.trim()
+  const left = trimmed.startsWith(':')
+  const right = trimmed.endsWith(':')
+  if (left && right) return 'center'
+  if (right) return 'right'
+  return 'left'
+}
+
+const ALIGN_CLASS: Record<TableAlign, string> = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
 }
 
 function splitTableRow(line: string): string[] {
@@ -58,6 +91,7 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
 
     if (isTableLine(trimmed) && i + 1 < lines.length && isTableDivider(lines[i + 1].trim())) {
       const headers = splitTableRow(trimmed)
+      const aligns = splitTableRow(lines[i + 1].trim()).map(parseColumnAlign)
       const rows: string[][] = []
       i += 2
       while (i < lines.length && isTableLine(lines[i].trim())) {
@@ -70,7 +104,10 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
             <thead className="bg-muted/40">
               <tr>
                 {headers.map((header, idx) => (
-                  <th key={idx} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                  <th
+                    key={idx}
+                    className={`px-2 py-1.5 font-semibold whitespace-nowrap ${ALIGN_CLASS[aligns[idx] ?? 'left']}`}
+                  >
                     {parseInlineMd(header)}
                   </th>
                 ))}
@@ -78,10 +115,10 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
             </thead>
             <tbody>
               {rows.map((row, rowIdx) => (
-                <tr key={rowIdx} className="border-t border-border/60">
+                <tr key={rowIdx} className={`border-t border-border/60 ${rowIdx % 2 === 1 ? 'bg-muted/10' : ''}`}>
                   {headers.map((_, colIdx) => (
-                    <td key={colIdx} className="px-2 py-1.5 align-top">
-                      {parseInlineMd(row[colIdx] ?? '')}
+                    <td key={colIdx} className={`px-2 py-1.5 align-top tabular-nums ${ALIGN_CLASS[aligns[colIdx] ?? 'left']}`}>
+                      {parseTableCell(row[colIdx] ?? '')}
                     </td>
                   ))}
                 </tr>

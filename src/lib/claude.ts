@@ -1285,7 +1285,7 @@ ${JSON.stringify(buildCompactAssetContext(assets))}
 For read-only questions and analysis, respond directly in plain text.
 For read-only questions involving exact numbers, trends, simulations, or recommendations, call read tools first and base your answer on tool outputs.
 Never estimate portfolio totals, allocations, or tax-lot values without using a read tool.
-Prefer short sections and bullet lists over markdown tables. Do not output pipe-table syntax.
+Formatting: replies are rendered as markdown — GitHub-flavored pipe tables, ## / ### headers, bulleted/numbered lists, **bold**, *italics*, \`inline code\`, and --- rules are all supported. Prefer a markdown table over prose whenever you're presenting two or more rows of comparable structured data — multiple positions, tax lots, transactions, a side-by-side comparison, an allocation breakdown, etc. A table with a header row scans far faster than a wall of bullets or a run-on sentence of numbers. Right-align numeric columns using a \`---:\` divider cell (e.g. a header divider row of \`|---|---:|\`), and prefix gains with + and losses with - (e.g. "+$500", "-2.3%") so they render in the app's gain/loss colors. For a single fact or a short conversational answer, just write a sentence or two — don't wrap one number in a table. Use bullet or numbered lists for recommendations, steps, or anything that isn't naturally rows and columns.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
   Never infer location_name from existing portfolio data unless the user or attached document clearly identifies it.
   For non-stock assets, infer account_type when the account name or document makes it obvious:
