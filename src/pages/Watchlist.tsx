@@ -13,13 +13,26 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { ChevronDown, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react'
+
+const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   transition: { delay, duration: 0.25, ease: [0.25, 0.1, 0.25, 1] as const },
 })
+
+function formatRelativeTime(isoString: string | null): string | null {
+  if (!isoString) return null
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 export default function Watchlist() {
   const [tickers, setTickers] = useState<any[]>([])
@@ -31,6 +44,9 @@ export default function Watchlist() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [deletingTickerId, setDeletingTickerId] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
+    () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
+  )
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
@@ -57,7 +73,12 @@ export default function Watchlist() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    if (config.finnhubApiKey) {
+      await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+      const now = new Date().toISOString()
+      localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
+      setPricesRefreshedAt(now)
+    }
     await loadTickers().catch(console.error)
   }, [])
 
@@ -145,7 +166,14 @@ export default function Watchlist() {
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="pt-6 pb-4">
       <div className="flex items-center justify-between px-4 mb-4">
-        <h1 className="text-xl font-bold">Watchlist</h1>
+        <div>
+          <h1 className="text-xl font-bold">Watchlist</h1>
+          {formatRelativeTime(pricesRefreshedAt) && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Prices {formatRelativeTime(pricesRefreshedAt)}
+            </p>
+          )}
+        </div>
         <motion.button
           whileTap={{ scale: 0.9 }}
           onClick={() => { setShowForm(v => !v); setError(null); setSymbol('') }}
@@ -177,20 +205,23 @@ export default function Watchlist() {
             onSubmit={handleSubmit}
             className="mx-4 mb-4 overflow-hidden"
           >
-            <div className="bg-card border border-border rounded-lg p-3 flex flex-col gap-2">
+            <div className="bg-card border border-border rounded-xl p-3 flex flex-col gap-2 shadow-card">
               <div className="flex gap-2">
-                <input
-                  autoFocus
-                  type="text"
-                  value={symbol}
-                  onChange={e => setSymbol(e.target.value)}
-                  placeholder="e.g. AAPL"
-                  className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={symbol}
+                    onChange={e => setSymbol(e.target.value)}
+                    placeholder="Symbol, e.g. AAPL"
+                    className="w-full bg-muted/70 rounded-lg pl-8 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent focus:border-primary/40 focus:bg-background transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  />
+                </div>
                 <button
                   type="submit"
                   disabled={submitting || !symbol.trim()}
-                  className="bg-primary/10 hover:bg-primary/20 text-foreground text-sm font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+                  className="bg-primary text-primary-foreground text-sm font-medium px-4 rounded-lg transition-all duration-150 active:scale-[0.97] hover:opacity-90 disabled:opacity-50 disabled:active:scale-100"
                 >
                   {submitting ? 'Adding…' : 'Add'}
                 </button>
@@ -210,16 +241,16 @@ export default function Watchlist() {
       )}
 
       {loaded && tickers.map((t, i) => (
-        <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} className="mx-4 mb-2">
+        <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} whileTap={{ scale: 0.99 }} className="mx-4 mb-2">
           <Card>
           <CardContent className="p-4 cursor-pointer" onClick={() => toggleExpanded(t.id)}>
             <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 {t.logo
-                  ? <img src={t.logo} className="w-8 h-8 rounded-lg object-contain bg-muted flex-shrink-0" alt={t.symbol} />
-                  : <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0">{t.symbol.slice(0, 2)}</div>
+                  ? <img src={t.logo} className="w-9 h-9 rounded-lg object-contain bg-muted flex-shrink-0 ring-1 ring-border/50" alt={t.symbol} />
+                  : <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0">{t.symbol.slice(0, 2)}</div>
                 }
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{t.symbol}</p>
                     {t.is_owned && <Badge variant="secondary" className="text-xs">Owned</Badge>}
@@ -231,8 +262,13 @@ export default function Watchlist() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium">${Number(t.current_price ?? 0).toFixed(2)}</p>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <p className="font-medium tabular-nums">${Number(t.current_price ?? 0).toFixed(2)}</p>
+                <ChevronDown
+                  size={14}
+                  className={`text-muted-foreground/60 transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
                 {!t.is_owned && (
                   <button
                     type="button"

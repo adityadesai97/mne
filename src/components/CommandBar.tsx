@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
-import { X, Paperclip } from 'lucide-react'
+import { X, Paperclip, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, type FileAttachment } from '@/lib/fileParser'
@@ -716,7 +716,7 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <span className="bg-muted text-foreground text-sm px-3 py-2 rounded-2xl max-w-[80%] whitespace-pre-wrap break-words">
+        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[80%] whitespace-pre-wrap break-words">
           {message.content}
         </span>
       </div>
@@ -726,8 +726,11 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
     const traceSteps = message.trace?.steps ?? []
 
     return (
-      <div className="flex justify-start">
-        <div className="text-sm text-foreground max-w-[80%] space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
+          <Sparkles size={11} className="text-primary" aria-hidden="true" />
+        </div>
+        <div className="text-sm text-foreground max-w-[80%] space-y-2 bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-2.5">
           {renderAssistantMarkdown(message.content)}
           {traceSteps.length > 0 && (
             <div className="pt-1">
