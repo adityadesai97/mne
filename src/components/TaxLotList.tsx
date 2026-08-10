@@ -28,6 +28,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   onDeleteGrant?: (grantId: string, transactionIds: string[]) => Promise<void>
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [editValues, setEditValues] = useState<EditValues>({
     count: '',
     cost_price: '',
@@ -35,6 +36,15 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     capital_gains_status: '',
     sold_at_vest: '',
   })
+
+  function toggleExpanded(id: string) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   const subtypesWithActivity = subtypes.filter(
     (st: any) => (st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0,
   )
@@ -127,9 +137,16 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
       )
     }
 
+    const isOpen = expandedIds.has(t.id)
+
     return (
-      <details key={t.id} className="group rounded-lg border border-border/50 bg-muted/20">
-        <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
+      <div key={t.id} className="rounded-lg border border-border/50 bg-muted/20">
+        <button
+          type="button"
+          onClick={() => toggleExpanded(t.id)}
+          aria-expanded={isOpen}
+          className="w-full text-left"
+        >
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div>
               <p className="text-xs font-medium">{formatDateLabel(t.purchase_date)}</p>
@@ -142,70 +159,80 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <span className={`text-xs font-medium tabular-nums ${gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'}`}>
                 {gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
               </span>
-              <ChevronDown size={14} className="text-muted-foreground transition-transform group-open:rotate-180" />
+              <ChevronDown size={14} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
             </div>
           </div>
-        </summary>
+        </button>
 
-        <div className="px-3 pb-3">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-2.5">
-            <Metric label="Shares held" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
-            <Metric label="Cost / share" value={fmt(costPerShare)} />
-            <Metric label="Amount paid" value={fmt(totalCost)} />
-            <Metric
-              label="Current value"
-              value={currentValue !== null ? fmt(currentValue) : '—'}
-              className={currentValue !== null && gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
-            />
-            <Metric label="Purchased" value={t.purchase_date ?? '—'} />
-            <Metric
-              label="Gain / loss"
-              value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
-              className={gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
-            />
-            {soldAtVest > 0 && (
-              <>
-                <Metric label="Vested" value={totalVested.toFixed(totalVested % 1 === 0 ? 0 : 4)} />
-                <Metric label="Sold at vest" value={soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} />
-              </>
-            )}
-          </div>
+        {/* CSS grid-rows accordion — a native transition the browser drives
+            itself, not a JS-measured height or a framer-motion state
+            machine. Can't get stuck mid-animation the way those can. */}
+        <div
+          className="grid transition-[grid-template-rows] duration-200 ease-out"
+          style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
+        >
+          <div className="overflow-hidden">
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-2.5">
+                <Metric label="Shares held" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
+                <Metric label="Cost / share" value={fmt(costPerShare)} />
+                <Metric label="Amount paid" value={fmt(totalCost)} />
+                <Metric
+                  label="Current value"
+                  value={currentValue !== null ? fmt(currentValue) : '—'}
+                  className={currentValue !== null && gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
+                />
+                <Metric label="Purchased" value={t.purchase_date ?? '—'} />
+                <Metric
+                  label="Gain / loss"
+                  value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
+                  className={gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
+                />
+                {soldAtVest > 0 && (
+                  <>
+                    <Metric label="Vested" value={totalVested.toFixed(totalVested % 1 === 0 ? 0 : 4)} />
+                    <Metric label="Sold at vest" value={soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} />
+                  </>
+                )}
+              </div>
 
-          <div className="flex items-center justify-between">
-            <Badge
-              variant={t.capital_gains_status === 'Long Term' ? 'secondary' : 'outline'}
-              className="text-[10px]"
-            >
-              {t.capital_gains_status}
-            </Badge>
-            <div className="flex items-center gap-2">
-              {onEditTransaction && (
-                <button
-                  onClick={() => {
-                    setEditingId(t.id)
-                    setEditValues({
-                      count: String(t.count),
-                      cost_price: String(t.cost_price),
-                      purchase_date: t.purchase_date,
-                      capital_gains_status: t.capital_gains_status,
-                      sold_at_vest: String(t.sold_at_vest ?? 0),
-                    })
-                  }}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Edit"
+              <div className="flex items-center justify-between">
+                <Badge
+                  variant={t.capital_gains_status === 'Long Term' ? 'secondary' : 'outline'}
+                  className="text-[10px]"
                 >
-                  <Pencil size={12} />
-                </button>
-              )}
-              {onDeleteTransaction && (
-                <button onClick={() => onDeleteTransaction(t.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Delete">
-                  <Trash2 size={12} />
-                </button>
-              )}
+                  {t.capital_gains_status}
+                </Badge>
+                <div className="flex items-center gap-2">
+                  {onEditTransaction && (
+                    <button
+                      onClick={() => {
+                        setEditingId(t.id)
+                        setEditValues({
+                          count: String(t.count),
+                          cost_price: String(t.cost_price),
+                          purchase_date: t.purchase_date,
+                          capital_gains_status: t.capital_gains_status,
+                          sold_at_vest: String(t.sold_at_vest ?? 0),
+                        })
+                      }}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Edit"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
+                  {onDeleteTransaction && (
+                    <button onClick={() => onDeleteTransaction(t.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Delete">
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </details>
+      </div>
     )
   }
 

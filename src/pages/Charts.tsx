@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
@@ -78,6 +78,17 @@ function donutOption(
           borderColor: GRID_COLOR,
           borderWidth: 2,
         },
+        // focus: 'self' dims every other slice when one is highlighted
+        // (hover, or the legend below dispatching a highlight action) —
+        // native ECharts behavior, no custom state machine needed.
+        emphasis: {
+          focus: 'self',
+          scale: true,
+          scaleSize: 6,
+        },
+        blur: {
+          itemStyle: { opacity: 0.35 },
+        },
         data: data.map((slice) => ({
           name: slice.name,
           value: slice.value,
@@ -86,6 +97,77 @@ function donutOption(
       },
     ],
   }
+}
+
+/**
+ * Donut chart + its legend, wired together in both directions: hovering a
+ * legend swatch highlights the matching slice (and dims the rest via the
+ * emphasis/blur config on the series), and hovering a slice highlights the
+ * matching legend row. Centralized here since three charts on this page
+ * share this exact pattern.
+ */
+function DonutWithLegend({
+  option,
+  colorData,
+  height,
+  emptyLabel,
+}: {
+  option: EChartsOption
+  colorData: { name: string; value: number; color: string }[]
+  height: number
+  emptyLabel: string
+}) {
+  const chartRef = useRef<ReactECharts | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  const highlightSlice = useCallback((name: string) => {
+    setHovered(name)
+    chartRef.current?.getEchartsInstance().dispatchAction({ type: 'highlight', seriesIndex: 0, name })
+  }, [])
+  const downplaySlice = useCallback((name: string) => {
+    setHovered((h) => (h === name ? null : h))
+    chartRef.current?.getEchartsInstance().dispatchAction({ type: 'downplay', seriesIndex: 0, name })
+  }, [])
+
+  if (colorData.length === 0) {
+    return <p className="text-muted-foreground text-sm text-center py-8">{emptyLabel}</p>
+  }
+
+  return (
+    <>
+      <ReactECharts
+        ref={chartRef}
+        option={option}
+        style={{ width: '100%', height }}
+        notMerge
+        opts={{ renderer: 'svg' }}
+        onEvents={{
+          mouseover: (params: { componentType?: string; name?: string }) => {
+            if (params.componentType === 'series' && params.name) setHovered(params.name)
+          },
+          mouseout: () => setHovered(null),
+        }}
+      />
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+        {colorData.map((slice) => (
+          <button
+            type="button"
+            key={slice.name}
+            onMouseEnter={() => highlightSlice(slice.name)}
+            onMouseLeave={() => downplaySlice(slice.name)}
+            className={`flex items-center gap-1.5 text-xs rounded px-1 -mx-1 py-0.5 transition-colors ${
+              hovered === slice.name ? 'bg-muted/60' : 'hover:bg-muted/30'
+            }`}
+          >
+            <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: slice.color }} />
+            <span className={hovered === slice.name ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+              {slice.name}
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  )
 }
 
 export default function Charts() {
@@ -452,19 +534,7 @@ export default function Charts() {
             </div>
           </CardHeader>
           <CardContent>
-            {allocationData.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No data</p>
-            ) : (
-              <ReactECharts option={allocationOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
-            )}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-              {allocationColorData.map((slice) => (
-                <div key={slice.name} className="flex items-center gap-1.5 text-xs">
-                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
-                  <span className="text-muted-foreground">{slice.name}</span>
-                </div>
-              ))}
-            </div>
+            <DonutWithLegend option={allocationOption} colorData={allocationColorData} height={220} emptyLabel="No data" />
           </CardContent>
         </Card>
 
@@ -473,19 +543,7 @@ export default function Charts() {
             <CardTitle className="text-sm text-muted-foreground">By Account</CardTitle>
           </CardHeader>
           <CardContent>
-            {locationData.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No data</p>
-            ) : (
-              <ReactECharts option={locationOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
-            )}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-              {locationColorData.map((slice) => (
-                <div key={slice.name} className="flex items-center gap-1.5 text-xs">
-                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
-                  <span className="text-muted-foreground">{slice.name}</span>
-                </div>
-              ))}
-            </div>
+            <DonutWithLegend option={locationOption} colorData={locationColorData} height={220} emptyLabel="No data" />
           </CardContent>
         </Card>
       </div>
@@ -508,19 +566,12 @@ export default function Charts() {
           </div>
         </CardHeader>
         <CardContent>
-          {themeDistributionData.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-8">No themed stock data yet</p>
-          ) : (
-            <ReactECharts option={themeDistributionOption} style={{ width: '100%', height: 240 }} notMerge opts={{ renderer: 'svg' }} />
-          )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-            {themeDistributionColorData.map((slice) => (
-              <div key={slice.name} className="flex items-center gap-1.5 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: slice.color }} />
-                <span className="text-muted-foreground">{slice.name}</span>
-              </div>
-            ))}
-          </div>
+          <DonutWithLegend
+            option={themeDistributionOption}
+            colorData={themeDistributionColorData}
+            height={240}
+            emptyLabel="No themed stock data yet"
+          />
         </CardContent>
       </Card>
 

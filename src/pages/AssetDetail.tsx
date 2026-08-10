@@ -1,7 +1,7 @@
 // src/pages/AssetDetail.tsx
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,6 +11,7 @@ import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/
 import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
+import { revealUp } from '@/lib/motionPresets'
 
 interface EditAssetValues {
   name: string
@@ -245,106 +246,124 @@ export default function AssetDetail() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="px-4 pt-6 pb-24 space-y-4"
+        className="px-4 pt-6 pb-24 space-y-3"
       >
-        {/* Asset title + subtitle */}
-        {editing ? (
-          <div className="space-y-2">
-            <input
-              value={editValues.name}
-              onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xl font-bold focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <select
-              value={editValues.ownership}
-              onChange={e => setEditValues(v => ({ ...v, ownership: e.target.value }))}
-              className="bg-card border border-border rounded px-2 py-1 text-sm"
-            >
-              <option value="Individual">Individual</option>
-              <option value="Joint">Joint</option>
-            </select>
-            {!isStock && (
-              <div>
-                <label className="text-xs text-muted-foreground">Value ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editValues.price}
-                  onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))}
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            )}
-            <div>
-              <label className="text-xs text-muted-foreground">Notes</label>
-              <textarea
-                value={editValues.notes}
-                onChange={e => setEditValues(v => ({ ...v, notes: e.target.value }))}
-                rows={3}
-                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveAsset}
-                className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setEditing(false)}
-                className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
+        {/* Hero card: title/type/ownership + value. AnimatePresence here is
+            a single, standalone one (not nested inside another) — safe per
+            the pattern used everywhere else in the app. */}
+        <motion.div {...revealUp(0)} className="bg-card shadow-card rounded-2xl p-5 relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className={`absolute -top-8 left-1/4 w-64 h-32 rounded-full blur-3xl ${isStock ? (isGain ? 'bg-gain/[0.12]' : 'bg-loss/[0.12]') : 'bg-brand-subtle'}`} />
           </div>
-        ) : (
-          <>
-            <div>
-              <h2 className="text-2xl font-bold">{asset.name}</h2>
-              <p className="text-muted-foreground text-sm mt-1">
-                {asset.location?.name} · {asset.asset_type}
-              </p>
-            </div>
-
-            {/* Ownership badge */}
-            {asset.ownership && (
-              <Badge variant="secondary">{asset.ownership}</Badge>
-            )}
-          </>
-        )}
-
-        {/* Value section */}
-        <div>
-          {noPriceData ? (
-            <>
-              <p className="text-3xl font-bold text-muted-foreground">—</p>
-              <p className="text-sm text-muted-foreground mt-1">Price pending</p>
-            </>
-          ) : (
-            <>
-              <p className="text-3xl font-bold">
-                {fmt(value)}
-                {isStock && (
-                  <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} sh</span>
+          <AnimatePresence mode="wait">
+            {editing ? (
+              <motion.div
+                key="edit"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="relative space-y-2"
+              >
+                <input
+                  value={editValues.name}
+                  onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xl font-bold focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <select
+                  value={editValues.ownership}
+                  onChange={e => setEditValues(v => ({ ...v, ownership: e.target.value }))}
+                  className="bg-card border border-border rounded px-2 py-1 text-sm"
+                >
+                  <option value="Individual">Individual</option>
+                  <option value="Joint">Joint</option>
+                </select>
+                {!isStock && (
+                  <div>
+                    <label className="text-xs text-muted-foreground">Value ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editValues.price}
+                      onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
                 )}
-              </p>
-              {isStock && (
-                <p className={`text-base mt-1 ${isGain ? 'text-gain' : 'text-loss'}`}>
-                  {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                <div>
+                  <label className="text-xs text-muted-foreground">Notes</label>
+                  <textarea
+                    value={editValues.notes}
+                    onChange={e => setEditValues(v => ({ ...v, notes: e.target.value }))}
+                    rows={3}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveAsset}
+                    className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="view"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="relative"
+              >
+                <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-2 font-medium">
+                  {asset.location?.name} · {asset.asset_type}
                 </p>
-              )}
-            </>
-          )}
-        </div>
+                <h2 className="font-syne text-2xl font-bold tracking-tight">{asset.name}</h2>
+                {asset.ownership && (
+                  <Badge variant="secondary" className="mt-2">{asset.ownership}</Badge>
+                )}
+
+                <div className={asset.ownership ? 'mt-4' : 'mt-3'}>
+                  {noPriceData ? (
+                    <>
+                      <p className="text-3xl font-bold text-muted-foreground">—</p>
+                      <p className="text-sm text-muted-foreground mt-1">Price pending</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-3xl font-bold tabular-nums font-syne">
+                        {fmt(value)}
+                        {isStock && (
+                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} sh</span>
+                        )}
+                      </p>
+                      {isStock && (
+                        <p className={`text-base mt-1 tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+                          {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
         {/* Stock activity */}
         {isStock && hasStockActivity && (
-          <section className="border-t border-border pt-4 space-y-3">
-            <div>
-              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Stock Activity</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-2xl p-5">
+            <div className="mb-3">
+              <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">Stock Activity</p>
+              <p className="text-xs text-muted-foreground mt-1">
                 {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
                 {stockGrantCount > 0 && (
                   <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>
@@ -359,14 +378,15 @@ export default function AssetDetail() {
               onEndGrant={handleEndGrant}
               onDeleteGrant={handleDeleteGrant}
             />
-          </section>
+          </motion.div>
         )}
 
         {/* Notes (read mode only) */}
         {!editing && asset.notes && (
-          <div className="border-t border-border pt-4">
-            <p className="text-muted-foreground text-sm">{asset.notes}</p>
-          </div>
+          <motion.div {...revealUp(0.1)} className="bg-card shadow-card rounded-2xl p-5">
+            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-2 font-medium">Notes</p>
+            <p className="text-foreground/90 text-sm whitespace-pre-wrap">{asset.notes}</p>
+          </motion.div>
         )}
 
       </motion.main>

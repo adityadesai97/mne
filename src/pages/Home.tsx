@@ -14,6 +14,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MiniSparkline, RingStat } from '@/components/MiniSparkline'
+import { revealUp } from '@/lib/motionPresets'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -83,30 +84,6 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
     })
     return () => controls.stop()
   }, [target])
-}
-
-// Scroll-triggered reveal instead of animate-on-mount: above-the-fold cards
-// still animate in immediately (they're in the viewport as soon as the page
-// paints), but content further down the page — the stats row on mobile,
-// where the 3-column grid stacks to one column — animates in as the user
-// scrolls to it instead of firing (invisibly, off-screen) all at once on
-// mount. `once: true` means it never re-triggers on scroll-back, so it
-// can't get stuck re-animating.
-//
-// whileInView needs IntersectionObserver. Every evergreen browser has had it
-// for years, but falling back to a plain animate-on-mount rather than
-// assuming it's always there costs nothing and means an unsupported/odd
-// environment degrades to "no scroll reveal" instead of a crash.
-const supportsInView = typeof window !== 'undefined' && 'IntersectionObserver' in window
-
-const revealUp = (delay = 0) => {
-  const base = {
-    initial: { opacity: 0, y: 14 },
-    transition: { delay, duration: 0.35, ease: [0.25, 0.1, 0.25, 1] as const },
-  }
-  return supportsInView
-    ? { ...base, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '0px 0px -60px 0px' } }
-    : { ...base, animate: { opacity: 1, y: 0 } }
 }
 
 export default function Home() {
