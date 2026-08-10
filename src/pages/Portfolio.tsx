@@ -134,9 +134,9 @@ function PortfolioSkeleton() {
         <Skeleton className="h-7 w-20 rounded-full" />
         <Skeleton className="h-7 w-16 rounded-full" />
       </div>
-      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[148px] w-full rounded-xl" />
+      <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="aspect-square w-full rounded-2xl" />
         ))}
       </div>
     </div>
@@ -330,7 +330,7 @@ export default function Portfolio() {
         in on mount/filter via its own initial/animate; it just doesn't get
         an exit animation when filtered out.
       */}
-      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {displayed.map((a, i) => (
           <PositionCard key={a.id} asset={a} index={i} />
         ))}
