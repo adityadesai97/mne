@@ -1,7 +1,7 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb, RefreshCw } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
@@ -101,6 +101,7 @@ export default function Home() {
   const [lastVisitDelta, setLastVisitDelta] = useState<number | null>(null)
   const [insightIndex, setInsightIndex] = useState(0)
   const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
   const heroRef = useRef<HTMLParagraphElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
 
@@ -177,6 +178,19 @@ export default function Home() {
   }, [assets])
 
   const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
+
+  // Explicit click-to-refresh — pull-to-refresh only fires on touch input, so
+  // desktop/mouse users would otherwise have no way to force a price refresh
+  // and just have to wait for the hourly check-prices cron.
+  const handleManualRefresh = useCallback(async () => {
+    if (isRefreshingPrices) return
+    setIsRefreshingPrices(true)
+    try {
+      await handleRefresh()
+    } finally {
+      setIsRefreshingPrices(false)
+    }
+  }, [handleRefresh, isRefreshingPrices])
 
   const totalValue = computeTotalNetWorth(assets)
 
@@ -521,7 +535,17 @@ export default function Home() {
           {(lastVisitDelta === null || Math.abs(lastVisitDelta) < 1) && <div className="mb-4" />}
 
           {/* Chart range selector */}
-          <div className="flex items-center justify-end mb-1.5 relative">
+          <div className="flex items-center justify-end gap-1.5 mb-1.5 relative">
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={isRefreshingPrices}
+              title="Refresh prices"
+              aria-label="Refresh prices"
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground hover:text-foreground disabled:opacity-60 transition-colors"
+            >
+              <RefreshCw size={11} className={isRefreshingPrices ? 'animate-spin' : ''} />
+            </button>
             <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
               {HOME_CHART_RANGES.map((r) => (
                 <button
