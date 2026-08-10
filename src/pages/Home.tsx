@@ -6,7 +6,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
-import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue } from '@/lib/portfolio'
+import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -100,6 +100,7 @@ export default function Home() {
   )
   const [lastVisitDelta, setLastVisitDelta] = useState<number | null>(null)
   const [insightIndex, setInsightIndex] = useState(0)
+  const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
   const heroRef = useRef<HTMLParagraphElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
 
@@ -339,6 +340,32 @@ export default function Home() {
     .map(([name, value]) => ({ name, value, pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
     .sort((a, b) => b.value - a.value)
   const uniqueAssetTypes = typeEntries.length
+
+  // Daily movers — today's price move per stock position, from each
+  // ticker's last-refreshed quote (current_price vs previous_close), not
+  // the net worth snapshot series. Positions without a previous_close yet
+  // (never refreshed since this field was added) are excluded rather than
+  // shown as a false 0% move.
+  const dailyMovers = useMemo(() => {
+    return stockAssets
+      .map((a) => {
+        const change = computeDailyChange(a)
+        if (!change) return null
+        return {
+          id: a.id,
+          symbol: a.ticker?.symbol ?? a.name,
+          name: a.name,
+          dollarChange: change.dollarChange,
+          percentChange: change.percentChange,
+        }
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null)
+  }, [stockAssets])
+
+  const sortedMovers = useMemo(() => {
+    const key = moverSort === 'percent' ? 'percentChange' : 'dollarChange'
+    return [...dailyMovers].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 5)
+  }, [dailyMovers, moverSort])
 
   // Today's change, from the tail of the net worth series — drives the
   // ambient glow's color. Neutral (brand) glow until there's at least two
@@ -603,6 +630,70 @@ export default function Home() {
           )}
         </motion.div>
       </div>
+
+      {/* DAILY MOVERS */}
+      {dailyMovers.length > 0 && (
+        <motion.div
+          {...revealUp(0.08)}
+          className="bg-card shadow-card rounded-2xl p-5 md:p-6"
+        >
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">
+              Daily Movers
+            </p>
+            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setMoverSort('percent')}
+                className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                  moverSort === 'percent' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                By %
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoverSort('value')}
+                className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                  moverSort === 'value' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                By Value
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+            {sortedMovers.map((mover, i) => {
+              const isGain = mover.dollarChange >= 0
+              return (
+                <motion.div
+                  key={mover.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.05 * i, duration: 0.3 }}
+                  className="rounded-xl bg-muted/40 p-3"
+                >
+                  <div className="flex items-center gap-1 mb-1.5">
+                    {isGain
+                      ? <TrendingUp size={11} className="text-gain flex-shrink-0" />
+                      : <TrendingDown size={11} className="text-loss flex-shrink-0" />}
+                    <p className="text-xs font-semibold truncate">{mover.symbol}</p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate mb-1.5">{mover.name}</p>
+                  <p className={`text-sm font-bold tabular-nums font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
+                    {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
+                  </p>
+                  <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+                    {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
+                  </p>
+                </motion.div>
+              )
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* STATS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

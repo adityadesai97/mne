@@ -39,10 +39,12 @@ export async function upsertTicker(ticker: Record<string, unknown>) {
   return data
 }
 
-export async function updateTickerPrice(symbol: string, price: number) {
+export async function updateTickerPrice(symbol: string, price: number, previousClose?: number | null) {
+  const update: Record<string, unknown> = { current_price: price, last_updated: new Date().toISOString().split('T')[0] }
+  if (previousClose != null) update.previous_close = previousClose
   const { error } = await getSupabaseClient()
     .from('tickers')
-    .update({ current_price: price, last_updated: new Date().toISOString().split('T')[0] })
+    .update(update)
     .eq('symbol', symbol)
   if (error) throw error
 }
@@ -55,7 +57,8 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
       const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker.symbol}&token=${finnhubApiKey}`)
       const quote = await res.json()
       if (quote.c && Number.isFinite(Number(quote.c))) {
-        await updateTickerPrice(ticker.symbol, Number(quote.c))
+        const previousClose = Number.isFinite(Number(quote.pc)) ? Number(quote.pc) : null
+        await updateTickerPrice(ticker.symbol, Number(quote.c), previousClose)
       }
     } catch { /* best-effort per ticker */ }
   }))
