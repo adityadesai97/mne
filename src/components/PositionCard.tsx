@@ -71,7 +71,12 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
         whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
       >
         <Link to={`/portfolio/${asset.id}`} className="block">
-          <Card>
+          {/* Same type-colored accent + rounded surface language as the grid
+              tile (there it's a top bar; here, rotated to a left bar so it
+              reads the same way in a row) — so switching layouts doesn't
+              feel like switching themes. */}
+          <Card className="relative overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} aria-hidden="true" />
             <CardContent className="p-3.5">
               <div className="flex gap-3 items-center">
                 <AssetIcon asset={asset} />
@@ -89,14 +94,14 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
                         </>
                       ) : (
                         <>
-                          <p className="font-medium tabular-nums">{fmt(value)}</p>
+                          <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
                           <p className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
                             {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
                           </p>
                         </>
                       )
                     ) : (
-                      <p className="font-medium tabular-nums">{fmt(value)}</p>
+                      <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
                     )}
                   </div>
                   <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />

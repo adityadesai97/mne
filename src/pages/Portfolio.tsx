@@ -1,10 +1,10 @@
 // src/pages/Portfolio.tsx
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
-import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, LayoutGrid, List, Boxes } from 'lucide-react'
+import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, LayoutGrid, List, Boxes, ChevronDown } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -12,7 +12,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { computeAssetValue, computeUnrealizedGain, computeTotalNetWorth } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeTotalNetWorth } from '@/lib/portfolio'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 
@@ -49,6 +49,91 @@ const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] 
   { v: 'value', label: 'Value', icon: ArrowDownWideNarrow },
   { v: 'gain', label: 'Gain', icon: TrendingUpDown },
 ]
+
+/**
+ * Shared dropdown for both the sort and layout controls — a single button
+ * showing the current selection (icon + label) that opens a small menu of
+ * the other options. Replaces the earlier segmented-toggle button groups,
+ * which took up more header width the more options they had.
+ */
+function OptionDropdown<T extends string>({
+  value, options, onChange, ariaLabel,
+}: {
+  value: T
+  options: { v: T; label: string; icon: React.ElementType }[]
+  onChange: (v: T) => void
+  ariaLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = options.find((o) => o.v === value) ?? options[0]
+
+  useEffect(() => {
+    if (!open) return
+    function onDocPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDocPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-muted/60 text-foreground hover:bg-muted/90 transition-colors"
+      >
+        <current.icon size={12} />
+        <span className="hidden sm:inline">{current.label}</span>
+        <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.1 } }}
+            transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
+            role="listbox"
+            aria-label={ariaLabel}
+            className="absolute right-0 top-full mt-1.5 z-20 min-w-[9.5rem] rounded-xl border border-border bg-card shadow-lg p-1 origin-top-right"
+          >
+            {options.map(({ v, label, icon: Icon }) => {
+              const isActive = v === value
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  onClick={() => { onChange(v); setOpen(false) }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+                    isActive ? 'bg-brand-subtle text-primary' : 'text-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  <Icon size={13} />
+                  {label}
+                </button>
+              )
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
 
 function PortfolioSkeleton() {
   return (
@@ -167,37 +252,65 @@ export default function Portfolio() {
     return result
   }, [assets, search, activeType, sort])
 
-  const treemapOption = useMemo<EChartsOption>(() => ({
-    backgroundColor: 'transparent',
-    tooltip: {
-      backgroundColor: TOOLTIP_BG,
-      borderColor: 'rgba(255,255,255,0.08)',
-      borderWidth: 1,
-      textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
-      formatter: (params: unknown) => {
-        const p = params as { name: string; value: number }
-        return `${p.name}<br/>${fmtCurrency(p.value)}`
+  const treemapOption = useMemo<EChartsOption>(() => {
+    // Same accent-color-per-type language as the grid's top bar and the
+    // list's left bar, plus the same gain/loss and "of portfolio" figures
+    // those two views show directly — here surfaced in the tooltip, since a
+    // treemap box has no room to print them. Zero-value positions (no price
+    // data yet) are excluded rather than rendered as an invisible sliver.
+    const nodes = displayed
+      .map((a, i) => ({ a, i, value: computeAssetValue(a), gain: computeUnrealizedGain(a) }))
+      .filter(({ value }) => value > 0)
+
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        backgroundColor: TOOLTIP_BG,
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
+        extraCssText: 'border-radius: 10px; padding: 8px 10px;',
+        formatter: (params: unknown) => {
+          const p = params as { name: string; value: number; data: { gain: number; gainPct: number; sharePct: number; isStock: boolean } }
+          const { gain, gainPct, sharePct, isStock } = p.data
+          const isGain = gain >= 0
+          const gainLine = isStock
+            ? `<br/><span style="color:${isGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'}">${isGain ? '+' : ''}${fmtCurrency(gain)} (${gainPct.toFixed(1)}%)</span>`
+            : ''
+          return `<strong>${p.name}</strong><br/>${fmtCurrency(p.value)}${gainLine}<br/><span style="opacity:0.7">${sharePct.toFixed(1)}% of portfolio</span>`
+        },
       },
-    },
-    series: [
-      {
-        type: 'treemap',
-        data: displayed.map((a, i) => ({
-          name: a.name,
-          value: computeAssetValue(a),
-          assetId: a.id,
-          itemStyle: { color: colorForAssetType(a.asset_type, i) },
-        })),
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
-        label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600 },
-        upperLabel: { show: false },
-        itemStyle: { borderColor: TOOLTIP_BG, borderWidth: 2, gapWidth: 2 },
-        emphasis: { itemStyle: { borderColor: 'hsl(215,20%,96%)' } },
-      },
-    ],
-  }), [displayed])
+      series: [
+        {
+          type: 'treemap',
+          data: nodes.map(({ a, i, value, gain }) => {
+            const cost = computeCostBasis(a)
+            const gainPct = cost > 0 ? (gain / cost) * 100 : 0
+            const sharePct = portfolioTotal > 0 ? (value / portfolioTotal) * 100 : 0
+            return {
+              name: a.name,
+              value,
+              assetId: a.id,
+              gain,
+              gainPct,
+              sharePct,
+              isStock: a.asset_type === 'Stock',
+              itemStyle: { color: colorForAssetType(a.asset_type, i) },
+            }
+          }),
+          roam: false,
+          nodeClick: false,
+          breadcrumb: { show: false },
+          label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600 },
+          upperLabel: { show: false },
+          // gapWidth mirrors the grid's gap-3 between cards; borderRadius
+          // matches the rounded-2xl card language used everywhere else.
+          itemStyle: { borderColor: 'hsl(var(--background))', borderWidth: 3, gapWidth: 3, borderRadius: 8 },
+          emphasis: { itemStyle: { borderColor: 'hsl(215,20%,96%)' } },
+        },
+      ],
+    }
+  }, [displayed, portfolioTotal])
 
   const handleTreemapClick = useCallback((params: any) => {
     if (params?.data?.assetId) navigate(`/portfolio/${params.data.assetId}`)
@@ -243,64 +356,8 @@ export default function Portfolio() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <LayoutGroup id="layout-mode">
-            <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
-              {LAYOUT_OPTIONS.map(({ v, label, icon: Icon }) => {
-                const isActive = layoutMode === v
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setLayoutMode(v)}
-                    aria-pressed={isActive}
-                    title={`${label} layout`}
-                    aria-label={`${label} layout`}
-                    className={`relative flex items-center px-2 py-1 rounded-md transition-colors ${
-                      isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="layout-mode-pill"
-                        className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
-                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                      />
-                    )}
-                    <Icon size={13} />
-                  </button>
-                )
-              })}
-            </div>
-          </LayoutGroup>
-          <LayoutGroup id="sort">
-            <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
-              {SORT_OPTIONS.map(({ v, label, icon: Icon }) => {
-                const isActive = sort === v
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setSort(v)}
-                    aria-pressed={isActive}
-                    title={`Sort by ${label}`}
-                    className={`relative flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
-                      isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="sort-pill"
-                        className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
-                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                      />
-                    )}
-                    <Icon size={12} />
-                    <span className="hidden sm:inline">{label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </LayoutGroup>
+          <OptionDropdown value={layoutMode} options={LAYOUT_OPTIONS} onChange={setLayoutMode} ariaLabel="Layout" />
+          <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
         </div>
       </div>
 
