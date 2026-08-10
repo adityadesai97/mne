@@ -2,7 +2,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
-import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChevronRight } from 'lucide-react'
+import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 
 function AssetIcon({ asset }: { asset: any }) {
@@ -39,13 +39,8 @@ function AssetIcon({ asset }: { asset: any }) {
   )
 }
 
-/**
- * A position in the Portfolio view. Two layouts share the same underlying
- * figures: `'grid'` (default) is a tile; `'list'` is a compact row for when
- * the grid's per-card chrome feels like too much at a glance across many
- * positions — same figures, lower chrome.
- */
-export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
+/** A position tile in the Portfolio grid. */
+export function PositionCard({ asset, index = 0 }: { asset: any; index?: number }) {
   const isStock = asset.asset_type === 'Stock'
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -54,99 +49,6 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
-
-  if (layout === 'list') {
-    return (
-      <motion.div
-        className="mx-4 mb-2"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02, ease: [0.25, 0.1, 0.25, 1] as const }}
-        whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
-      >
-        <Link to={`/portfolio/${asset.id}`} className="block">
-          {/* A hover tint gives rows the same "this is clickable" affordance
-              a tile gets from lifting on hover, without the lift itself
-              reading oddly on something this thin. */}
-          <Card className="hover:bg-muted/40">
-            <CardContent className="p-3.5">
-              <div className="flex gap-3 items-center">
-                <AssetIcon asset={asset} />
-                <div className="flex-1 text-left min-w-0">
-                  <p className="font-medium truncate">{asset.name}</p>
-                  <p className="text-muted-foreground text-xs truncate">
-                    {/* Share count comes from owned lots, not the quote, so it's
-                        worth printing even while the price itself is pending. */}
-                    {asset.location?.name} · {asset.asset_type}{isStock ? ` · ${fmtShares(shareCount)} sh` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <div className="text-right">
-                    {isStock ? (
-                      noPriceData ? (
-                        <>
-                          <p className="font-semibold text-lg text-muted-foreground">—</p>
-                          <p className="text-xs text-muted-foreground">Price pending</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
-                          <p className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`} title={`Cost basis ${fmt(basis)}`}>
-                            {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
-                          </p>
-                        </>
-                      )
-                    ) : (
-                      <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
-                    )}
-                  </div>
-                  <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </motion.div>
-    )
-  }
-
-  const cardInner = (
-    <CardContent className="p-4 flex flex-col h-full">
-      <div className="flex gap-3 items-start">
-        <AssetIcon asset={asset} />
-        <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{asset.name}</p>
-          <p className="text-muted-foreground text-xs truncate">{asset.location?.name} · {asset.asset_type}</p>
-        </div>
-      </div>
-
-      <div className="mt-3.5 flex-1">
-        {isStock ? (
-          noPriceData ? (
-            <>
-              {/* Same text-lg/leading-tight rhythm as the priced state below,
-                  so a card waiting on a quote doesn't sit shorter than its
-                  neighbors in the same grid row. */}
-              <p className="font-semibold text-lg font-syne leading-tight text-muted-foreground">—</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Price pending</p>
-            </>
-          ) : (
-            <>
-              <p className="font-semibold text-lg font-syne tabular-nums leading-tight">{fmt(value)}</p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-xs text-muted-foreground tabular-nums">{fmtShares(shareCount)} sh</span>
-                <span className={`text-xs tabular-nums font-medium ${isGain ? 'text-gain' : 'text-loss'}`} title={`Cost basis ${fmt(basis)}`}>
-                  {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
-                </span>
-              </div>
-            </>
-          )
-        ) : (
-          <p className="font-semibold text-lg font-syne tabular-nums leading-tight">{fmt(value)}</p>
-        )}
-      </div>
-    </CardContent>
-  )
 
   return (
     <motion.div
@@ -159,7 +61,41 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
     >
       <Link to={`/portfolio/${asset.id}`} className="block h-full">
         <Card className="h-full">
-          {cardInner}
+          <CardContent className="p-4 flex flex-col h-full">
+            <div className="flex gap-3 items-start">
+              <AssetIcon asset={asset} />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{asset.name}</p>
+                <p className="text-muted-foreground text-xs truncate">{asset.location?.name} · {asset.asset_type}</p>
+              </div>
+            </div>
+
+            <div className="mt-3.5 flex-1">
+              {isStock ? (
+                noPriceData ? (
+                  <>
+                    {/* Same text-lg/leading-tight rhythm as the priced state below,
+                        so a card waiting on a quote doesn't sit shorter than its
+                        neighbors in the same grid row. */}
+                    <p className="font-semibold text-lg font-syne leading-tight text-muted-foreground">—</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Price pending</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold text-lg font-syne tabular-nums leading-tight">{fmt(value)}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs text-muted-foreground tabular-nums">{fmtShares(shareCount)} sh</span>
+                      <span className={`text-xs tabular-nums font-medium ${isGain ? 'text-gain' : 'text-loss'}`} title={`Cost basis ${fmt(basis)}`}>
+                        {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                      </span>
+                    </div>
+                  </>
+                )
+              ) : (
+                <p className="font-semibold text-lg font-syne tabular-nums leading-tight">{fmt(value)}</p>
+              )}
+            </div>
+          </CardContent>
         </Card>
       </Link>
     </motion.div>

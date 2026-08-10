@@ -1,10 +1,7 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import ReactECharts from 'echarts-for-react'
-import type { EChartsOption } from 'echarts'
-import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, LayoutGrid, List, Boxes, ChevronDown } from 'lucide-react'
+import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -12,24 +9,10 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeTotalNetWorth } from '@/lib/portfolio'
-import { colorForAssetType } from '@/lib/typeColors'
+import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
-const PORTFOLIO_LAYOUT_KEY = 'mne_portfolio_layout'
-const TOOLTIP_BG = 'hsl(224,13%,9%)'
-
-type LayoutMode = 'grid' | 'list' | 'treemap'
-const LAYOUT_OPTIONS: { v: LayoutMode; label: string; icon: React.ElementType }[] = [
-  { v: 'grid', label: 'Grid', icon: LayoutGrid },
-  { v: 'list', label: 'List', icon: List },
-  { v: 'treemap', label: 'Treemap', icon: Boxes },
-]
-
-function fmtCurrency(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
-}
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -51,10 +34,11 @@ const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] 
 ]
 
 /**
- * Shared dropdown for both the sort and layout controls — a single button
- * showing the current selection (icon + label) that opens a small menu of
- * the other options. Replaces the earlier segmented-toggle button groups,
- * which took up more header width the more options they had.
+ * Dropdown for the sort control — a single button showing the current
+ * selection (icon + label) that opens a small menu of the other options.
+ * Kept generic (rather than inlined into the sort control specifically)
+ * since it started life shared with a since-removed layout picker and may
+ * end up backing another option control again.
  */
 function OptionDropdown<T extends string>({
   value, options, onChange, ariaLabel,
@@ -160,7 +144,6 @@ function PortfolioSkeleton() {
 }
 
 export default function Portfolio() {
-  const navigate = useNavigate()
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [search, setSearch] = useState('')
@@ -170,17 +153,6 @@ export default function Portfolio() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
-  // Grid is visually rich (accent bars, allocation footers) — with a large
-  // portfolio that reads as "busy". List and Treemap are lower-chrome
-  // alternatives for the same data; preference persists across visits.
-  const [layoutMode, setLayoutModeState] = useState<LayoutMode>(
-    () => (localStorage.getItem(PORTFOLIO_LAYOUT_KEY) as LayoutMode | null) ?? 'grid'
-  )
-
-  function setLayoutMode(mode: LayoutMode) {
-    localStorage.setItem(PORTFOLIO_LAYOUT_KEY, mode)
-    setLayoutModeState(mode)
-  }
 
   useEffect(() => {
     getAllAssets()
@@ -222,18 +194,6 @@ export default function Portfolio() {
 
   const chips = ['All', ...assetTypes]
 
-  const portfolioTotal = useMemo(() => computeTotalNetWorth(assets), [assets])
-
-  // The Name/Value/Gain picker only changes anything meaningful in List —
-  // that's the one layout where row order is the whole story. Grid is a
-  // wall of same-size tiles where "largest first" is the only ordering
-  // that reads as intentional rather than arbitrary, and Treemap already
-  // determines box size (and therefore visual order) from value, so
-  // sorting it by name/gain would fight its own layout. So: List honors
-  // whatever the user picked; Grid and Treemap always order by value,
-  // regardless of what the (hidden, in those modes) sort control last held.
-  const effectiveSort: SortOption = layoutMode === 'list' ? sort : 'value'
-
   const displayed = useMemo(() => {
     let result = assets
 
@@ -247,116 +207,20 @@ export default function Portfolio() {
     }
 
     result = [...result].sort((a, b) => {
-      if (effectiveSort === 'name') {
+      if (sort === 'name') {
         return (a.name ?? '').localeCompare(b.name ?? '')
       }
-      if (effectiveSort === 'value') {
+      if (sort === 'value') {
         return computeAssetValue(b) - computeAssetValue(a)
       }
-      if (effectiveSort === 'gain') {
+      if (sort === 'gain') {
         return computeUnrealizedGain(b) - computeUnrealizedGain(a)
       }
       return 0
     })
 
     return result
-  }, [assets, search, activeType, effectiveSort])
-
-  const treemapOption = useMemo<EChartsOption>(() => {
-    // Same accent-color-per-type language as the grid's top bar and the
-    // list's left bar, plus the same gain/loss figures those two views show
-    // directly — printed in-box below via the label formatter, with "of
-    // portfolio" (a figure the box's own size already communicates
-    // visually) reserved for the tooltip. Zero-value positions (no price
-    // data yet) are excluded rather than rendered as an invisible sliver.
-    const nodes = displayed
-      .map((a, i) => ({ a, i, value: computeAssetValue(a), gain: computeUnrealizedGain(a) }))
-      .filter(({ value }) => value > 0)
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        backgroundColor: TOOLTIP_BG,
-        borderColor: 'rgba(255,255,255,0.08)',
-        borderWidth: 1,
-        textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
-        extraCssText: 'border-radius: 10px; padding: 8px 10px;',
-        formatter: (params: unknown) => {
-          const p = params as { name: string; value: number; data: { gain: number; gainPct: number; sharePct: number; isStock: boolean } }
-          const { gain, gainPct, sharePct, isStock } = p.data
-          const isGain = gain >= 0
-          const gainLine = isStock
-            ? `<br/><span style="color:${isGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'}">${isGain ? '+' : ''}${fmtCurrency(gain)} (${gainPct.toFixed(1)}%)</span>`
-            : ''
-          return `<strong>${p.name}</strong><br/>${fmtCurrency(p.value)}${gainLine}<br/><span style="opacity:0.7">${sharePct.toFixed(1)}% of portfolio</span>`
-        },
-      },
-      series: [
-        {
-          type: 'treemap',
-          data: nodes.map(({ a, i, value, gain }) => {
-            const cost = computeCostBasis(a)
-            const gainPct = cost > 0 ? (gain / cost) * 100 : 0
-            const sharePct = portfolioTotal > 0 ? (value / portfolioTotal) * 100 : 0
-            return {
-              name: a.name,
-              value,
-              assetId: a.id,
-              gain,
-              gainPct,
-              sharePct,
-              isStock: a.asset_type === 'Stock',
-              itemStyle: { color: colorForAssetType(a.asset_type, i) },
-            }
-          }),
-          roam: false,
-          nodeClick: false,
-          breadcrumb: { show: false },
-          // Boxes are big enough on most positions to carry the same figures
-          // Grid and List print directly (value, and gain% for stocks) —
-          // printing them here too means the tooltip is a hover nicety, not
-          // the only way to read a box. Anchored top-left (vs. centered) so
-          // it reads like a card header even on wide, short boxes; overflow
-          // is truncated rather than spilling past a small box's edge, and
-          // boxes too small to hold a line of text just drop it (ECharts'
-          // default behavior) rather than overlapping neighbors.
-          label: {
-            show: true,
-            position: 'insideTopLeft',
-            padding: 8,
-            overflow: 'truncate',
-            textShadowColor: 'rgba(0,0,0,0.35)',
-            textShadowBlur: 3,
-            rich: {
-              name: { fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 16 },
-              value: { fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.85)', lineHeight: 15 },
-              gain: { fontSize: 11, fontWeight: 600, color: 'hsl(var(--gain))', lineHeight: 15 },
-              loss: { fontSize: 11, fontWeight: 600, color: 'hsl(var(--loss))', lineHeight: 15 },
-            },
-            formatter: (params: unknown) => {
-              const p = params as { name: string; data: { value: number; gain: number; gainPct: number; isStock: boolean } }
-              const { value, gain, gainPct, isStock } = p.data
-              const lines = [`{name|${p.name}}`, `{value|${fmtCurrency(value)}}`]
-              if (isStock) {
-                const isGain = gain >= 0
-                lines.push(`{${isGain ? 'gain' : 'loss'}|${isGain ? '+' : ''}${gainPct.toFixed(1)}%}`)
-              }
-              return lines.join('\n')
-            },
-          },
-          upperLabel: { show: false },
-          // gapWidth mirrors the grid's gap-3 between cards; borderRadius
-          // matches the rounded-2xl card language used everywhere else.
-          itemStyle: { borderColor: 'hsl(var(--background))', borderWidth: 3, gapWidth: 3, borderRadius: 8 },
-          emphasis: { itemStyle: { borderColor: 'hsl(215,20%,96%)' } },
-        },
-      ],
-    }
-  }, [displayed, portfolioTotal])
-
-  const handleTreemapClick = useCallback((params: any) => {
-    if (params?.data?.assetId) navigate(`/portfolio/${params.data.assetId}`)
-  }, [navigate])
+  }, [assets, search, activeType, sort])
 
   if (!assetsLoaded) {
     return <PortfolioSkeleton />
@@ -398,10 +262,7 @@ export default function Portfolio() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <OptionDropdown value={layoutMode} options={LAYOUT_OPTIONS} onChange={setLayoutMode} ariaLabel="Layout" />
-          {layoutMode === 'list' && (
-            <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
-          )}
+          <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
         </div>
       </div>
 
@@ -460,7 +321,7 @@ export default function Portfolio() {
 
       {/*
         No AnimatePresence here: this view re-renders on every keystroke
-        (search) and filter/sort/layout change, nested inside AppLayout's
+        (search) and filter/sort change, nested inside AppLayout's
         route-transition AnimatePresence. That combination — an inner
         AnimatePresence whose exit-tracking doesn't reliably resolve before
         the outer one tries to unmount the whole page — is what caused the
@@ -468,38 +329,12 @@ export default function Portfolio() {
         page's content invisible until a reload. PositionCard still fades
         in on mount/filter via its own initial/animate; it just doesn't get
         an exit animation when filtered out.
-
-        Three layouts over the same data: Grid is a "wall" of tiles (richest,
-        can feel busy with many positions); List is one calm compact row per
-        position; Treemap sizes each position by its share of the portfolio.
       */}
-      {layoutMode === 'grid' && (
-        <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {displayed.map((a, i) => (
-            <PositionCard key={a.id} asset={a} index={i} />
-          ))}
-        </div>
-      )}
-
-      {layoutMode === 'list' && (
-        <div>
-          {displayed.map((a, i) => (
-            <PositionCard key={a.id} asset={a} index={i} layout="list" />
-          ))}
-        </div>
-      )}
-
-      {layoutMode === 'treemap' && displayed.length > 0 && (
-        <div className="px-4">
-          <ReactECharts
-            option={treemapOption}
-            style={{ width: '100%', height: isMobile ? 380 : 480 }}
-            notMerge
-            opts={{ renderer: 'svg' }}
-            onEvents={{ click: handleTreemapClick }}
-          />
-        </div>
-      )}
+      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {displayed.map((a, i) => (
+          <PositionCard key={a.id} asset={a} index={i} />
+        ))}
+      </div>
 
       {assets.length > 0 && displayed.length === 0 && (
         <motion.div
