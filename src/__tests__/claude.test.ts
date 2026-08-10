@@ -35,3 +35,10 @@ test('system prompt requires grant_date whenever shares are described as vested'
   expect(prompt).toContain('"vested"/"just vested"/"vesting"')
   expect(prompt).toContain('ask for all three together (FMV, vest date, and which grant/grant date)')
 })
+
+test('system prompt encourages markdown tables for structured data', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toContain('Prefer a markdown table over prose')
+  expect(prompt).toContain('---:')
+  expect(prompt).not.toContain('Do not output pipe-table syntax')
+})
