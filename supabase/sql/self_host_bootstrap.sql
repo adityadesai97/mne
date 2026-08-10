@@ -251,6 +251,21 @@ create table if not exists public.net_worth_snapshots (
 create unique index if not exists net_worth_snapshots_user_id_date_key
   on public.net_worth_snapshots (user_id, date);
 
+-- Feedback on individual command bar agent responses. Attachment is stored
+-- inline as base64 (small user-supplied files, e.g. a screenshot) rather
+-- than requiring a Supabase Storage bucket for self-hosters.
+create table if not exists public.command_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_query text,
+  agent_response text not null,
+  feedback_text text,
+  attachment_filename text,
+  attachment_mime_type text,
+  attachment_content text,
+  created_at timestamptz not null default now()
+);
+
 -- RLS
 alter table public.allowed_emails enable row level security;
 alter table public.admin_users enable row level security;
@@ -266,6 +281,7 @@ alter table public.rsu_grants enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
+alter table public.command_feedback enable row level security;
 
 drop policy if exists allowlist_self_read on public.allowed_emails;
 create policy allowlist_self_read
@@ -439,6 +455,14 @@ create policy own_push_subscriptions
 drop policy if exists own_net_worth_snapshots on public.net_worth_snapshots;
 create policy own_net_worth_snapshots
   on public.net_worth_snapshots
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_command_feedback on public.command_feedback;
+create policy own_command_feedback
+  on public.command_feedback
   for all
   to authenticated
   using (auth.uid() = user_id)

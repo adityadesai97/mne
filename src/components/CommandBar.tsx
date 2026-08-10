@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
-import { X, Paperclip, Sparkles, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Paperclip, Sparkles, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
-import { parseFileAttachment, type FileAttachment } from '@/lib/fileParser'
+import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
+import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
 import { showAppAlert } from '@/lib/appAlerts'
 
 function normalizeErrorMessage(message: string): string {
@@ -530,16 +531,26 @@ export function CommandBar({ open, onClose }: Props) {
                   </div>
                   <div ref={threadRef} className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 min-h-0">
                     <AnimatePresence initial={false}>
-                      {displayMessages.map(m => (
-                        <motion.div
-                          key={m.id}
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                        >
-                          <MessageBubble message={m} onDone={handleWriteDone} onClose={handleClose} />
-                        </motion.div>
-                      ))}
+                      {displayMessages.map((m, idx) => {
+                        // The nearest preceding user turn — passed along so feedback
+                        // on this reply carries the question that produced it.
+                        const precedingUserMessage = [...displayMessages.slice(0, idx)].reverse().find(pm => pm.role === 'user')
+                        return (
+                          <motion.div
+                            key={m.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                          >
+                            <MessageBubble
+                              message={m}
+                              onDone={handleWriteDone}
+                              onClose={handleClose}
+                              userQuery={precedingUserMessage?.role === 'user' ? precedingUserMessage.content : undefined}
+                            />
+                          </motion.div>
+                        )
+                      })}
                     </AnimatePresence>
                     <AnimatePresence>
                       {loading && (
@@ -780,8 +791,9 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   return <p className="p-4 text-sm text-destructive">{normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
 }
 
-function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; onDone: () => void; onClose: () => void }) {
+function MessageBubble({ message, onDone, onClose, userQuery }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string }) {
   const [showTrace, setShowTrace] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   if (message.role === 'user') {
     return (
@@ -802,8 +814,8 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
         </div>
         <div className="text-sm text-foreground max-w-[80%] space-y-2 bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-2.5">
           {renderAssistantMarkdown(message.content)}
-          {traceSteps.length > 0 && (
-            <div className="pt-1">
+          <div className="pt-1 flex items-center gap-3">
+            {traceSteps.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowTrace((prev) => !prev)}
@@ -811,22 +823,34 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
               >
                 {showTrace ? 'Hide trace' : 'Show trace'}
               </button>
-              {showTrace && (
-                <div className="mt-2 rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Agent Trace</p>
-                  {traceSteps.map((step, idx) => (
-                    <div key={`${idx}-${step.label}`} className="text-xs leading-relaxed">
-                      <p className="font-medium text-foreground">
-                        {idx + 1}. {step.label}
-                      </p>
-                      {step.detail && (
-                        <p className="text-muted-foreground">{step.detail}</p>
-                      )}
-                    </div>
-                  ))}
+            )}
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Give feedback on this response"
+            >
+              <MessageSquare size={11} aria-hidden="true" />
+              Feedback
+            </button>
+          </div>
+          {showTrace && traceSteps.length > 0 && (
+            <div className="rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-1.5">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Agent Trace</p>
+              {traceSteps.map((step, idx) => (
+                <div key={`${idx}-${step.label}`} className="text-xs leading-relaxed">
+                  <p className="font-medium text-foreground">
+                    {idx + 1}. {step.label}
+                  </p>
+                  {step.detail && (
+                    <p className="text-muted-foreground">{step.detail}</p>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
+          )}
+          {feedbackOpen && (
+            <FeedbackForm agentResponse={message.content} userQuery={userQuery} onDismiss={() => setFeedbackOpen(false)} />
           )}
         </div>
       </div>
@@ -837,6 +861,94 @@ function MessageBubble({ message, onDone, onClose }: { message: DisplayMessage; 
       <div className="w-full">
         <CommandResult action={message.action} onDone={onDone} onClose={onClose} />
       </div>
+    </div>
+  )
+}
+
+/** Inline feedback form for a single agent response — free text plus an
+ *  optional file attachment (e.g. a screenshot of the bad output), submitted
+ *  to `command_feedback` alongside the response text itself. */
+function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: string; userQuery?: string; onDismiss: () => void }) {
+  const [text, setText] = useState('')
+  const [attachment, setAttachment] = useState<CommandFeedbackAttachment | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  if (submitted) {
+    return <p className="text-xs text-gain">Thanks for the feedback ✓</p>
+  }
+
+  async function handleSubmit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await submitCommandFeedback({ userQuery, agentResponse, feedbackText: text.trim() || null, attachment })
+      setSubmitted(true)
+    } catch (e: any) {
+      setError(e.message || 'Failed to submit feedback')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-2">
+      <textarea
+        rows={2}
+        placeholder="What was wrong, or how could this be better?"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      {attachment && (
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Paperclip size={10} className="shrink-0" />
+          <span className="truncate max-w-[200px]">{attachment.filename}</span>
+          <button type="button" onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+            <X size={10} />
+          </button>
+        </div>
+      )}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+          title="Attach a file"
+        >
+          <Paperclip size={13} />
+        </button>
+        <button type="button" onClick={onDismiss} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={submitting || (!text.trim() && !attachment)}
+          onClick={handleSubmit}
+          className="ml-auto text-[11px] font-medium bg-primary text-primary-foreground rounded-md px-2.5 py-1 disabled:opacity-50"
+        >
+          {submitting ? 'Sending...' : 'Send'}
+        </button>
+      </div>
+      <input
+        type="file"
+        ref={fileRef}
+        className="hidden"
+        onChange={async e => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          try {
+            const parsed = await parseFeedbackAttachment(file)
+            setAttachment(parsed)
+          } catch (err: any) {
+            setError(err.message || 'Failed to read attachment')
+          }
+          e.target.value = ''
+        }}
+      />
     </div>
   )
 }
