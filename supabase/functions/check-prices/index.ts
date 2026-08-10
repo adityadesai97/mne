@@ -43,8 +43,11 @@ Deno.serve(async () => {
         })
       }
 
+      const update: Record<string, unknown> = { current_price: newPrice, last_updated: new Date().toISOString().split('T')[0] }
+      if (Number.isFinite(Number(quote.pc))) update.previous_close = Number(quote.pc)
+
       await supabase.from('tickers')
-        .update({ current_price: newPrice, last_updated: new Date().toISOString().split('T')[0] })
+        .update(update)
         .eq('id', ticker.id)
     }
   }
