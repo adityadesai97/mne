@@ -13,7 +13,7 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MiniSparkline, RingStat } from '@/components/MiniSparkline'
+import { MiniSparkline } from '@/components/MiniSparkline'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -81,9 +81,9 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
 // Shared eyebrow label (icon + uppercase caption) so every card on this page
 // uses the same icon-badge treatment, text scale, and tracking — some cards
 // previously had a leading icon and others didn't, which is what made the
-// grid feel inconsistent. Always used inside a `flex items-center
-// justify-between mb-3` wrapper so cards with trailing content (a RingStat,
-// a sort toggle) and cards without both get the same header spacing.
+// grid feel inconsistent. Always wrapped in a `mb-3` (or `flex ... mb-3` for
+// cards with trailing content, like the Daily Movers sort toggle) so every
+// card gets identical header-to-body spacing regardless of size.
 function CardEyebrow({ icon: Icon, className = 'text-muted-foreground', children }: { icon: typeof Sun; className?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-1.5 min-w-0">
@@ -431,23 +431,27 @@ export default function Home() {
   if (!assetsLoaded) {
     return (
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 md:p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          <div className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
             <Skeleton className="h-3 w-32" />
             <Skeleton className="h-11 w-56" />
             <Skeleton className="h-[130px] w-full rounded-xl" />
           </div>
-          <div className="bg-card shadow-card rounded-2xl p-5 md:p-6 space-y-4">
+          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
             <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-full" />
+          </div>
+          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
+            <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-full" />
           </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-xl" />
-          ))}
+          <div className="md:col-span-4 bg-card shadow-card rounded-2xl p-5">
+            <Skeleton className="h-3 w-24 mb-4" />
+            <Skeleton className="h-16 w-full rounded-xl" />
+          </div>
+          <Skeleton className="md:col-span-1 h-24 w-full rounded-2xl" />
+          <Skeleton className="md:col-span-1 h-24 w-full rounded-2xl" />
         </div>
       </div>
     )
@@ -495,13 +499,20 @@ export default function Home() {
         </p>
       </motion.div>
 
-      {/* TOP GRID: Net Worth Hero + Allocation */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* BENTO GRID — one shared 6-column grid (rather than three separate
+          stacked grids) so cards can be genuinely different sizes and not
+          line up row after row. Net Worth is a tall 4x2 tile; Allocation and
+          P&L stack in the remaining 2x2 area beside it; Daily Movers, Best
+          Performer, and Largest Holding split the row below unevenly
+          (4 + 1 + 1). Every card shares the same p-5 padding, rounded-2xl
+          corners, and hover lift regardless of its span. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
 
         {/* NET WORTH HERO */}
         <motion.div
           {...revealUp(0)}
-          className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 md:p-6 relative overflow-hidden"
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-2xl p-5 relative overflow-hidden"
         >
           {/* Ambient glow — neutral brand color until there's a day-over-day
               change to react to, then tints toward gain/loss color. */}
@@ -622,8 +633,9 @@ export default function Home() {
 
         {/* ALLOCATION */}
         <motion.div
-          {...revealUp(0.06)}
-          className="bg-card shadow-card rounded-2xl p-5 md:p-6"
+          {...revealUp(0.05)}
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="md:col-span-2 bg-card shadow-card rounded-2xl p-5"
         >
           <div className="mb-3">
             <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
@@ -660,13 +672,40 @@ export default function Home() {
             </div>
           )}
         </motion.div>
-      </div>
 
-      {/* DAILY MOVERS */}
-      {dailyMovers.length > 0 && (
+        {/* P&L — placed here (not in the row below) so it fills the 2x1 gap
+            beside Net Worth's second row instead of lining up with
+            Allocation directly above it. */}
         <motion.div
-          {...revealUp(0.08)}
-          className="bg-card shadow-card rounded-2xl p-5 md:p-6"
+          {...revealUp(0.1)}
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="relative bg-card shadow-card rounded-2xl p-5 overflow-hidden md:col-span-2"
+        >
+          {netWorthValues.length >= 2 && (
+            // Inset from the card's edge and rounded corner (rather than
+            // flush at 0,0) so the line's own peak/trough doesn't get
+            // clipped by the corner radius — it previously looked cut off.
+            <div className="absolute right-3 top-3 w-16 opacity-70 pointer-events-none">
+              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={20} />
+            </div>
+          )}
+          <div className="mb-3 relative">
+            <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
+          </div>
+          <p className={`relative text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+            {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
+          </p>
+          <p className={`relative text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+            {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
+          </p>
+        </motion.div>
+
+        {/* DAILY MOVERS */}
+        {dailyMovers.length > 0 && (
+        <motion.div
+          {...revealUp(0.13)}
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="md:col-span-4 bg-card shadow-card rounded-2xl p-5"
         >
           <div className="flex items-center justify-between gap-2 mb-3">
             <CardEyebrow icon={Activity}>Daily Movers</CardEyebrow>
@@ -692,7 +731,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
             {sortedMovers.map((mover, i) => {
               const isGain = mover.dollarChange >= 0
               return (
@@ -722,67 +761,49 @@ export default function Home() {
             })}
           </div>
         </motion.div>
-      )}
+        )}
 
-      {/* STATS ROW — an intentionally uneven "bento" grid rather than three
-          equal thirds: P&L carries the most information (sparkline + two
-          figures) so it gets double width from the sm breakpoint up, while
-          Best Performer and Largest Holding stay compact beside/below it. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-
-        <motion.div {...revealUp(0.1)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="relative bg-card shadow-card rounded-xl p-4 overflow-hidden sm:col-span-2">
-          {netWorthValues.length >= 2 && (
-            // Inset from the card's edge and rounded corner (rather than
-            // flush at 0,0) so the line's own peak/trough doesn't get
-            // clipped by the corner radius — it previously looked cut off.
-            <div className="absolute right-3 top-3 w-16 opacity-70 pointer-events-none">
-              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={20} />
-            </div>
-          )}
-          <div className="mb-3 relative">
-            <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
-          </div>
-          <p className={`relative text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
-            {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
-          </p>
-          <p className={`relative text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
-            {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
-          </p>
-        </motion.div>
-
-        <motion.div {...revealUp(0.13)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between gap-2 mb-3">
+        {/* BEST PERFORMER — no ring/infographic here: a percentage ring next
+            to a percentage in text was two representations of the same
+            fact. Just the two complementary numbers (dollar gain, then
+            percent), matching how P&L presents its figures. */}
+        <motion.div
+          {...revealUp(0.16)}
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="md:col-span-1 bg-card shadow-card rounded-2xl p-5"
+        >
+          <div className="mb-3">
             <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best Performer</CardEyebrow>
-            {bestAsset && (
-              <RingStat
-                pct={Math.abs(bestAssetGainPct)}
-                color={bestAssetGain >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'}
-                label="Gain"
-              />
-            )}
           </div>
           <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
-          {/* Dollar gain here, not the percent again — the ring above already
-              shows the percentage, so repeating it added nothing new. */}
           {bestAsset && (
-            <p className={`text-[10px] tabular-nums mt-0.5 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
               {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
+            </p>
+          )}
+          {bestAsset && (
+            <p className={`text-[10px] tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+              {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
             </p>
           )}
         </motion.div>
 
-        <motion.div {...revealUp(0.16)} whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }} className="bg-card shadow-card rounded-xl p-4">
-          <div className="flex items-center justify-between gap-2 mb-3">
+        {/* LARGEST HOLDING — same reasoning as Best Performer: one set of
+            numbers (dollar value, then share of portfolio), no ring. */}
+        <motion.div
+          {...revealUp(0.19)}
+          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
+          className="md:col-span-1 bg-card shadow-card rounded-2xl p-5"
+        >
+          <div className="mb-3">
             <CardEyebrow icon={Crown} className="text-primary">Largest Holding</CardEyebrow>
-            {largestAsset && (
-              <RingStat pct={largestPct} color="hsl(var(--primary))" label="Share" />
-            )}
           </div>
           <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
-          {/* Dollar value here only — the "% of portfolio" figure is already
-              the number printed inside the ring above. */}
           {largestAsset && (
-            <p className="text-[10px] tabular-nums text-muted-foreground mt-0.5">{fmtCurrency(largestValue)}</p>
+            <p className="text-lg font-bold tabular-nums font-syne mt-1">{fmtCurrency(largestValue)}</p>
+          )}
+          {largestAsset && (
+            <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
           )}
         </motion.div>
 

@@ -1,7 +1,10 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX } from 'lucide-react'
+import ReactECharts from 'echarts-for-react'
+import type { EChartsOption } from 'echarts'
+import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, LayoutGrid, List, Boxes } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -10,9 +13,23 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { computeAssetValue, computeUnrealizedGain, computeTotalNetWorth } from '@/lib/portfolio'
+import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
+const PORTFOLIO_LAYOUT_KEY = 'mne_portfolio_layout'
+const TOOLTIP_BG = 'hsl(224,13%,9%)'
+
+type LayoutMode = 'grid' | 'list' | 'treemap'
+const LAYOUT_OPTIONS: { v: LayoutMode; label: string; icon: React.ElementType }[] = [
+  { v: 'grid', label: 'Grid', icon: LayoutGrid },
+  { v: 'list', label: 'List', icon: List },
+  { v: 'treemap', label: 'Treemap', icon: Boxes },
+]
+
+function fmtCurrency(n: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+}
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -58,6 +75,7 @@ function PortfolioSkeleton() {
 }
 
 export default function Portfolio() {
+  const navigate = useNavigate()
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [search, setSearch] = useState('')
@@ -67,6 +85,17 @@ export default function Portfolio() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
+  // Grid is visually rich (accent bars, allocation footers) — with a large
+  // portfolio that reads as "busy". List and Treemap are lower-chrome
+  // alternatives for the same data; preference persists across visits.
+  const [layoutMode, setLayoutModeState] = useState<LayoutMode>(
+    () => (localStorage.getItem(PORTFOLIO_LAYOUT_KEY) as LayoutMode | null) ?? 'grid'
+  )
+
+  function setLayoutMode(mode: LayoutMode) {
+    localStorage.setItem(PORTFOLIO_LAYOUT_KEY, mode)
+    setLayoutModeState(mode)
+  }
 
   useEffect(() => {
     getAllAssets()
@@ -138,6 +167,42 @@ export default function Portfolio() {
     return result
   }, [assets, search, activeType, sort])
 
+  const treemapOption = useMemo<EChartsOption>(() => ({
+    backgroundColor: 'transparent',
+    tooltip: {
+      backgroundColor: TOOLTIP_BG,
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
+      formatter: (params: unknown) => {
+        const p = params as { name: string; value: number }
+        return `${p.name}<br/>${fmtCurrency(p.value)}`
+      },
+    },
+    series: [
+      {
+        type: 'treemap',
+        data: displayed.map((a, i) => ({
+          name: a.name,
+          value: computeAssetValue(a),
+          assetId: a.id,
+          itemStyle: { color: colorForAssetType(a.asset_type, i) },
+        })),
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600 },
+        upperLabel: { show: false },
+        itemStyle: { borderColor: TOOLTIP_BG, borderWidth: 2, gapWidth: 2 },
+        emphasis: { itemStyle: { borderColor: 'hsl(215,20%,96%)' } },
+      },
+    ],
+  }), [displayed])
+
+  const handleTreemapClick = useCallback((params: any) => {
+    if (params?.data?.assetId) navigate(`/portfolio/${params.data.assetId}`)
+  }, [navigate])
+
   if (!assetsLoaded) {
     return <PortfolioSkeleton />
   }
@@ -177,35 +242,66 @@ export default function Portfolio() {
             </p>
           )}
         </div>
-        <LayoutGroup id="sort">
-          <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
-            {SORT_OPTIONS.map(({ v, label, icon: Icon }) => {
-              const isActive = sort === v
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setSort(v)}
-                  aria-pressed={isActive}
-                  title={`Sort by ${label}`}
-                  className={`relative flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
-                    isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="sort-pill"
-                      className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
-                      transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                    />
-                  )}
-                  <Icon size={12} />
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-              )
-            })}
-          </div>
-        </LayoutGroup>
+        <div className="flex items-center gap-1.5">
+          <LayoutGroup id="layout-mode">
+            <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
+              {LAYOUT_OPTIONS.map(({ v, label, icon: Icon }) => {
+                const isActive = layoutMode === v
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setLayoutMode(v)}
+                    aria-pressed={isActive}
+                    title={`${label} layout`}
+                    aria-label={`${label} layout`}
+                    className={`relative flex items-center px-2 py-1 rounded-md transition-colors ${
+                      isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="layout-mode-pill"
+                        className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
+                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                      />
+                    )}
+                    <Icon size={13} />
+                  </button>
+                )
+              })}
+            </div>
+          </LayoutGroup>
+          <LayoutGroup id="sort">
+            <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-1">
+              {SORT_OPTIONS.map(({ v, label, icon: Icon }) => {
+                const isActive = sort === v
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setSort(v)}
+                    aria-pressed={isActive}
+                    title={`Sort by ${label}`}
+                    className={`relative flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors ${
+                      isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="sort-pill"
+                        className="absolute inset-0 bg-card rounded-md shadow-sm -z-10"
+                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                      />
+                    )}
+                    <Icon size={12} />
+                    <span className="hidden sm:inline">{label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </LayoutGroup>
+        </div>
       </div>
 
       <div className="px-4 mb-3">
@@ -262,8 +358,8 @@ export default function Portfolio() {
       </LayoutGroup>
 
       {/*
-        No AnimatePresence here: this grid re-renders on every keystroke
-        (search) and filter/sort change, nested inside AppLayout's
+        No AnimatePresence here: this view re-renders on every keystroke
+        (search) and filter/sort/layout change, nested inside AppLayout's
         route-transition AnimatePresence. That combination — an inner
         AnimatePresence whose exit-tracking doesn't reliably resolve before
         the outer one tries to unmount the whole page — is what caused the
@@ -272,14 +368,37 @@ export default function Portfolio() {
         in on mount/filter via its own initial/animate; it just doesn't get
         an exit animation when filtered out.
 
-        A multi-column grid (rather than one stacked column) reads as a
-        portfolio "wall" of tiles instead of a plain scrolling list.
+        Three layouts over the same data: Grid is a "wall" of tiles (richest,
+        can feel busy with many positions); List is one calm compact row per
+        position; Treemap sizes each position by its share of the portfolio.
       */}
-      <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {displayed.map((a, i) => (
-          <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} />
-        ))}
-      </div>
+      {layoutMode === 'grid' && (
+        <div className="px-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {displayed.map((a, i) => (
+            <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} />
+          ))}
+        </div>
+      )}
+
+      {layoutMode === 'list' && (
+        <div>
+          {displayed.map((a, i) => (
+            <PositionCard key={a.id} asset={a} index={i} portfolioTotal={portfolioTotal} layout="list" />
+          ))}
+        </div>
+      )}
+
+      {layoutMode === 'treemap' && displayed.length > 0 && (
+        <div className="px-4">
+          <ReactECharts
+            option={treemapOption}
+            style={{ width: '100%', height: isMobile ? 380 : 480 }}
+            notMerge
+            opts={{ renderer: 'svg' }}
+            onEvents={{ click: handleTreemapClick }}
+          />
+        </div>
+      )}
 
       {assets.length > 0 && displayed.length === 0 && (
         <motion.div
