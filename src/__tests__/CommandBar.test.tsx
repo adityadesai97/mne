@@ -51,3 +51,37 @@ test('renders a markdown table in the assistant reply with aligned, colored cell
 
   expect(document.querySelector('table')).toBeInTheDocument()
 })
+
+test('full screen toggle button expands and restores the panel', async () => {
+  const user = userEvent.setup()
+  render(<CommandBar open={true} onClose={() => {}} />)
+
+  const panel = screen.getByTestId('cmdk-panel')
+  expect(panel).toHaveAttribute('data-fullscreen', 'false')
+
+  const expandButton = screen.getByRole('button', { name: 'Full screen' })
+  await user.click(expandButton)
+
+  expect(panel).toHaveAttribute('data-fullscreen', 'true')
+  expect(panel.className).toMatch(/\bh-full\b/)
+  expect(panel.className).toMatch(/\bmax-w-none\b/)
+
+  const collapseButton = screen.getByRole('button', { name: 'Exit full screen' })
+  await user.click(collapseButton)
+
+  expect(panel).toHaveAttribute('data-fullscreen', 'false')
+  expect(panel.className).toMatch(/\bmax-w-lg\b/)
+})
+
+test('closing the panel resets full screen for the next open', async () => {
+  const user = userEvent.setup()
+  const { rerender } = render(<CommandBar open={true} onClose={() => {}} />)
+
+  await user.click(screen.getByRole('button', { name: 'Full screen' }))
+  expect(screen.getByTestId('cmdk-panel')).toHaveAttribute('data-fullscreen', 'true')
+
+  rerender(<CommandBar open={false} onClose={() => {}} />)
+  rerender(<CommandBar open={true} onClose={() => {}} />)
+
+  expect(screen.getByTestId('cmdk-panel')).toHaveAttribute('data-fullscreen', 'false')
+})

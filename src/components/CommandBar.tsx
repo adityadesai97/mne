@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
-import { X, Paperclip, Sparkles } from 'lucide-react'
+import { X, Paperclip, Sparkles, Maximize2, Minimize2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, type FileAttachment } from '@/lib/fileParser'
@@ -204,6 +204,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [writesDone, setWritesDone] = useState(false)
@@ -313,6 +314,7 @@ export function CommandBar({ open, onClose }: Props) {
       setQuery('')
       setDisplayMessages([])
       setIsExpanded(false)
+      setIsFullscreen(false)
       setCompactResult(null)
       setDone(false)
       setAttachment(null)
@@ -385,6 +387,13 @@ export function CommandBar({ open, onClose }: Props) {
     Math.min(isMobileViewport ? 420 : 560, Math.floor(viewportHeight - (isMobileViewport ? 92 : 140))),
   )
 
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((v) => !v)
+    // Focus follows the panel resize — same "settle then focus" pattern
+    // used when the panel first expands.
+    setTimeout(() => focusInput(), 80)
+  }, [focusInput])
+
   return (
     <AnimatePresence>
       {open && (
@@ -402,20 +411,26 @@ export function CommandBar({ open, onClose }: Props) {
 
           {/* Panel — shares layoutId with CmdKFab pill */}
           <div
-            className="fixed left-0 right-0 top-0 z-50 flex items-start justify-center px-4 pointer-events-none"
+            className={`fixed left-0 right-0 top-0 z-50 flex items-start justify-center pointer-events-none ${isFullscreen ? '' : 'px-4'}`}
             style={{
               height: `${viewportHeight}px`,
-              paddingTop: isMobileViewport
-                ? 'calc(var(--app-safe-top, 0px) + 0.5rem)'
-                : 'max(4rem, calc(var(--app-safe-top, 0px) + 1rem))',
-              paddingBottom: 'calc(var(--app-safe-bottom, 0px) + 0.75rem)',
+              paddingTop: isFullscreen
+                ? 'var(--app-safe-top, 0px)'
+                : isMobileViewport
+                  ? 'calc(var(--app-safe-top, 0px) + 0.5rem)'
+                  : 'max(4rem, calc(var(--app-safe-top, 0px) + 1rem))',
+              paddingBottom: isFullscreen ? 'var(--app-safe-bottom, 0px)' : 'calc(var(--app-safe-bottom, 0px) + 0.75rem)',
             }}
           >
             <motion.div
               layoutId="cmdk"
               layout
-              className="w-full max-w-lg pointer-events-auto overflow-hidden bg-card border border-border shadow-2xl"
-              style={{ borderRadius: '1rem' }}
+              data-testid="cmdk-panel"
+              data-fullscreen={isFullscreen}
+              className={`pointer-events-auto overflow-hidden bg-card border border-border shadow-2xl ${
+                isFullscreen ? 'w-full h-full max-w-none' : 'w-full max-w-lg'
+              }`}
+              style={{ borderRadius: isFullscreen && isMobileViewport ? '0.75rem' : '1rem' }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
             >
               {!isExpanded ? (
@@ -441,6 +456,15 @@ export function CommandBar({ open, onClose }: Props) {
                       className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
                       style={{ maxHeight: '144px' }}
                     />
+                    <button
+                      type="button"
+                      onClick={toggleFullscreen}
+                      className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                      title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                    >
+                      {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                    </button>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -479,14 +503,23 @@ export function CommandBar({ open, onClose }: Props) {
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.15 }}
                   className="flex flex-col overflow-hidden"
-                  style={{
-                    minHeight: `${expandedMinHeight}px`,
-                    maxHeight: `${expandedMaxHeight}px`,
-                  }}
+                  style={
+                    isFullscreen
+                      ? { height: '100%' }
+                      : { minHeight: `${expandedMinHeight}px`, maxHeight: `${expandedMaxHeight}px` }
+                  }
                   onAnimationComplete={focusInput}
                 >
-                  {/* Header with close button */}
-                  <div className="flex items-center justify-end px-3 pt-2 pb-1 flex-shrink-0">
+                  {/* Header with fullscreen toggle + close button */}
+                  <div className="flex items-center justify-end gap-1 px-3 pt-2 pb-1 flex-shrink-0">
+                    <button
+                      onClick={toggleFullscreen}
+                      className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
+                      aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                      title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                    >
+                      {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                    </button>
                     <button
                       onClick={handleClose}
                       className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
