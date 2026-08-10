@@ -2,7 +2,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
-import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet } from 'lucide-react'
+import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChevronRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { colorForAssetType } from '@/lib/typeColors'
 
@@ -41,13 +41,15 @@ function AssetIcon({ asset }: { asset: any }) {
 }
 
 /**
- * A tile in the Portfolio grid. Rendered inside a responsive multi-column
- * grid (see Portfolio.tsx) rather than a single stacked list, with a
- * type-colored top accent and a footer bar showing this position's share of
- * total net worth — real, already-available data (value / portfolioTotal),
- * not a fabricated per-position history.
+ * A position in the Portfolio view. Two layouts share the same underlying
+ * figures: `'grid'` (default) is a tile with a type-colored top accent and a
+ * footer bar showing this position's share of total net worth — real,
+ * already-available data (value / portfolioTotal), not a fabricated
+ * per-position history. `'list'` is a compact single-line row (no accent
+ * bar, no footer) for when the grid's per-card chrome feels like too much
+ * at a glance across many positions.
  */
-export function PositionCard({ asset, index = 0, portfolioTotal = 0 }: { asset: any; index?: number; portfolioTotal?: number }) {
+export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'grid' }: { asset: any; index?: number; portfolioTotal?: number; layout?: 'grid' | 'list' }) {
   const isStock = asset.asset_type === 'Stock'
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -58,6 +60,54 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0 }: { asset: 
   const shareCount = isStock ? computeShareCount(asset) : 0
   const accent = colorForAssetType(asset.asset_type, index)
   const sharePct = portfolioTotal > 0 ? Math.min(100, (value / portfolioTotal) * 100) : 0
+
+  if (layout === 'list') {
+    return (
+      <motion.div
+        className="mx-4 mb-2"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02, ease: [0.25, 0.1, 0.25, 1] as const }}
+        whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
+      >
+        <Link to={`/portfolio/${asset.id}`} className="block">
+          <Card>
+            <CardContent className="p-3.5">
+              <div className="flex gap-3 items-center">
+                <AssetIcon asset={asset} />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="font-medium truncate">{asset.name}</p>
+                  <p className="text-muted-foreground text-xs truncate">{asset.location?.name} · {asset.asset_type}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="text-right">
+                    {isStock ? (
+                      noPriceData ? (
+                        <>
+                          <p className="font-medium text-muted-foreground">—</p>
+                          <p className="text-xs text-muted-foreground">Price pending</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium tabular-nums">{fmt(value)}</p>
+                          <p className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+                            {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                          </p>
+                        </>
+                      )
+                    ) : (
+                      <p className="font-medium tabular-nums">{fmt(value)}</p>
+                    )}
+                  </div>
+                  <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </motion.div>
+    )
+  }
 
   const cardInner = (
     <CardContent className="p-4 flex flex-col h-full">
