@@ -4,7 +4,6 @@ import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChevronRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
-import { colorForAssetType } from '@/lib/typeColors'
 
 function AssetIcon({ asset }: { asset: any }) {
   if (asset.asset_type === 'Stock') {
@@ -42,15 +41,11 @@ function AssetIcon({ asset }: { asset: any }) {
 
 /**
  * A position in the Portfolio view. Two layouts share the same underlying
- * figures: `'grid'` (default) is a tile with a type-colored top accent and a
- * footer bar showing this position's share of total net worth — real,
- * already-available data (value / portfolioTotal), not a fabricated
- * per-position history. `'list'` is a compact row (type-colored left bar
- * instead of a top one, a bare share-of-net-worth bar instead of the
- * labeled footer) for when the grid's per-card chrome feels like too much
- * at a glance across many positions — same figures, lower chrome.
+ * figures: `'grid'` (default) is a tile; `'list'` is a compact row for when
+ * the grid's per-card chrome feels like too much at a glance across many
+ * positions — same figures, lower chrome.
  */
-export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'grid' }: { asset: any; index?: number; portfolioTotal?: number; layout?: 'grid' | 'list' }) {
+export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
   const isStock = asset.asset_type === 'Stock'
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -59,8 +54,6 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
-  const accent = colorForAssetType(asset.asset_type, index)
-  const sharePct = portfolioTotal > 0 ? Math.min(100, (value / portfolioTotal) * 100) : 0
 
   if (layout === 'list') {
     return (
@@ -72,15 +65,10 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
         whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
       >
         <Link to={`/portfolio/${asset.id}`} className="block">
-          {/* Same type-colored accent + rounded surface language as the grid
-              tile (there it's a top bar; here, rotated to a left bar so it
-              reads the same way in a row) — so switching layouts doesn't
-              feel like switching themes. A hover tint gives rows the same
-              "this is clickable" affordance a tile gets from lifting on
-              hover, without the lift itself reading oddly on something this
-              thin. */}
-          <Card className="relative overflow-hidden hover:bg-muted/40">
-            <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accent }} aria-hidden="true" />
+          {/* A hover tint gives rows the same "this is clickable" affordance
+              a tile gets from lifting on hover, without the lift itself
+              reading oddly on something this thin. */}
+          <Card className="hover:bg-muted/40">
             <CardContent className="p-3.5">
               <div className="flex gap-3 items-center">
                 <AssetIcon asset={asset} />
@@ -115,15 +103,6 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
                   <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
                 </div>
               </div>
-              {/* Share of total net worth, condensed to a bare bar (no label —
-                  the grid tile spells this figure out, but a row's job is to
-                  stay scannable at a glance across a long list; the relative
-                  bar length alone is enough to compare positions at a glance). */}
-              {portfolioTotal > 0 && (
-                <div className="mt-2.5 h-[2px] bg-muted rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${sharePct}%`, backgroundColor: accent }} />
-                </div>
-              )}
             </CardContent>
           </Card>
         </Link>
@@ -166,20 +145,6 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
           <p className="font-semibold text-lg font-syne tabular-nums leading-tight">{fmt(value)}</p>
         )}
       </div>
-
-      {/* Share of total net worth — a real, already-available figure (value /
-          portfolioTotal), colored to match this asset's type. */}
-      {portfolioTotal > 0 && (
-        <div className="mt-3.5 pt-3 border-t border-white/[0.05]">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Of Portfolio</span>
-            <span className="text-[10px] tabular-nums font-medium" style={{ color: accent }}>{sharePct.toFixed(1)}%</span>
-          </div>
-          <div className="h-[3px] bg-muted rounded-full overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${sharePct}%`, backgroundColor: accent }} />
-          </div>
-        </div>
-      )}
     </CardContent>
   )
 
@@ -193,8 +158,7 @@ export function PositionCard({ asset, index = 0, portfolioTotal = 0, layout = 'g
       whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
     >
       <Link to={`/portfolio/${asset.id}`} className="block h-full">
-        <Card className="h-full relative overflow-hidden">
-          <div className="absolute inset-x-0 top-0 h-[3px]" style={{ backgroundColor: accent }} aria-hidden="true" />
+        <Card className="h-full">
           {cardInner}
         </Card>
       </Link>
