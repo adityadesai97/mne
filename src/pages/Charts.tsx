@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
-import { PieChart } from 'lucide-react'
+import { PieChart, Landmark, Layers, TrendingUp, TrendingDown, Scale, BarChart3, CalendarClock, Sparkles } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CardEyebrow } from '@/components/CardEyebrow'
 import { Skeleton } from '@/components/ui/skeleton'
+import { revealUp } from '@/lib/motionPresets'
+import { colorForAssetType } from '@/lib/typeColors'
 import {
   groupByAssetType,
   groupByLocation,
@@ -31,6 +33,16 @@ const GRID_COLOR = 'hsl(224,13%,16%)'
 const AXIS_COLOR = 'hsl(215,14%,55%)'
 const TEXT_COLOR = 'hsl(215,20%,96%)'
 const TOOLTIP_BG = 'hsl(224,13%,9%)'
+// Faint alternating band behind each row of a horizontal bar list, so a
+// long list of positions (P&L, Cost vs Value, RSU vesting) stays easy to
+// scan row-to-row instead of reading as one undifferentiated block.
+const ZEBRA_COLORS = ['transparent', 'rgba(255,255,255,0.025)']
+
+// Card shell shared with Home's bento grid — same background, corner
+// radius, padding, and hover lift — so Charts reads as the same page
+// system instead of its own component library.
+const CARD_CLASS = 'bg-card shadow-card rounded-2xl p-5'
+const CARD_HOVER = { y: -2, transition: { duration: 0.15, delay: 0 } }
 
 const tooltipBase = {
   backgroundColor: TOOLTIP_BG,
@@ -53,9 +65,13 @@ function fmtShort(n: number) {
   return String(Math.round(n))
 }
 
+function fmtCompact(n: number) {
+  return `${n < 0 ? '-' : ''}$${fmtShort(Math.abs(n))}`
+}
 
 function donutOption(
   data: { name: string; value: number; color: string }[],
+  centerLabel?: { label: string; value: string },
 ): EChartsOption {
   return {
     backgroundColor: 'transparent',
@@ -67,10 +83,33 @@ function donutOption(
         return `${p.name}<br/>${fmt(Number(p.value))} (${Math.round(Number(p.percent))}%)`
       },
     },
+    // Total shown in the donut's hole — a donut with no center content
+    // otherwise wastes its own negative space; this puts the one number a
+    // glance at the card most wants (the total it's a breakdown of) right
+    // where the eye already lands.
+    graphic: centerLabel
+      ? {
+          elements: [
+            {
+              type: 'text',
+              left: 'center',
+              top: 'center',
+              style: {
+                text: `{value|${centerLabel.value}}\n{label|${centerLabel.label}}`,
+                align: 'center',
+                rich: {
+                  value: { fontSize: 16, fontWeight: 700, fill: TEXT_COLOR, lineHeight: 20 },
+                  label: { fontSize: 9, fill: AXIS_COLOR, lineHeight: 14 },
+                },
+              },
+            },
+          ],
+        }
+      : undefined,
     series: [
       {
         type: 'pie',
-        radius: ['50%', '82%'],
+        radius: ['54%', '82%'],
         label: { show: false },
         labelLine: { show: false },
         avoidLabelOverlap: true,
@@ -206,39 +245,45 @@ export default function Charts() {
   }
 
   const allocationData = groupByAssetType(assets, activeSubtypes)
-  const allocationColorData = allocationData.map((group, index) => ({
+  const allocationTotal = allocationData.reduce((sum, g) => sum + g.value, 0)
+  const allocationColorData = allocationData.map((group) => ({
     name: group.type,
     value: group.value,
-    color: PALETTE[index % PALETTE.length],
+    // Same asset_type → color mapping Home's allocation card and Portfolio's
+    // tiles use, so "Stock" (etc.) means the same swatch everywhere.
+    color: colorForAssetType(group.type),
   }))
   const locationData = groupByLocation(assets)
+  const locationTotal = locationData.reduce((sum, g) => sum + g.value, 0)
   const locationColorData = locationData.map((group, index) => ({
     name: group.name,
     value: group.value,
     color: PALETTE[index % PALETTE.length],
   }))
   const pnlData = computeUnrealizedPnLByPosition(assets)
+  const totalPnl = pnlData.reduce((sum, p) => sum + p.gain, 0)
   const { shortTerm, longTerm } = computeCapitalGainsExposure(assets)
   const cvvData = computeCostVsValue(assets)
   const rsuData = computeRsuVesting(assets)
   const themeDistributionData = computeThemeDistribution(assets, includeCashInThemeDistribution)
+  const themeDistributionTotal = themeDistributionData.reduce((sum, g) => sum + g.value, 0)
   const themeDistributionColorData = themeDistributionData.map((group, index) => ({
     name: group.name,
     value: group.value,
     color: PALETTE[index % PALETTE.length],
   }))
   const themeDistributionOption = useMemo<EChartsOption>(
-    () => donutOption(themeDistributionColorData),
-    [themeDistributionColorData],
+    () => donutOption(themeDistributionColorData, { label: 'Total', value: fmtCompact(themeDistributionTotal) }),
+    [themeDistributionColorData, themeDistributionTotal],
   )
   const allocationOption = useMemo<EChartsOption>(
-    () => donutOption(allocationColorData),
-    [allocationColorData],
+    () => donutOption(allocationColorData, { label: 'Total', value: fmtCompact(allocationTotal) }),
+    [allocationColorData, allocationTotal],
   )
 
   const locationOption = useMemo<EChartsOption>(
-    () => donutOption(locationColorData),
-    [locationColorData],
+    () => donutOption(locationColorData, { label: 'Total', value: fmtCompact(locationTotal) }),
+    [locationColorData, locationTotal],
   )
 
   const pnlOption = useMemo<EChartsOption>(() => ({
@@ -267,19 +312,28 @@ export default function Charts() {
         width: 108,
         overflow: 'truncate',
       },
+      splitArea: { show: true, areaStyle: { color: ZEBRA_COLORS } },
     },
     series: [
       {
         type: 'bar',
         data: pnlData.map((point) => ({
           value: point.gain,
-          itemStyle: { color: point.gain >= 0 ? GAIN_COLOR : LOSS_COLOR },
+          itemStyle: {
+            color: point.gain >= 0 ? GAIN_COLOR : LOSS_COLOR,
+            // Round the end of the bar farthest from the zero baseline —
+            // for a negative bar (extending left) that's the left edge, the
+            // mirror image of the positive case — otherwise the rounded
+            // corner sits at the baseline instead of the tip.
+            borderRadius: point.gain >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4],
+          },
+          // Likewise put the value label beyond the bar's actual tip, not
+          // always to the right — for a negative bar the tip is on the left.
+          label: { position: point.gain >= 0 ? 'right' : 'left' },
         })),
         barWidth: 20,
-        itemStyle: { borderRadius: [0, 4, 4, 0] },
         label: {
           show: true,
-          position: 'right',
           color: AXIS_COLOR,
           fontSize: 11,
           formatter: (params) => fmt(Number(params.value)),
@@ -318,7 +372,7 @@ export default function Charts() {
         return `${rows[0].axisValue}<br/>${fmt(Number(rows[0].value))}`
       },
     },
-    grid: { left: 8, right: 16, top: 20, bottom: 16 },
+    grid: { left: 8, right: 16, top: 28, bottom: 16 },
     xAxis: {
       type: 'category',
       data: capitalGainsData.map((point) => point.label),
@@ -337,16 +391,35 @@ export default function Charts() {
         type: 'bar',
         data: capitalGainsData.map((point) => ({
           value: point.value,
-          itemStyle: { color: point.value >= 0 ? GAIN_COLOR : LOSS_COLOR },
+          itemStyle: {
+            color: point.value >= 0 ? GAIN_COLOR : LOSS_COLOR,
+            // Round the end of the bar farthest from the zero baseline, not
+            // always the top — otherwise negative bars round their corner
+            // at the baseline instead of at the tip, which reads as
+            // misaligned against the positive bar sharing that baseline.
+            borderRadius: point.value >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
+          },
+          // Put the label beyond the bar's tip — for a negative bar that's
+          // below it, not above (the 'top' side of its bounding box sits at
+          // the shared baseline, not near the value it's labeling).
+          label: { position: point.value >= 0 ? 'top' : 'bottom' },
         })),
         barWidth: 34,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
         label: {
           show: true,
-          position: 'top',
           color: AXIS_COLOR,
           fontSize: 11,
           formatter: (params) => fmt(Number(params.value)),
+        },
+        // Zero reference line, pinned to the actual data value (not an
+        // auto-computed tick) — the axis itself is hidden, so without this
+        // there's nothing marking where the two bars actually meet.
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          label: { show: false },
+          lineStyle: { color: GRID_COLOR, type: 'dashed', width: 1 },
+          data: [{ yAxis: 0 }],
         },
       },
     ],
@@ -378,6 +451,7 @@ export default function Charts() {
         width: 108,
         overflow: 'truncate',
       },
+      splitArea: { show: true, areaStyle: { color: ZEBRA_COLORS } },
     },
     series: [
       {
@@ -440,6 +514,7 @@ export default function Charts() {
         width: 128,
         overflow: 'truncate',
       },
+      splitArea: { show: true, areaStyle: { color: ZEBRA_COLORS } },
     },
     series: [
       {
@@ -474,11 +549,20 @@ export default function Charts() {
 
   if (!assetsLoaded) {
     return (
-      <div className="pt-6 pb-24 px-4 space-y-4">
-        <h1 className="text-xl font-bold">Charts</h1>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-64 w-full rounded-xl" />
+      <div className="px-4 pt-5 pb-24 md:px-6 md:pt-6 space-y-3">
+        <Skeleton className="h-6 w-24" />
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className={`md:col-span-3 ${CARD_CLASS} space-y-4`}>
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-[220px] w-full rounded-xl" />
+            </div>
+          ))}
+          {[0, 1, 2].map((i) => (
+            <div key={`row-${i}`} className={`md:col-span-6 ${CARD_CLASS} space-y-4`}>
+              <Skeleton className="h-3 w-40" />
+              <Skeleton className="h-[200px] w-full rounded-xl" />
+            </div>
           ))}
         </div>
       </div>
@@ -487,20 +571,23 @@ export default function Charts() {
 
   if (assetsLoaded && assets.length === 0) {
     return (
-      <div className="pt-6 pb-24 px-4 space-y-4">
-        <h1 className="text-xl font-bold">Charts</h1>
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
-                <PieChart size={20} className="text-primary" />
-              </div>
-              <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Charts become available after your first asset is added.
-              </p>
-            </CardContent>
-          </Card>
+      <div className="px-4 pt-5 pb-24 md:px-6 md:pt-6">
+        <motion.div
+          {...revealUp(0)}
+          className={`${CARD_CLASS} p-6 md:p-7 relative overflow-hidden text-center`}
+        >
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
+          </div>
+          <div className="relative mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-subtle">
+            <Sparkles size={18} className="text-primary" aria-hidden="true" />
+          </div>
+          <p className="relative font-syne text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+            Add an asset first.
+          </p>
+          <p className="relative mt-2 text-sm text-muted-foreground">
+            Charts become available after your first asset is added.
+          </p>
         </motion.div>
       </div>
     )
@@ -509,130 +596,163 @@ export default function Charts() {
   return (
     <>
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
-    <div className="pt-6 pb-24 px-4 space-y-4">
-      <h1 className="text-xl font-bold">Charts</h1>
+    <div className="px-4 pt-5 pb-24 md:px-6 md:pt-6 space-y-3">
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Portfolio Allocation</CardTitle>
-            <div className="flex gap-2 flex-wrap mt-1">
+      {/* HEADER — same icon-badge + font-syne treatment as Home's greeting row */}
+      <motion.div {...revealUp(0)} className="flex items-center gap-2.5 px-1">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
+          <BarChart3 size={16} className="text-primary" aria-hidden="true" />
+        </div>
+        <p className="font-syne text-lg md:text-xl font-bold text-foreground tracking-tight">Charts</p>
+      </motion.div>
+
+      {/* Bento grid — same 6-column system as Home, so cards that don't need
+          the full page width (the three donuts, capital gains exposure)
+          sit two-up instead of stretching edge to edge. The per-position
+          bar lists below stay full width since their row count is
+          data-driven and their labels need the room. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+
+        {/* PORTFOLIO ALLOCATION */}
+        <motion.div
+          {...revealUp(0)}
+          whileHover={CARD_HOVER}
+          className={`md:col-span-3 ${CARD_CLASS}`}
+        >
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <CardEyebrow icon={PieChart}>Portfolio Allocation</CardEyebrow>
+            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5 flex-shrink-0">
               {ALL_SUBTYPES.map((s) => (
                 <button
                   type="button"
                   key={s}
                   onClick={() => toggleSubtype(s)}
-                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                    activeSubtypes.has(s)
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-transparent text-muted-foreground border-border'
+                  className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                    activeSubtypes.has(s) ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {s}
                 </button>
               ))}
             </div>
-          </CardHeader>
-          <CardContent>
-            <DonutWithLegend option={allocationOption} colorData={allocationColorData} height={220} emptyLabel="No data" />
-          </CardContent>
-        </Card>
+          </div>
+          <DonutWithLegend option={allocationOption} colorData={allocationColorData} height={220} emptyLabel="No data" />
+        </motion.div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">By Account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DonutWithLegend option={locationOption} colorData={locationColorData} height={220} emptyLabel="No data" />
-          </CardContent>
-        </Card>
-      </div>
+        {/* BY ACCOUNT */}
+        <motion.div
+          {...revealUp(0.03)}
+          whileHover={CARD_HOVER}
+          className={`md:col-span-3 ${CARD_CLASS}`}
+        >
+          <div className="mb-3">
+            <CardEyebrow icon={Landmark}>By Account</CardEyebrow>
+          </div>
+          <DonutWithLegend option={locationOption} colorData={locationColorData} height={220} emptyLabel="No data" />
+        </motion.div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-3">
-            <CardTitle className="text-sm text-muted-foreground">Stock Distribution by Theme</CardTitle>
+        {/* STOCK DISTRIBUTION BY THEME */}
+        <motion.div
+          {...revealUp(0.06)}
+          whileHover={CARD_HOVER}
+          className={`md:col-span-3 ${CARD_CLASS}`}
+        >
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <CardEyebrow icon={Layers}>Stock Distribution by Theme</CardEyebrow>
             <button
               type="button"
               onClick={() => setIncludeCashInThemeDistribution((prev) => !prev)}
-              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              className={`text-[10px] px-2 py-0.5 rounded-full transition-colors flex-shrink-0 ${
                 includeCashInThemeDistribution
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-transparent text-muted-foreground border-border'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:text-foreground'
               }`}
             >
               {includeCashInThemeDistribution ? 'Cash Included' : 'Include Cash'}
             </button>
           </div>
-        </CardHeader>
-        <CardContent>
           <DonutWithLegend
             option={themeDistributionOption}
             colorData={themeDistributionColorData}
-            height={240}
+            height={220}
             emptyLabel="No themed stock data yet"
           />
-        </CardContent>
-      </Card>
+        </motion.div>
 
-      {pnlData.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Unrealized P&amp;L by Position</CardTitle>
-          </CardHeader>
-          <CardContent>
+        {/* CAPITAL GAINS EXPOSURE — just two bars, so it shares a row with
+            the donuts above rather than stretching full width. */}
+        {(shortTerm !== 0 || longTerm !== 0) && (
+          <motion.div
+            {...revealUp(0.09)}
+            whileHover={CARD_HOVER}
+            className={`md:col-span-3 ${CARD_CLASS}`}
+          >
+            <div className="mb-3">
+              <CardEyebrow icon={Scale}>Capital Gains Exposure</CardEyebrow>
+            </div>
+            <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
+          </motion.div>
+        )}
+
+        {/* UNREALIZED P&L BY POSITION */}
+        {pnlData.length > 0 && (
+          <motion.div
+            {...revealUp(0.12)}
+            whileHover={CARD_HOVER}
+            className={`md:col-span-6 ${CARD_CLASS}`}
+          >
+            <div className="mb-3">
+              <CardEyebrow icon={totalPnl >= 0 ? TrendingUp : TrendingDown} className={totalPnl >= 0 ? 'text-gain' : 'text-loss'}>
+                Unrealized P&amp;L by Position
+              </CardEyebrow>
+            </div>
             <ReactECharts
               option={pnlOption}
               style={{ width: '100%', height: Math.max(180, pnlData.length * 44) }}
               notMerge
               opts={{ renderer: 'svg' }}
             />
-          </CardContent>
-        </Card>
-      )}
+          </motion.div>
+        )}
 
-      {(shortTerm !== 0 || longTerm !== 0) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Capital Gains Exposure</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 160 }} notMerge opts={{ renderer: 'svg' }} />
-          </CardContent>
-        </Card>
-      )}
-
-      {cvvData.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Cost Basis vs Current Value</CardTitle>
-          </CardHeader>
-          <CardContent>
+        {/* COST BASIS VS CURRENT VALUE */}
+        {cvvData.length > 0 && (
+          <motion.div
+            {...revealUp(0.15)}
+            whileHover={CARD_HOVER}
+            className={`md:col-span-6 ${CARD_CLASS}`}
+          >
+            <div className="mb-3">
+              <CardEyebrow icon={BarChart3}>Cost Basis vs Current Value</CardEyebrow>
+            </div>
             <ReactECharts
               option={cvvOption}
               style={{ width: '100%', height: Math.max(180, cvvData.length * 60) }}
               notMerge
               opts={{ renderer: 'svg' }}
             />
-          </CardContent>
-        </Card>
-      )}
+          </motion.div>
+        )}
 
-      {rsuData.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">RSU Vesting Progress</CardTitle>
-          </CardHeader>
-          <CardContent>
+        {/* RSU VESTING PROGRESS */}
+        {rsuData.length > 0 && (
+          <motion.div
+            {...revealUp(0.18)}
+            whileHover={CARD_HOVER}
+            className={`md:col-span-6 ${CARD_CLASS}`}
+          >
+            <div className="mb-3">
+              <CardEyebrow icon={CalendarClock}>RSU Vesting Progress</CardEyebrow>
+            </div>
             <ReactECharts
               option={rsuOption}
               style={{ width: '100%', height: Math.max(180, rsuData.length * 52) }}
               notMerge
               opts={{ renderer: 'svg' }}
             />
-          </CardContent>
-        </Card>
-      )}
+          </motion.div>
+        )}
+      </div>
     </div>
     </>
   )
