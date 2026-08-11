@@ -191,6 +191,38 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
   return <div className="space-y-2">{blocks}</div>
 }
 
+/** Three-dot "typing" indicator, iMessage-style — replaces the old static
+ *  "Thinking..." text with a small bouncing-dots animation. */
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-0.5" role="status" aria-label="Thinking">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Assistant-style bubble (avatar + rounded muted background) wrapping the
+ *  typing dots, so "thinking" reads as a chat bubble like any other reply. */
+function ThinkingBubble() {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
+        <Sparkles size={11} className="text-primary" aria-hidden="true" />
+      </div>
+      <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3">
+        <ThinkingDots />
+      </div>
+    </div>
+  )
+}
+
 type DisplayMessage =
   | { id: number; role: 'user'; content: string }
   | { id: number; role: 'assistant'; kind: 'text'; content: string; trace?: AgentTrace }
@@ -203,6 +235,7 @@ interface Props {
 
 export function CommandBar({ open, onClose }: Props) {
   const [query, setQuery] = useState('')
+  const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
   const [isExpanded, setIsExpanded] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -319,6 +352,7 @@ export function CommandBar({ open, onClose }: Props) {
       setCompactResult(null)
       setDone(false)
       setAttachment(null)
+      setPendingQuery('')
       msgIdRef.current = 0
     }
   }, [open])
@@ -341,6 +375,7 @@ export function CommandBar({ open, onClose }: Props) {
     const userContent = query.trim()
     const wasExpanded = isExpanded
     setQuery('')
+    setPendingQuery(userContent)
     setLoading(true)
     setDone(false)
     setCompactResult(null)
@@ -484,7 +519,16 @@ export function CommandBar({ open, onClose }: Props) {
                       </button>
                     </div>
                   )}
-                  {loading && <p className="p-4 text-muted-foreground text-sm">Thinking...</p>}
+                  {loading && (
+                    <div className="p-4 space-y-2">
+                      <div className="flex justify-end">
+                        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[90%] inline-block whitespace-pre-wrap break-words">
+                          {pendingQuery}
+                        </span>
+                      </div>
+                      <ThinkingBubble />
+                    </div>
+                  )}
                   {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
                   {compactResult && !loading && !done && (
                     <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
@@ -554,14 +598,15 @@ export function CommandBar({ open, onClose }: Props) {
                     </AnimatePresence>
                     <AnimatePresence>
                       {loading && (
-                        <motion.p
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
+                        <motion.div
+                          key="thinking"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                          className="text-muted-foreground text-sm"
+                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         >
-                          Thinking...
-                        </motion.p>
+                          <ThinkingBubble />
+                        </motion.div>
                       )}
                     </AnimatePresence>
                   </div>

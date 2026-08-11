@@ -1,7 +1,7 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown } from 'lucide-react'
+import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown, LayoutGrid, List } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -25,6 +25,7 @@ function formatRelativeTime(isoString: string | null): string | null {
 }
 
 type SortOption = 'name' | 'value' | 'gain'
+type AssetView = 'grid' | 'list'
 
 const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] = [
   { v: 'name', label: 'Name', icon: ArrowDownAZ },
@@ -32,12 +33,16 @@ const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] 
   { v: 'gain', label: 'Gain', icon: TrendingUpDown },
 ]
 
+const VIEW_OPTIONS: { v: AssetView; label: string; icon: React.ElementType }[] = [
+  { v: 'grid', label: 'Grid', icon: LayoutGrid },
+  { v: 'list', label: 'Simplified list', icon: List },
+]
+
 /**
- * Dropdown for the sort control — a single button showing the current
+ * Dropdown for an option control — a single button showing the current
  * selection (icon + label) that opens a small menu of the other options.
- * Kept generic (rather than inlined into the sort control specifically)
- * since it started life shared with a since-removed layout picker and may
- * end up backing another option control again.
+ * Kept generic since it backs both the sort control and the asset view
+ * (grid/list) control.
  */
 function OptionDropdown<T extends string>({
   value, options, onChange, ariaLabel,
@@ -152,11 +157,16 @@ export default function Portfolio() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
-  // Set in Settings → Appearance → Asset view; read once at mount, same as
-  // isMobile above — Portfolio remounts on route navigation, so a fresh
-  // read here already reflects whatever was last chosen in Settings.
-  const [assetView] = useState(() => config.assetView)
+  // Read once at mount for the initial render (Portfolio remounts on route
+  // navigation, so this always reflects the last persisted choice); changes
+  // via the dropdown below both update this state and persist to localStorage.
+  const [assetView, setAssetView] = useState<AssetView>(() => config.assetView)
   const isListView = assetView === 'list'
+
+  const handleAssetViewChange = useCallback((v: AssetView) => {
+    config.setAssetView(v)
+    setAssetView(v)
+  }, [])
 
   useEffect(() => {
     // Awaiting the (deduped, best-effort) price refresh first means a fresh
@@ -207,8 +217,14 @@ export default function Portfolio() {
     let result = assets
 
     if (search.trim()) {
-      const query = search.trim().toLowerCase()
-      result = result.filter((a) => a.name?.toLowerCase().includes(query))
+      const tokens = search.trim().toLowerCase().split(/\s+/)
+      result = result.filter((a) => {
+        const haystack = [a.name, a.location?.name, a.location?.account_type]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return tokens.every((token) => haystack.includes(token))
+      })
     }
 
     if (activeType !== 'All') {
@@ -271,6 +287,7 @@ export default function Portfolio() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          <OptionDropdown value={assetView} options={VIEW_OPTIONS} onChange={handleAssetViewChange} ariaLabel="Asset view" />
           <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
         </div>
       </div>
