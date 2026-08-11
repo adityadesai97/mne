@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Briefcase, Landmark, Banknote, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount } from '@/lib/portfolio'
 import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
 
@@ -99,6 +99,7 @@ function LegacyAssetIcon({ asset }: { asset: any }) {
  */
 export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
   const isStock = asset.asset_type === 'Stock'
+  const isTradable = isTradableFixedIncome(asset)
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
   const gain = computeUnrealizedGain(asset)
@@ -106,6 +107,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
+  const unitCount = isTradable ? computeFixedIncomeLotCount(asset) : 0
 
   const fallbackColor = isStock
     ? colorForTicker(asset.ticker?.symbol ?? asset.name ?? String(index))
@@ -146,7 +148,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                   <p className="text-muted-foreground text-xs truncate">
                     {/* Share count comes from owned lots, not the quote, so it's
                         worth printing even while the price itself is pending. */}
-                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount)} shares` : ''}
+                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount)} shares` : ''}{isTradable ? ` · ${fmtShares(unitCount)} units` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -232,6 +234,11 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                   </div>
                 </>
               )
+            ) : isTradable ? (
+              <>
+                <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
+                <span className="text-[11px] text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
+              </>
             ) : (
               <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
             )}

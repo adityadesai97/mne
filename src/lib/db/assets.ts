@@ -7,7 +7,8 @@ export async function getAllAssets() {
       *,
       location:locations(*),
       ticker:tickers(*, ticker_themes(theme:themes(*))),
-      stock_subtypes(*, transactions(*), rsu_grants(*))
+      stock_subtypes(*, transactions(*), rsu_grants(*)),
+      fixed_income_lots(*)
     `)
     .order('name')
   if (error) throw error
@@ -34,6 +35,7 @@ export async function deleteAsset(id: string) {
     await supabase.from('rsu_grants').delete().in('subtype_id', subtypeIds)
     await supabase.from('stock_subtypes').delete().eq('asset_id', id)
   }
+  await supabase.from('fixed_income_lots').delete().eq('asset_id', id)
   const { error } = await supabase.from('assets').delete().eq('id', id)
   if (error) throw error
 }
@@ -45,7 +47,8 @@ export async function getAssetById(id: string) {
       *,
       location:locations(*),
       ticker:tickers(*, ticker_themes(theme:themes(*))),
-      stock_subtypes(*, transactions(*), rsu_grants(*))
+      stock_subtypes(*, transactions(*), rsu_grants(*)),
+      fixed_income_lots(*)
     `)
     .eq('id', id)
     .maybeSingle()

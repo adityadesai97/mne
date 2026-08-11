@@ -6,6 +6,7 @@ import { findOrCreateLocation } from './db/locations'
 import { autoAssignThemesForTicker, isAutoThemeAssignmentEnabled } from './autoThemes'
 import { showAppAlert } from './appAlerts'
 import { getSupabaseClient } from './supabase'
+import { isTradableFixedIncome } from './portfolio'
 
 const EXPORT_SCHEMA = 'mne.export.v2'
 const EXPORT_VERSION = '2.0'
@@ -83,13 +84,21 @@ type ParsedSubtype = {
   rsuGrants: ParsedRsuGrant[]
 }
 
+type ParsedFixedIncomeLot = {
+  id?: string
+  count: number
+  costPrice: number
+  purchaseDate: string
+}
+
 type ParsedAsset = {
   id?: string
   name: string
   assetType: string
-  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | null
+  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | 'T-Bill' | null
   interestRate: number | null
   maturityDate: string | null
+  faceValue: number | null
   locationId?: string
   locationName: string
   accountType: string
@@ -100,6 +109,7 @@ type ParsedAsset = {
   tickerId?: string | null
   tickerSymbol: string | null
   stockSubtypes: ParsedSubtype[]
+  fixedIncomeLots: ParsedFixedIncomeLot[]
 }
 
 type ParsedImport = {
@@ -129,7 +139,7 @@ type CanonicalExportV2 = {
     tickers: ParsedTicker[]
     tickerThemes: ParsedTickerTheme[]
     themeTargets: ParsedThemeTarget[]
-    assets: Array<Omit<ParsedAsset, 'stockSubtypes'>>
+    assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots'>>
     stockSubtypes: Array<{ id?: string; assetId: string; subtype: StockSubtypeName }>
     transactions: Array<Omit<ParsedTransaction, 'costPrice' | 'purchaseDate' | 'capitalGainsStatus'> & {
       subtypeId: string
@@ -146,6 +156,7 @@ type CanonicalExportV2 = {
       cliffDate: string | null
       endedAt: string | null
     }>
+    fixedIncomeLots: Array<{ id?: string; assetId: string; count: number; costPrice: number; purchaseDate: string }>
   }
 }
 
@@ -222,23 +233,28 @@ function toIsoDate(value: unknown): string | null {
 }
 
 function normalizeAssetType(value: unknown): string {
-  const normalized = asString(value).toLowerCase().replace(/\s+/g, '')
+  const normalized = asString(value).toLowerCase().replace(/[\s-]+/g, '')
   if (normalized === '401(k)' || normalized === '401k') return '401k'
-  // CD, Deposit, and Bond are subtypes of the Fixed Income super type — an
-  // older export or a competitor's export may still tag these as their own
-  // top-level asset type, so fold them in here.
-  if (normalized === 'cd' || normalized === 'deposit' || normalized === 'bond' || normalized === 'bonds' || normalized === 'fixedincome') return 'Fixed Income'
+  // CD, Deposit, Bond, and T-Bill are subtypes of the Fixed Income super
+  // type — an older export or a competitor's export may still tag these as
+  // their own top-level asset type, so fold them in here.
+  if (
+    normalized === 'cd' || normalized === 'deposit' || normalized === 'bond' || normalized === 'bonds'
+    || normalized === 'tbill' || normalized === 'tbills' || normalized === 'treasurybill' || normalized === 'treasurybills'
+    || normalized === 'fixedincome'
+  ) return 'Fixed Income'
   if (normalized === 'cash') return 'Cash'
   if (normalized === 'hsa') return 'HSA'
   if (normalized === 'stock') return 'Stock'
   return asString(value) || 'Other'
 }
 
-function normalizeFixedIncomeSubtype(value: unknown): 'CD' | 'Deposit' | 'Bond' | null {
-  const normalized = asString(value).toLowerCase().replace(/\s+/g, '')
+function normalizeFixedIncomeSubtype(value: unknown): 'CD' | 'Deposit' | 'Bond' | 'T-Bill' | null {
+  const normalized = asString(value).toLowerCase().replace(/[\s-]+/g, '')
   if (normalized === 'cd' || normalized === 'certificateofdeposit') return 'CD'
   if (normalized === 'deposit') return 'Deposit'
   if (normalized === 'bond' || normalized === 'bonds') return 'Bond'
+  if (normalized === 'tbill' || normalized === 'tbills' || normalized === 'treasurybill' || normalized === 'treasurybills') return 'T-Bill'
   return null
 }
 
@@ -248,16 +264,18 @@ function normalizeFixedIncomeSubtype(value: unknown): 'CD' | 'Deposit' | 'Bond' 
 // imports from before the Fixed Income super type still land on the right
 // subtype even without an explicit fixed_income_subtype field.
 function fixedIncomeFieldsFrom(assetType: string, source: Record<string, unknown>, rawTypeCandidate: unknown): {
-  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | null
+  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | 'T-Bill' | null
   interestRate: number | null
   maturityDate: string | null
+  faceValue: number | null
 } {
-  if (assetType !== 'Fixed Income') return { fixedIncomeSubtype: null, interestRate: null, maturityDate: null }
+  if (assetType !== 'Fixed Income') return { fixedIncomeSubtype: null, interestRate: null, maturityDate: null, faceValue: null }
   const explicitSubtype = normalizeFixedIncomeSubtype(source.fixed_income_subtype ?? source.fixedIncomeSubtype)
   return {
     fixedIncomeSubtype: explicitSubtype ?? normalizeFixedIncomeSubtype(rawTypeCandidate) ?? 'CD',
     interestRate: asNumber(source.interest_rate ?? source.interestRate),
     maturityDate: toIsoDate(source.maturity_date ?? source.maturityDate),
+    faceValue: asNumber(source.face_value ?? source.faceValue),
   }
 }
 
@@ -387,6 +405,19 @@ function normalizeTransactions(rawTransactions: unknown[]): ParsedTransaction[] 
         purchaseDate,
       ),
     })
+  }
+  return results
+}
+
+function normalizeFixedIncomeLots(rawLots: unknown[]): ParsedFixedIncomeLot[] {
+  const results: ParsedFixedIncomeLot[] = []
+  for (const entry of rawLots) {
+    if (!isRecord(entry)) continue
+    const count = asNumber(entry.count)
+    const costPrice = asNumber(entry.costPrice ?? entry.cost_price)
+    const purchaseDate = toIsoDate(entry.purchaseDate ?? entry.purchase_date)
+    if (!count || count <= 0 || costPrice == null || costPrice < 0 || !purchaseDate) continue
+    results.push({ id: normalizeUuid(entry.id), count, costPrice, purchaseDate })
   }
   return results
 }
@@ -557,6 +588,7 @@ function normalizeLegacyMneExport(data: Record<string, unknown>): ParsedImport {
       tickerId: normalizeUuid(item.ticker_id ?? ticker.id) ?? undefined,
       tickerSymbol: asString(ticker.symbol ?? item.ticker).toUpperCase() || null,
       stockSubtypes: normalizeSubtypes(asArray(item.stock_subtypes ?? item.stockSubtypes)),
+      fixedIncomeLots: normalizeFixedIncomeLots(asArray(item.fixed_income_lots ?? item.fixedIncomeLots)),
     }
   })
 
@@ -648,6 +680,7 @@ function normalizeMoolaExport(data: Record<string, unknown>): ParsedImport {
       initialPrice: asNumber(item.initialPrice ?? item.initial_price ?? item.price),
       tickerSymbol: tickerSymbol || null,
       stockSubtypes: normalizeSubtypes(asArray(item.stockSubtypes ?? item.stock_subtypes)),
+      fixedIncomeLots: normalizeFixedIncomeLots(asArray(item.fixedIncomeLots ?? item.fixed_income_lots)),
     }
   })
 
@@ -753,6 +786,18 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
     grantsBySubtype.set(subtypeId, list)
   }
 
+  const fixedIncomeLotsByAsset = new Map<string, ParsedFixedIncomeLot[]>()
+  for (const lotEntry of asArray(data.fixedIncomeLots ?? data.fixed_income_lots)) {
+    if (!isRecord(lotEntry)) continue
+    const assetId = normalizeUuid(lotEntry.assetId ?? lotEntry.asset_id)
+    if (!assetId) continue
+    const lot = normalizeFixedIncomeLots([lotEntry])[0]
+    if (!lot) continue
+    const list = fixedIncomeLotsByAsset.get(assetId) ?? []
+    list.push(lot)
+    fixedIncomeLotsByAsset.set(assetId, list)
+  }
+
   const subtypesByAsset = new Map<string, ParsedSubtype[]>()
   for (const subtype of subtypeRows) {
     const transactions = (txBySubtype.get(subtype.id ?? '') ?? []).slice()
@@ -794,6 +839,8 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
         transactions: [...st.transactions].sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate)),
         rsuGrants: [...st.rsuGrants].sort((a, b) => b.grantDate.localeCompare(a.grantDate)),
       })),
+      fixedIncomeLots: [...(fixedIncomeLotsByAsset.get(normalizeUuid(row.id) ?? '') ?? [])]
+        .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate)),
     }
   })
 
@@ -815,8 +862,9 @@ export function serializeForExport(data: { assets: any[]; tickers: any[]; themes
   const tickers: ParsedTicker[] = []
   const tickerThemes: ParsedTickerTheme[] = []
   const themeTargets: ParsedThemeTarget[] = []
-  const assets: Array<Omit<ParsedAsset, 'stockSubtypes'>> = []
+  const assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots'>> = []
   const stockSubtypes: Array<{ id?: string; assetId: string; subtype: StockSubtypeName }> = []
+  const fixedIncomeLots: Array<{ id?: string; assetId: string; count: number; costPrice: number; purchaseDate: string }> = []
   const transactions: Array<{
     id?: string
     subtypeId: string
@@ -923,6 +971,10 @@ export function serializeForExport(data: { assets: any[]; tickers: any[]; themes
       tickerSymbol,
     })
 
+    for (const lot of normalizeFixedIncomeLots(asArray(rawAsset.fixed_income_lots ?? rawAsset.fixedIncomeLots))) {
+      fixedIncomeLots.push({ id: lot.id, assetId, count: lot.count, costPrice: lot.costPrice, purchaseDate: lot.purchaseDate })
+    }
+
     for (const rawSubtype of asArray(rawAsset.stock_subtypes ?? rawAsset.stockSubtypes)) {
       if (!isRecord(rawSubtype)) continue
       const subtypeId = normalizeUuid(rawSubtype.id)
@@ -976,6 +1028,7 @@ export function serializeForExport(data: { assets: any[]; tickers: any[]; themes
       stockSubtypes,
       transactions,
       rsuGrants,
+      fixedIncomeLots,
     },
   }
 }
@@ -1054,7 +1107,7 @@ export async function exportCsv() {
     'Asset Name', 'Symbol', 'Asset Type', 'Subtype', 'Location', 'Account Type', 'Ownership',
     'Shares', 'Cost Price', 'Purchase Date', 'Capital Gains Status',
     'Current Price', 'Market Value', 'Unrealized Gain/Loss',
-    'Interest Rate (%)', 'Maturity Date',
+    'Interest Rate (%)', 'Maturity Date', 'Face Value',
   ]
   csvRows.push(headers)
 
@@ -1091,22 +1144,39 @@ export async function exportCsv() {
             shares, costPrice, purchaseDate, gainsStatus,
             currentPrice ?? '', marketValue !== null ? marketValue.toFixed(2) : '',
             unrealizedGain !== null ? unrealizedGain.toFixed(2) : '',
-            '', '',
+            '', '', '',
           ].map(csvCell))
         }
       }
+    } else if (isTradableFixedIncome(asset as any) && ((asset as any).fixed_income_lots?.length ?? 0) > 0) {
+      // Bond/T-Bill: one row per lot, mirroring stock tax lots — units and
+      // cost/unit reuse the Shares/Cost Price columns.
+      const subtypeName = String((asset as any).fixed_income_subtype ?? '')
+      const interestRate = (asset as any).interest_rate ?? ''
+      const maturityDate = String((asset as any).maturity_date ?? '')
+      const faceValue = (asset as any).face_value ?? ''
+      for (const lot of (asset as any).fixed_income_lots ?? []) {
+        csvRows.push([
+          name, symbol, assetType, subtypeName, location, accountType, ownership,
+          Number(lot.count ?? 0), Number(lot.cost_price ?? 0), String(lot.purchase_date ?? ''), '',
+          '', '', '',
+          interestRate, maturityDate, faceValue,
+        ].map(csvCell))
+      }
     } else {
-      // Non-stock asset: single row. P&L is a stock-only concept — never reported for cash-like assets.
+      // Non-stock, non-tradable asset: single row. P&L is a stock-only
+      // concept — never reported for cash-like assets.
       const price = Number(asset.price ?? 0)
       const isFixedIncome = assetType === 'Fixed Income'
       const subtypeName = isFixedIncome ? String((asset as any).fixed_income_subtype ?? '') : ''
       const interestRate = isFixedIncome ? (asset as any).interest_rate ?? '' : ''
       const maturityDate = isFixedIncome ? String((asset as any).maturity_date ?? '') : ''
+      const faceValue = isFixedIncome ? (asset as any).face_value ?? '' : ''
       csvRows.push([
         name, symbol, assetType, subtypeName, location, accountType, ownership,
         '', '', '', '',
         price, price.toFixed(2), '',
-        interestRate, maturityDate,
+        interestRate, maturityDate, faceValue,
       ].map(csvCell))
     }
   }
@@ -1154,6 +1224,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     let importedSubtypes = 0
     let importedTransactions = 0
     let importedRsuGrants = 0
+    let importedFixedIncomeLots = 0
     let autoAssignedTickerThemes = 0
 
     const locationKey = (name: string, accountType: string) => `${name.toLowerCase()}::${accountType.toLowerCase()}`
@@ -1305,6 +1376,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         fixed_income_subtype: asset.fixedIncomeSubtype,
         interest_rate: asset.interestRate,
         maturity_date: asset.maturityDate,
+        face_value: asset.faceValue,
       }
       if (asset.id) assetPayload.id = asset.id
 
@@ -1316,6 +1388,25 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       throwIfImportAborted(signal)
       if (assetError) throw new Error(`Failed to upsert asset "${asset.name}": ${assetError.message}`)
       importedAssets += 1
+
+      for (const lot of asset.fixedIncomeLots) {
+        throwIfImportAborted(signal)
+        const lotPayload: Record<string, unknown> = {
+          asset_id: assetRow.id,
+          count: lot.count,
+          cost_price: lot.costPrice,
+          purchase_date: lot.purchaseDate,
+        }
+        if (lot.id) lotPayload.id = lot.id
+        const lotResult = lot.id
+          ? await supabase.from('fixed_income_lots').upsert(lotPayload)
+          : await supabase.from('fixed_income_lots').insert(lotPayload)
+        throwIfImportAborted(signal)
+        if (lotResult.error) {
+          throw new Error(`Failed to import lot for "${asset.name}": ${lotResult.error.message}`)
+        }
+        importedFixedIncomeLots += 1
+      }
 
       for (const subtype of asset.stockSubtypes) {
         throwIfImportAborted(signal)
@@ -1455,7 +1546,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     }
 
     showAppAlert(
-      `Imported ${importedLocations} locations, ${importedAssets} assets, ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.`,
+      `Imported ${importedLocations} locations, ${importedAssets} assets, ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.`,
       { variant: 'success', durationMs: 6000 },
     )
   } catch (error: any) {

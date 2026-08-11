@@ -8,7 +8,7 @@ import { getAllTickers } from './db/tickers'
 import { findOrCreateLocation } from './db/locations'
 import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
 import { computeThemeDistribution } from './charts'
-import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
 
@@ -93,8 +93,8 @@ export function inferCashAccountType(input: {
 
   if (/\bchecking\b|\bcheckings?\b/.test(combined)) return 'Checking'
   if (/\bsavings?\b|\bhysa\b|\bhigh[- ]yield savings\b/.test(combined)) return 'Savings'
-  // CD/Deposit subtypes are Misc; a Bond subtype behaves like a brokerage holding.
-  if (assetType === 'fixed income' && fixedIncomeSubtype === 'bond') return 'Investment'
+  // CD/Deposit subtypes are Misc; Bond and T-Bill subtypes behave like brokerage holdings.
+  if (assetType === 'fixed income' && (fixedIncomeSubtype === 'bond' || fixedIncomeSubtype === 't-bill')) return 'Investment'
   if (assetType === 'fixed income') return 'Misc'
   if (assetType === 'cd' || /\bcd\b|certificate of deposit/.test(combined)) return 'Misc'
   if (assetType === '401k' || /\b401k\b|\bira\b|\bbroker(age)?\b|\binvest(ment|ing)?\b/.test(combined)) return 'Investment'
@@ -397,6 +397,15 @@ function differenceInDays(dateA: Date, dateB: Date): number {
   return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
+type FixedIncomeInfo = {
+  subtype: string
+  interestRate: number | null
+  maturityDate: string | null
+  faceValue: number | null
+  units: number | null
+  expectedReturn: ReturnType<typeof computeFixedIncomeExpectedReturn>
+}
+
 type PositionRow = {
   assetName: string
   assetType: string
@@ -411,6 +420,7 @@ type PositionRow = {
   unrealizedGainPct: number | null
   themes: string[]
   subtypes: string[]
+  fixedIncome: FixedIncomeInfo | null
 }
 
 function buildPositionRows(assets: any[]): PositionRow[] {
@@ -423,7 +433,17 @@ function buildPositionRows(assets: any[]): PositionRow[] {
     if (assetType !== 'Stock') {
       // Non-stock assets (Cash, 401k, Fixed Income, HSA, etc.) have no cost basis —
       // P&L is a stock-only concept and must never be reported for them.
-      const marketValue = toNumber(asset?.price, 0)
+      // computeAssetValue (not a raw asset.price read) so a tradable Fixed
+      // Income position's lot-cost-basis value is picked up correctly.
+      const marketValue = computeAssetValue(asset)
+      const fixedIncome: FixedIncomeInfo | null = assetType === 'Fixed Income' ? {
+        subtype: String(asset?.fixed_income_subtype ?? ''),
+        interestRate: asset?.interest_rate ?? null,
+        maturityDate: asset?.maturity_date ?? null,
+        faceValue: asset?.face_value ?? null,
+        units: isTradableFixedIncome(asset) ? computeFixedIncomeLotCount(asset) : null,
+        expectedReturn: computeFixedIncomeExpectedReturn(asset),
+      } : null
       return {
         assetName: String(asset?.name ?? ''),
         assetType,
@@ -438,6 +458,7 @@ function buildPositionRows(assets: any[]): PositionRow[] {
         unrealizedGainPct: null,
         themes: [],
         subtypes: [],
+        fixedIncome,
       }
     }
 
@@ -471,6 +492,7 @@ function buildPositionRows(assets: any[]): PositionRow[] {
       unrealizedGainPct: unrealizedGainPct == null ? null : Math.round(unrealizedGainPct * 100) / 100,
       themes,
       subtypes,
+      fixedIncome: null,
     }
   }).sort((a, b) => b.marketValue - a.marketValue)
 }
@@ -673,7 +695,7 @@ function buildSimulationState(assets: any[]) {
   for (const asset of assets ?? []) {
     const assetType = String(asset?.asset_type ?? '')
     if (assetType !== 'Stock') {
-      cashLikeValue += toNumber(asset?.price, 0)
+      cashLikeValue += computeAssetValue(asset)
       continue
     }
 
@@ -1256,7 +1278,25 @@ function buildCompactAssetContext(assets: any[]): any[] {
         : undefined,
     }
     if (String(asset.asset_type ?? '') !== 'Stock') {
+      if (isTradableFixedIncome(asset)) {
+        // No live price for Bond/T-Bill — surface lots directly so the model
+        // can reason about units/cost/return without a read-tool round trip.
+        base.fixed_income_subtype = asset.fixed_income_subtype
+        base.interest_rate = asset.interest_rate
+        base.maturity_date = asset.maturity_date
+        base.face_value = asset.face_value
+        base.units = computeFixedIncomeLotCount(asset)
+        base.value = computeAssetValue(asset)
+        const expectedReturn = computeFixedIncomeExpectedReturn(asset)
+        if (expectedReturn) base.expected_return = expectedReturn
+        return base
+      }
       base.price = asset.price
+      if (String(asset.asset_type) === 'Fixed Income') {
+        base.fixed_income_subtype = asset.fixed_income_subtype
+        if (asset.interest_rate != null) base.interest_rate = asset.interest_rate
+        if (asset.maturity_date) base.maturity_date = asset.maturity_date
+      }
       return base
     }
     return {
@@ -1319,10 +1359,11 @@ For navigation/view requests use navigate_to. For data changes use the appropria
   - CDs / certificate of deposit accounts -> Misc
   - 401k / IRA / brokerage accounts -> Investment
   Ask a follow-up only when location_name or account_type is genuinely ambiguous.
-  Fixed Income assets (asset_type "Fixed Income") require fixed_income_subtype: CD, Deposit, or Bond.
-  - CD and Deposit subtypes -> account_type Misc
-  - Bond subtype -> account_type Investment
-  Include interest_rate (annual %) and maturity_date (YYYY-MM-DD) on Fixed Income assets when the user or document states them; leave them out rather than guessing.
+  Fixed Income assets (asset_type "Fixed Income") require fixed_income_subtype: CD, Deposit, Bond, or T-Bill.
+  - CD and Deposit subtypes -> account_type Misc; not tradable — a flat price like any other cash-like account.
+  - Bond and T-Bill subtypes -> account_type Investment; tradable — use count (units), cost_price (per unit), and purchase_date INSTEAD of price when adding one with add_cash_asset/add_cash_assets. To add more units of an EXISTING Bond/T-Bill later, use add_fixed_income_lot / add_fixed_income_lots (do not use add_cash_asset again for the same position, and never use update_asset_value on a Bond/T-Bill — its value is derived from lots).
+  Include interest_rate (annual %) and maturity_date (YYYY-MM-DD) on Fixed Income assets when the user or document states them; leave them out rather than guessing. face_value (amount paid per unit at maturity) is required for Bond and T-Bill.
+  Treasury Bills (and any other discount instrument) sell below face value and pay the full face value at maturity — no periodic interest. For these: cost_price = the discounted amount actually paid per unit, face_value = the amount paid out per unit at maturity.
 For sell_shares, require the source account/location name. For lot selection, require either:
 - single-lot: purchase_date + count
 - multi-lot: lots[] with purchase_date + count for each lot
@@ -1565,22 +1606,26 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_cash_asset',
-      description: 'Add a non-stock asset: 401k, Cash, HSA, or Fixed Income (CD, Deposit, or Bond subtype)',
+      description: 'Add a non-stock asset: 401k, Cash, HSA, or Fixed Income (CD, Deposit, Bond, or T-Bill subtype). Bond and T-Bill are tradable — use count/cost_price/purchase_date, not price, for those.',
       parameters: {
         type: 'object' as const,
         properties: {
           name: { type: 'string', description: 'Name of the account' },
           asset_type: { type: 'string', enum: ['401k', 'Fixed Income', 'Cash', 'HSA'] },
-          fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond'], description: 'Required when asset_type is "Fixed Income"' },
-          interest_rate: { type: 'number', description: 'Annual interest rate as a percentage, e.g. 4.5 for 4.5%. Only for Fixed Income.' },
-          maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond matures, if known. Only for Fixed Income.' },
+          fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond', 'T-Bill'], description: 'Required when asset_type is "Fixed Income"' },
+          interest_rate: { type: 'number', description: 'Bond coupon rate as an annual percentage, e.g. 4.5 for 4.5%. Not applicable to T-Bills (no periodic interest). Only for Fixed Income.' },
+          maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond/bill matures, if known. Only for Fixed Income.' },
+          face_value: { type: 'number', description: 'Amount paid out per unit at maturity. Required for Bond and T-Bill (their whole discount/premium math depends on it). Only for Fixed Income.' },
           location_name: { type: 'string', description: 'Institution name' },
           account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
           ownership: { type: 'string', enum: ['Individual', 'Joint'] },
-          price: { type: 'number', description: 'Current value in dollars' },
+          price: { type: 'number', description: 'Current value in dollars. Required for every type EXCEPT a Bond/T-Bill fixed_income_subtype — those are tradable positions valued from lots, so use count + cost_price + purchase_date instead and omit price.' },
+          count: { type: 'number', description: 'Units/quantity purchased (the first lot). Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
+          cost_price: { type: 'number', description: 'Cost paid per unit. Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD this lot was purchased. Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
           notes: { type: 'string', description: 'Optional notes' },
         },
-        required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
+        required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership'],
       },
     },
   },
@@ -1588,7 +1633,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_cash_assets',
-      description: 'Add multiple non-stock assets (401k, Cash, HSA, Fixed Income) at once.',
+      description: 'Add multiple non-stock assets (401k, Cash, HSA, Fixed Income) at once. Bond and T-Bill are tradable — use count/cost_price/purchase_date, not price, for those.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1599,20 +1644,67 @@ const tools = [
               properties: {
                 name: { type: 'string', description: 'Name of the account' },
                 asset_type: { type: 'string', enum: ['401k', 'Fixed Income', 'Cash', 'HSA'] },
-                fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond'], description: 'Required when asset_type is "Fixed Income"' },
-                interest_rate: { type: 'number', description: 'Annual interest rate as a percentage, e.g. 4.5 for 4.5%. Only for Fixed Income.' },
-                maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond matures, if known. Only for Fixed Income.' },
+                fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond', 'T-Bill'], description: 'Required when asset_type is "Fixed Income"' },
+                interest_rate: { type: 'number', description: 'Bond coupon rate as an annual percentage, e.g. 4.5 for 4.5%. Not applicable to T-Bills (no periodic interest). Only for Fixed Income.' },
+                maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond/bill matures, if known. Only for Fixed Income.' },
+                face_value: { type: 'number', description: 'Amount paid out per unit at maturity. Required for Bond and T-Bill. Only for Fixed Income.' },
                 location_name: { type: 'string', description: 'Institution name' },
                 account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
                 ownership: { type: 'string', enum: ['Individual', 'Joint'] },
-                price: { type: 'number', description: 'Current value in dollars' },
+                price: { type: 'number', description: 'Current value in dollars. Required for every type EXCEPT a Bond/T-Bill fixed_income_subtype — use count + cost_price + purchase_date instead and omit price.' },
+                count: { type: 'number', description: 'Units/quantity purchased (the first lot). Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
+                cost_price: { type: 'number', description: 'Cost paid per unit. Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD this lot was purchased. Required when fixed_income_subtype is Bond or T-Bill; not used otherwise.' },
                 notes: { type: 'string', description: 'Optional notes' },
               },
-              required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership', 'price'],
+              required: ['name', 'asset_type', 'location_name', 'account_type', 'ownership'],
             },
           },
         },
         required: ['assets'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_fixed_income_lot',
+      description: 'Buy more units of an existing Bond or T-Bill position (a second/subsequent lot). The asset must already exist — use add_cash_asset first to create it with its first lot.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          asset_name: { type: 'string', description: 'Exact name of the existing Bond/T-Bill asset as it appears in the portfolio' },
+          count: { type: 'number', description: 'Units/quantity purchased in this lot' },
+          cost_price: { type: 'number', description: 'Cost paid per unit for this lot' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD this lot was purchased' },
+        },
+        required: ['asset_name', 'count', 'cost_price', 'purchase_date'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_fixed_income_lots',
+      description: 'Buy more units of one or more existing Bond/T-Bill positions at once. Use this when the user provides 2 or more Bond/T-Bill purchases in one request.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          lots: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                asset_name: { type: 'string', description: 'Exact name of the existing Bond/T-Bill asset as it appears in the portfolio' },
+                count: { type: 'number', description: 'Units/quantity purchased in this lot' },
+                cost_price: { type: 'number', description: 'Cost paid per unit for this lot' },
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD this lot was purchased' },
+              },
+              required: ['asset_name', 'count', 'cost_price', 'purchase_date'],
+            },
+          },
+        },
+        required: ['lots'],
       },
     },
   },
@@ -1769,7 +1861,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'update_asset_value',
-      description: 'Update the current value of a non-stock asset (401k, Cash, HSA, Fixed Income)',
+      description: 'Update the current value of a non-stock, non-tradable asset (401k, Cash, HSA, CD, Deposit). Does NOT work for Bond/T-Bill — use add_fixed_income_lot for those, their value comes from lots.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1798,6 +1890,8 @@ const WRITE_TOOL_NAMES = new Set([
   'add_stock_transactions',
   'add_cash_asset',
   'add_cash_assets',
+  'add_fixed_income_lot',
+  'add_fixed_income_lots',
   'add_ticker_to_watchlist',
   'add_ticker_themes',
   'add_rsu_grant',
@@ -1923,9 +2017,13 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
     if (assets.length === 0) return []
 
     const hasFixedIncome = assets.some((asset: any) => String(asset?.asset_type ?? '') === 'Fixed Income')
+    const hasFaceValue = assets.some((asset: any) => asset?.face_value != null && asset.face_value !== '')
+    const hasTradable = assets.some((asset: any) => isTradableFixedIncome({ asset_type: asset?.asset_type, fixed_income_subtype: asset?.fixed_income_subtype }))
     const columns = [
       'Name', 'Type',
       ...(hasFixedIncome ? ['Subtype', 'Rate', 'Maturity'] : []),
+      ...(hasFaceValue ? ['Face Value'] : []),
+      ...(hasTradable ? ['Units', 'Cost/Unit'] : []),
       'Value', 'Location', 'Account', 'Ownership',
     ]
 
@@ -1933,26 +2031,54 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       title: 'Non-Stock Assets',
       columns,
       rows: assets.map((asset: any) => {
+        const isFixedIncome = String(asset?.asset_type ?? '') === 'Fixed Income'
+        const isTradable = isTradableFixedIncome({ asset_type: asset?.asset_type, fixed_income_subtype: asset?.fixed_income_subtype })
         const row = [
           String(asset?.name ?? '').trim() || '-',
           String(asset?.asset_type ?? '').trim() || '-',
         ]
         if (hasFixedIncome) {
-          const isFixedIncome = String(asset?.asset_type ?? '') === 'Fixed Income'
           row.push(
             isFixedIncome ? (String(asset?.fixed_income_subtype ?? '').trim() || '-') : '-',
             isFixedIncome && asset?.interest_rate != null && asset.interest_rate !== '' ? `${numberToText(asset.interest_rate)}%` : '-',
             isFixedIncome ? dateToText(asset?.maturity_date) : '-',
           )
         }
+        if (hasFaceValue) {
+          row.push(asset?.face_value != null && asset.face_value !== '' ? moneyToText(asset.face_value) : '-')
+        }
+        if (hasTradable) {
+          row.push(
+            isTradable ? numberToText(asset?.count) : '-',
+            isTradable ? moneyToText(asset?.cost_price) : '-',
+          )
+        }
         row.push(
-          moneyToText(asset?.price),
+          isTradable ? moneyToText(Number(asset?.count ?? 0) * Number(asset?.cost_price ?? 0)) : moneyToText(asset?.price),
           String(asset?.location_name ?? '').trim() || '-',
           String(asset?.account_type ?? '').trim() || '-',
           String(asset?.ownership ?? '').trim() || '-',
         )
         return row
       }),
+    }]
+  }
+
+  if (toolName === 'add_fixed_income_lot' || toolName === 'add_fixed_income_lots') {
+    const lots = toolName === 'add_fixed_income_lots'
+      ? (Array.isArray(input.lots) ? input.lots : [])
+      : [input]
+    if (lots.length === 0) return []
+
+    return [{
+      title: 'Fixed Income Lots',
+      columns: ['Asset', 'Units', 'Cost/Unit', 'Purchase Date'],
+      rows: lots.map((lot: any) => [
+        String(lot?.asset_name ?? '').trim() || '-',
+        numberToText(lot?.count),
+        moneyToText(lot?.cost_price),
+        dateToText(lot?.purchase_date),
+      ]),
     }]
   }
 
@@ -2012,8 +2138,8 @@ function isValidIsoDate(value: unknown): boolean {
 function validateFixedIncomeFields(asset: any, label: string): string | null {
   if (String(asset?.asset_type ?? '') !== 'Fixed Income') return null
   const subtype = String(asset?.fixed_income_subtype ?? '')
-  if (!['CD', 'Deposit', 'Bond'].includes(subtype)) {
-    return `${label}: fixed_income_subtype is required for Fixed Income assets (CD, Deposit, or Bond)`
+  if (!['CD', 'Deposit', 'Bond', 'T-Bill'].includes(subtype)) {
+    return `${label}: fixed_income_subtype is required for Fixed Income assets (CD, Deposit, Bond, or T-Bill)`
   }
   if (asset?.maturity_date != null && asset.maturity_date !== '' && !isValidIsoDate(asset.maturity_date)) {
     return `${label}: invalid maturity date "${asset.maturity_date}". Use YYYY-MM-DD format`
@@ -2021,6 +2147,32 @@ function validateFixedIncomeFields(asset: any, label: string): string | null {
   if (asset?.interest_rate != null && asset.interest_rate !== '' && !Number.isFinite(Number(asset.interest_rate))) {
     return `${label}: interest_rate must be a number`
   }
+  if (asset?.face_value != null && asset.face_value !== '' && !Number.isFinite(Number(asset.face_value))) {
+    return `${label}: face_value must be a number`
+  }
+  if (isTradableFixedIncome({ asset_type: 'Fixed Income', fixed_income_subtype: subtype })) {
+    if (!Number.isFinite(Number(asset?.count)) || Number(asset.count) <= 0) {
+      return `${label}: count (units purchased) is required and must be positive for Bond/T-Bill`
+    }
+    if (!Number.isFinite(Number(asset?.cost_price)) || Number(asset.cost_price) < 0) {
+      return `${label}: cost_price must be a non-negative number for Bond/T-Bill`
+    }
+    if (!isValidIsoDate(asset?.purchase_date)) {
+      return `${label}: purchase_date (YYYY-MM-DD) is required for Bond/T-Bill`
+    }
+    if (new Date(asset.purchase_date) > new Date()) {
+      return `${label}: purchase_date cannot be in the future`
+    }
+  }
+  return null
+}
+
+function validateFixedIncomeLot(lot: any, label: string): string | null {
+  if (!lot?.asset_name || !String(lot.asset_name).trim()) return `${label}: asset_name is required`
+  if (!Number.isFinite(Number(lot?.count)) || Number(lot.count) <= 0) return `${label}: count must be a positive number`
+  if (!Number.isFinite(Number(lot?.cost_price)) || Number(lot.cost_price) < 0) return `${label}: cost_price must be a non-negative number`
+  if (!isValidIsoDate(lot?.purchase_date)) return `${label}: invalid purchase date "${lot?.purchase_date}". Use YYYY-MM-DD format`
+  if (new Date(lot.purchase_date) > new Date()) return `${label}: purchase_date cannot be in the future`
   return null
 }
 
@@ -2054,10 +2206,12 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
 
   if (toolName === 'add_cash_asset') {
     if (!input.name || !String(input.name).trim()) return 'Asset name is required'
-    if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
     if (!input.location_name || !String(input.location_name).trim()) return 'Location name is required'
     const fixedIncomeError = validateFixedIncomeFields(input, 'Asset')
     if (fixedIncomeError) return fixedIncomeError
+    if (!isTradableFixedIncome({ asset_type: input.asset_type, fixed_income_subtype: input.fixed_income_subtype })) {
+      if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
+    }
   }
 
   if (toolName === 'add_cash_assets') {
@@ -2066,9 +2220,25 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
     for (let i = 0; i < assets.length; i++) {
       const a = assets[i]
       if (!a.name || !String(a.name).trim()) return `Asset ${i + 1}: name is required`
-      if (!Number.isFinite(Number(a.price)) || Number(a.price) < 0) return `Asset ${i + 1}: price must be a non-negative number`
       const fixedIncomeError = validateFixedIncomeFields(a, `Asset ${i + 1}`)
       if (fixedIncomeError) return fixedIncomeError
+      if (!isTradableFixedIncome({ asset_type: a.asset_type, fixed_income_subtype: a.fixed_income_subtype })) {
+        if (!Number.isFinite(Number(a.price)) || Number(a.price) < 0) return `Asset ${i + 1}: price must be a non-negative number`
+      }
+    }
+  }
+
+  if (toolName === 'add_fixed_income_lot') {
+    const error = validateFixedIncomeLot(input, 'Lot')
+    if (error) return error
+  }
+
+  if (toolName === 'add_fixed_income_lots') {
+    const lots = Array.isArray(input.lots) ? input.lots : []
+    if (lots.length === 0) return 'At least one lot is required'
+    for (let i = 0; i < lots.length; i++) {
+      const error = validateFixedIncomeLot(lots[i], `Lot ${i + 1}`)
+      if (error) return error
     }
   }
 
@@ -2121,11 +2291,22 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const transactions = Array.isArray(input.transactions) ? input.transactions : []
       return `Add ${transactions.length} stock transaction${transactions.length === 1 ? '' : 's'}`
     }
-    case 'add_cash_asset':
-      return `Add ${input.asset_type}${input.asset_type === 'Fixed Income' && input.fixed_income_subtype ? ` (${input.fixed_income_subtype})` : ''} account "${input.name}" at ${input.location_name} worth $${Number(input.price).toLocaleString()}`
+    case 'add_cash_asset': {
+      const typeSuffix = input.asset_type === 'Fixed Income' && input.fixed_income_subtype ? ` (${input.fixed_income_subtype})` : ''
+      const valueText = isTradableFixedIncome({ asset_type: input.asset_type, fixed_income_subtype: input.fixed_income_subtype })
+        ? `${input.count} unit${Number(input.count) === 1 ? '' : 's'} at $${input.cost_price}/unit`
+        : `worth $${Number(input.price).toLocaleString()}`
+      return `Add ${input.asset_type}${typeSuffix} account "${input.name}" at ${input.location_name}, ${valueText}`
+    }
     case 'add_cash_assets': {
       const assets = Array.isArray(input.assets) ? input.assets : []
       return `Add ${assets.length} non-stock asset${assets.length === 1 ? '' : 's'}`
+    }
+    case 'add_fixed_income_lot':
+      return `Add ${input.count} unit${Number(input.count) === 1 ? '' : 's'} of "${input.asset_name}" at $${input.cost_price}/unit purchased ${formatDateMDY(input.purchase_date)}`
+    case 'add_fixed_income_lots': {
+      const lots = Array.isArray(input.lots) ? input.lots : []
+      return `Add ${lots.length} Fixed Income lot${lots.length === 1 ? '' : 's'}`
     }
     case 'add_ticker_to_watchlist':
       return `Add ${input.symbol.toUpperCase()} to watchlist`
@@ -2268,20 +2449,33 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
   if (toolName === 'add_cash_asset') {
     const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
     const isFixedIncome = input.asset_type === 'Fixed Income'
-    const { error } = await supabase.from('assets').insert({
+    const isTradable = isTradableFixedIncome({ asset_type: input.asset_type, fixed_income_subtype: input.fixed_income_subtype })
+    // Bond/T-Bill are lot-valued (no live quote to mark against), so the
+    // asset row itself carries no price — value comes from summing lots.
+    const { data, error } = await supabase.from('assets').insert({
       user_id: userId,
       name: input.name,
       asset_type: input.asset_type,
       location_id: locationId,
       ownership: input.ownership,
-      price: input.price,
-      initial_price: input.price,
+      price: isTradable ? null : input.price,
+      initial_price: isTradable ? null : input.price,
       notes: input.notes ?? null,
       fixed_income_subtype: isFixedIncome ? (input.fixed_income_subtype ?? null) : null,
       interest_rate: isFixedIncome && input.interest_rate != null && input.interest_rate !== '' ? Number(input.interest_rate) : null,
       maturity_date: isFixedIncome ? (input.maturity_date ?? null) : null,
-    })
+      face_value: isFixedIncome && input.face_value != null && input.face_value !== '' ? Number(input.face_value) : null,
+    }).select('id').single()
     if (error) throw new Error(`Failed to add asset: ${error.message}`)
+    if (isTradable) {
+      const { error: lotError } = await supabase.from('fixed_income_lots').insert({
+        asset_id: data.id,
+        count: input.count,
+        cost_price: input.cost_price,
+        purchase_date: input.purchase_date,
+      })
+      if (lotError) throw new Error(`Failed to add lot: ${lotError.message}`)
+    }
     return
   }
 
@@ -2290,6 +2484,36 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     if (assets.length === 0) throw new Error('assets is required and must contain at least one item')
     for (const asset of assets) {
       await executeTool('add_cash_asset', asset, userId)
+    }
+    return
+  }
+
+  if (toolName === 'add_fixed_income_lot') {
+    const { data: asset, error: assetError } = await supabase.from('assets')
+      .select('id, asset_type, fixed_income_subtype')
+      .eq('user_id', userId)
+      .eq('name', input.asset_name)
+      .maybeSingle()
+    if (assetError) throw new Error(`Failed to look up asset: ${assetError.message}`)
+    if (!asset) throw new Error(`No asset named "${input.asset_name}" found. Use add_cash_asset to create it first.`)
+    if (!isTradableFixedIncome(asset)) {
+      throw new Error(`"${input.asset_name}" is not a tradable Bond/T-Bill Fixed Income asset.`)
+    }
+    const { error } = await supabase.from('fixed_income_lots').insert({
+      asset_id: asset.id,
+      count: input.count,
+      cost_price: input.cost_price,
+      purchase_date: input.purchase_date,
+    })
+    if (error) throw new Error(`Failed to add lot: ${error.message}`)
+    return
+  }
+
+  if (toolName === 'add_fixed_income_lots') {
+    const lots = Array.isArray(input.lots) ? input.lots : []
+    if (lots.length === 0) throw new Error('lots is required and must contain at least one item')
+    for (const lot of lots) {
+      await executeTool('add_fixed_income_lot', lot, userId)
     }
     return
   }
@@ -2683,13 +2907,20 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
   }
 
   if (toolName === 'update_asset_value') {
-    const { data, error } = await supabase.from('assets')
-      .update({ price: input.price })
+    const { data: existing, error: lookupError } = await supabase.from('assets')
+      .select('id, asset_type, fixed_income_subtype')
       .eq('user_id', userId)
       .eq('name', input.asset_name)
-      .select('id')
+      .maybeSingle()
+    if (lookupError) throw new Error(`Failed to look up asset: ${lookupError.message}`)
+    if (!existing) throw new Error(`No asset found with name "${input.asset_name}"`)
+    if (isTradableFixedIncome(existing)) {
+      throw new Error(`"${input.asset_name}" is a tradable Bond/T-Bill — its value comes from its lots. Use add_fixed_income_lot to record a purchase instead of setting a value directly.`)
+    }
+    const { error } = await supabase.from('assets')
+      .update({ price: input.price })
+      .eq('id', existing.id)
     if (error) throw new Error(`Failed to update asset: ${error.message}`)
-    if (!data || data.length === 0) throw new Error(`No asset found with name "${input.asset_name}"`)
   }
 }
 

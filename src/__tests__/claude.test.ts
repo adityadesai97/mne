@@ -42,9 +42,24 @@ test('infers fixed income Bond subtype as investment', () => {
   expect(inferCashAccountType({ name: 'Treasury Bond', asset_type: 'Fixed Income', fixed_income_subtype: 'Bond' })).toBe('Investment')
 })
 
+test('infers fixed income T-Bill subtype as investment', () => {
+  expect(inferCashAccountType({ name: '13-Week Treasury Bill', asset_type: 'Fixed Income', fixed_income_subtype: 'T-Bill' })).toBe('Investment')
+})
+
 test('system prompt documents fixed income subtypes', () => {
   const prompt = buildSystemPrompt([])
-  expect(prompt).toContain('fixed_income_subtype: CD, Deposit, or Bond')
+  expect(prompt).toContain('fixed_income_subtype: CD, Deposit, Bond, or T-Bill')
+})
+
+test('system prompt explains T-Bill discount pricing', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toContain('cost_price = the discounted amount actually paid per unit, face_value = the amount paid out per unit at maturity')
+})
+
+test('system prompt requires lots instead of price for Bond/T-Bill', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toContain('use count (units), cost_price (per unit), and purchase_date INSTEAD of price')
+  expect(prompt).toContain('add_fixed_income_lot / add_fixed_income_lots')
 })
 
 test('system prompt requires grant_date whenever shares are described as vested', () => {

@@ -17,6 +17,7 @@ export type Database = {
       assets: {
         Row: {
           asset_type: string
+          face_value: number | null
           fixed_income_subtype: string | null
           id: string
           interest_rate: number | null
@@ -31,6 +32,7 @@ export type Database = {
         }
         Insert: {
           asset_type: string
+          face_value?: number | null
           fixed_income_subtype?: string | null
           id?: string
           interest_rate?: number | null
@@ -45,6 +47,7 @@ export type Database = {
         }
         Update: {
           asset_type?: string
+          face_value?: number | null
           fixed_income_subtype?: string | null
           id?: string
           interest_rate?: number | null
@@ -70,6 +73,38 @@ export type Database = {
             columns: ["ticker_id"]
             isOneToOne: false
             referencedRelation: "tickers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixed_income_lots: {
+        Row: {
+          asset_id: string
+          cost_price: number
+          count: number
+          id: string
+          purchase_date: string
+        }
+        Insert: {
+          asset_id: string
+          cost_price: number
+          count: number
+          id?: string
+          purchase_date: string
+        }
+        Update: {
+          asset_id?: string
+          cost_price?: number
+          count?: number
+          id?: string
+          purchase_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixed_income_lots_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
             referencedColumns: ["id"]
           },
         ]

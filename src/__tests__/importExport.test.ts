@@ -287,6 +287,53 @@ test('serializes a Fixed Income asset with subtype, rate, and maturity', () => {
   expect(asset.maturityDate).toBe('2027-01-15')
 })
 
+test('serializes a T-Bill with a face value distinct from the discounted price paid', () => {
+  const data = {
+    assets: [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: '13-Week T-Bill',
+        asset_type: 'Fixed Income',
+        fixed_income_subtype: 'T-Bill',
+        price: 9800,
+        face_value: 10000,
+        maturity_date: '2026-11-15',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Treasury Direct', account_type: 'Investment' },
+        location_id: '22222222-2222-4222-8222-222222222222',
+        stock_subtypes: [],
+      },
+    ],
+    tickers: [],
+    themes: [],
+  }
+  const result = serializeForExport(data)
+  const asset = result.data.assets[0] as any
+  expect(asset.assetType).toBe('Fixed Income')
+  expect(asset.fixedIncomeSubtype).toBe('T-Bill')
+  expect(asset.price).toBe(9800)
+  expect(asset.faceValue).toBe(10000)
+})
+
+test('normalizes various T-Bill spellings to the T-Bill subtype', () => {
+  const raw = JSON.stringify({
+    schema: 'mne.export.v2',
+    version: '2.0',
+    exportedAt: '2026-02-17T00:00:00.000Z',
+    data: {
+      locations: [], themes: [], tickers: [], tickerThemes: [], themeTargets: [],
+      assets: [
+        { id: '66666666-6666-4666-8666-666666666666', name: 'Bill 1', assetType: 'Fixed Income', fixedIncomeSubtype: 'T-Bill', ownership: 'Individual' },
+        { id: '77777777-7777-4777-8777-777777777777', name: 'Bill 2', assetType: 'Fixed Income', fixedIncomeSubtype: 'Treasury Bill', ownership: 'Individual' },
+        { id: '88888888-8888-4888-8888-888888888888', name: 'Bill 3', assetType: 'Fixed Income', fixedIncomeSubtype: 'TBill', ownership: 'Individual' },
+      ],
+      stockSubtypes: [], transactions: [], rsuGrants: [],
+    },
+  })
+
+  const result = parseImport(raw)
+  expect(result.assets.map((a) => a.fixedIncomeSubtype)).toEqual(['T-Bill', 'T-Bill', 'T-Bill'])
+})
+
 test('migrates legacy CD/Deposit asset types into Fixed Income on import', () => {
   const raw = JSON.stringify({
     schema: 'mne.export.v2',

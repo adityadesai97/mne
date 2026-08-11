@@ -6,10 +6,15 @@ import { ChevronLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TaxLotList } from '@/components/TaxLotList'
+import { FixedIncomeLotList } from '@/components/FixedIncomeLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
+import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@/lib/db/fixedIncomeLots'
+import {
+  computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
+  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount,
+} from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { revealUp } from '@/lib/motionPresets'
 import { formatDateMDY } from '@/lib/dates'
@@ -22,6 +27,7 @@ interface EditAssetValues {
   fixedIncomeSubtype: string
   interestRate: string
   maturityDate: string
+  faceValue: string
 }
 
 export default function AssetDetail() {
@@ -39,6 +45,7 @@ export default function AssetDetail() {
     fixedIncomeSubtype: '',
     interestRate: '',
     maturityDate: '',
+    faceValue: '',
   })
 
   useEffect(() => {
@@ -118,6 +125,41 @@ export default function AssetDetail() {
     }
   }
 
+  async function handleAddLot(values: { count: number; cost_price: number; purchase_date: string }) {
+    try {
+      await addFixedIncomeLot(asset.id, values)
+      if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function handleEditLot(lotId: string, values: { count: number; cost_price: number; purchase_date: string }) {
+    try {
+      await updateFixedIncomeLot(lotId, values)
+      if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function handleDeleteLot(lotId: string) {
+    const confirmed = await requestAppConfirm({
+      title: 'Delete lot?',
+      message: 'Delete this lot?',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await deleteFixedIncomeLot(lotId)
+      if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
   async function handleSaveAsset() {
     try {
       const isFixedIncome = asset.asset_type === 'Fixed Income'
@@ -134,6 +176,7 @@ export default function AssetDetail() {
         fixed_income_subtype: isFixedIncome ? (editValues.fixedIncomeSubtype || null) : asset.fixed_income_subtype ?? null,
         interest_rate: isFixedIncome ? (editValues.interestRate ? Number(editValues.interestRate) : null) : asset.interest_rate ?? null,
         maturity_date: isFixedIncome ? (editValues.maturityDate || null) : asset.maturity_date ?? null,
+        face_value: isFixedIncome ? (editValues.faceValue ? Number(editValues.faceValue) : null) : asset.face_value ?? null,
       })
       setEditing(false)
       if (id) setAsset(await getAssetById(id))
@@ -191,6 +234,10 @@ export default function AssetDetail() {
 
   const isStock = asset.asset_type === 'Stock'
   const isFixedIncome = asset.asset_type === 'Fixed Income'
+  const isTradable = isTradableFixedIncome(asset)
+  const fixedIncomeLots = asset.fixed_income_lots ?? []
+  const lotUnits = isTradable ? computeFixedIncomeLotCount(asset) : 0
+  const expectedReturn = isTradable ? computeFixedIncomeExpectedReturn(asset) : null
   const value = computeAssetValue(asset)
   const shareCount = isStock ? computeShareCount(asset) : 0
   const gain = computeUnrealizedGain(asset)
@@ -249,6 +296,7 @@ export default function AssetDetail() {
                 fixedIncomeSubtype: asset.fixed_income_subtype ?? 'CD',
                 interestRate: asset.interest_rate != null ? String(asset.interest_rate) : '',
                 maturityDate: asset.maturity_date ?? '',
+                faceValue: asset.face_value != null ? String(asset.face_value) : '',
               })
             }}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -304,7 +352,7 @@ export default function AssetDetail() {
                   <option value="Individual">Individual</option>
                   <option value="Joint">Joint</option>
                 </select>
-                {!isStock && (
+                {!isStock && !isTradable && (
                   <div>
                     <label className="text-xs text-muted-foreground">Value ($)</label>
                     <input
@@ -315,6 +363,11 @@ export default function AssetDetail() {
                       className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
+                )}
+                {isTradable && (
+                  <p className="text-xs text-muted-foreground">
+                    Value is computed from lots below — add or edit a lot to change it.
+                  </p>
                 )}
                 {isFixedIncome && (
                   <div className="grid grid-cols-3 gap-2">
@@ -328,6 +381,7 @@ export default function AssetDetail() {
                         <option value="CD">CD</option>
                         <option value="Deposit">Deposit</option>
                         <option value="Bond">Bond</option>
+                        <option value="T-Bill">T-Bill</option>
                       </select>
                     </div>
                     <div>
@@ -349,6 +403,18 @@ export default function AssetDetail() {
                         className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
+                  </div>
+                )}
+                {isFixedIncome && (editValues.fixedIncomeSubtype === 'T-Bill' || editValues.fixedIncomeSubtype === 'Bond') && (
+                  <div>
+                    <label className="text-xs text-muted-foreground">Face Value ($) — paid out at maturity; Value above is what was paid for it</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editValues.faceValue}
+                      onChange={e => setEditValues(v => ({ ...v, faceValue: e.target.value }))}
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
                   </div>
                 )}
                 <div>
@@ -394,14 +460,17 @@ export default function AssetDetail() {
                     <span className={`font-medium tabular-nums ${tickerPriceChangeClass}`}>${tickerPrice.toFixed(2)}</span>
                   </p>
                 )}
-                {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date))) && (
+                {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {asset.ownership && <Badge variant="secondary">{asset.ownership}</Badge>}
                     {isFixedIncome && asset.interest_rate != null && (
-                      <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% APY</Badge>
+                      <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% rate</Badge>
                     )}
                     {isFixedIncome && asset.maturity_date && (
                       <Badge variant="secondary">Matures {formatDateMDY(asset.maturity_date)}</Badge>
+                    )}
+                    {isFixedIncome && asset.face_value != null && (
+                      <Badge variant="secondary">Face {fmt(Number(asset.face_value))}</Badge>
                     )}
                   </div>
                 )}
@@ -418,6 +487,9 @@ export default function AssetDetail() {
                         {fmt(value)}
                         {isStock && (
                           <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} shares</span>
+                        )}
+                        {isTradable && (
+                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(lotUnits)} units</span>
                         )}
                       </p>
                       {isStock && (
@@ -456,6 +528,55 @@ export default function AssetDetail() {
           </motion.div>
         )}
 
+        {/* Fixed Income lots (Bond/T-Bill) — units bought over time, mirroring stock tax lots */}
+        {isTradable && (
+          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-2xl p-5">
+            <div className="mb-3">
+              <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">Lots</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {fixedIncomeLots.length} lot{fixedIncomeLots.length === 1 ? '' : 's'} · {fmtShares(lotUnits)} units total
+              </p>
+            </div>
+            <FixedIncomeLotList
+              lots={fixedIncomeLots}
+              faceValue={asset.face_value ?? null}
+              onAddLot={handleAddLot}
+              onEditLot={handleEditLot}
+              onDeleteLot={handleDeleteLot}
+            />
+          </motion.div>
+        )}
+
+        {/* Expected pretax return if held to maturity — a projection (coupon
+            income + discount/premium to face value), not a mark-to-market
+            gain, so it lives in its own card rather than next to the hero
+            value the way a stock's unrealized gain does. */}
+        {expectedReturn && (
+          <motion.div {...revealUp(0.08)} className="bg-card shadow-card rounded-2xl p-5">
+            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">Expected Return to Maturity</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Metric label="Cost basis" value={fmt(expectedReturn.costBasis)} />
+              <Metric label="Face value at maturity" value={fmt(expectedReturn.faceValueTotal)} />
+              {asset.fixed_income_subtype === 'Bond' && (
+                <Metric label="Coupon income" value={fmt(expectedReturn.interestIncome)} />
+              )}
+              <Metric
+                label={asset.fixed_income_subtype === 'Bond' ? 'Price gain/loss' : 'Discount captured'}
+                value={`${expectedReturn.capitalGain >= 0 ? '+' : ''}${fmt(expectedReturn.capitalGain)}`}
+                className={expectedReturn.capitalGain >= 0 ? 'text-gain' : 'text-loss'}
+              />
+              <Metric
+                label="Total expected return"
+                value={`${expectedReturn.totalExpectedReturn >= 0 ? '+' : ''}${fmt(expectedReturn.totalExpectedReturn)}${expectedReturn.expectedReturnPct != null ? ` (${expectedReturn.expectedReturnPct.toFixed(1)}%)` : ''}`}
+                className={expectedReturn.totalExpectedReturn >= 0 ? 'text-gain' : 'text-loss'}
+              />
+              {expectedReturn.annualizedYieldPct != null && (
+                <Metric label="Annualized yield" value={`${expectedReturn.annualizedYieldPct.toFixed(2)}%`} />
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {/* Notes (read mode only) */}
         {!editing && asset.notes && (
           <motion.div {...revealUp(0.1)} className="bg-card shadow-card rounded-2xl p-5">
@@ -475,4 +596,13 @@ function fmt(n: number) {
 
 function fmtShares(n: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
+}
+
+function Metric({ label, value, className = '' }: { label: string; value: string; className?: string }) {
+  return (
+    <div>
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className={`text-sm font-medium tabular-nums mt-0.5 ${className}`}>{value}</p>
+    </div>
+  )
 }
