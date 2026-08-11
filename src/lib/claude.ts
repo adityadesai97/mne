@@ -10,6 +10,7 @@ import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
 import { computeThemeDistribution } from './charts'
 import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain } from './portfolio'
 import { getSupabaseClient } from './supabase'
+import { formatDateMDY } from './dates'
 
 export type Message = { role: 'user' | 'assistant'; content: string }
 export type AgentTraceStep = {
@@ -959,7 +960,7 @@ function recommendActionsForGoal(assets: any[], input: any) {
       const candidate = tax.harvestCandidates[0]
       recommendations.push({
         priority: 'high',
-        action: `Evaluate tax-loss harvesting on ${candidate.symbol} lot from ${candidate.purchaseDate}.`,
+        action: `Evaluate tax-loss harvesting on ${candidate.symbol} lot from ${formatDateMDY(candidate.purchaseDate)}.`,
         rationale: `Lot is down ${candidate.gainPct?.toFixed(2)}% and may offset gains.`,
       })
     }
@@ -967,7 +968,7 @@ function recommendActionsForGoal(assets: any[], input: any) {
       const upcoming = tax.upcomingLongTerm[0]
       recommendations.push({
         priority: 'medium',
-        action: `Consider waiting ${upcoming.daysToLongTerm} more day(s) before selling ${upcoming.symbol} lot from ${upcoming.purchaseDate}.`,
+        action: `Consider waiting ${upcoming.daysToLongTerm} more day(s) before selling ${upcoming.symbol} lot from ${formatDateMDY(upcoming.purchaseDate)}.`,
         rationale: 'Potential promotion to long-term treatment may reduce taxes.',
       })
     }
@@ -1807,7 +1808,7 @@ function moneyToText(value: unknown): string {
 
 function dateToText(value: unknown): string {
   const text = String(value ?? '').trim()
-  return text || '-'
+  return text ? formatDateMDY(text) : '-'
 }
 
 function mergePreviewSections(sections: ConfirmationPreviewSection[]): ConfirmationPreviewSection[] {
@@ -2094,8 +2095,8 @@ function confirmationMessageFor(toolName: string, input: any): string {
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
       const gainStatus = date < oneYearAgo ? 'Long Term' : 'Short Term'
       const subtype = input.subtype || 'Market'
-      const grantSuffix = subtype === 'RSU' && input.grant_date ? `, grant ${input.grant_date}` : ''
-      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${input.purchase_date} (${gainStatus}, ${subtype}${grantSuffix})`
+      const grantSuffix = subtype === 'RSU' && input.grant_date ? `, grant ${formatDateMDY(input.grant_date)}` : ''
+      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${formatDateMDY(input.purchase_date)} (${gainStatus}, ${subtype}${grantSuffix})`
     }
     case 'add_stock_transactions': {
       const transactions = Array.isArray(input.transactions) ? input.transactions : []
@@ -2120,7 +2121,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
       return `Record ${grants.length} RSU grant${grants.length === 1 ? '' : 's'}`
     }
     case 'add_rsu_grant':
-      return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${input.grant_date} (vests ${input.vest_start} → ${input.vest_end})`
+      return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${formatDateMDY(input.grant_date)} (vests ${formatDateMDY(input.vest_start)} → ${formatDateMDY(input.vest_end)})`
     case 'sell_shares': {
       const multiLots = Array.isArray(input.lots) ? input.lots : []
       const normalizedLots = multiLots.length > 0
@@ -2128,7 +2129,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
         : [{ purchase_date: input.purchase_date, count: input.count }]
       const totalShares = normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.count ?? 0), 0)
       const lotSummary = normalizedLots
-        .map((lot: any) => `${lot.count} on ${lot.purchase_date}`)
+        .map((lot: any) => `${lot.count} on ${formatDateMDY(lot.purchase_date)}`)
         .join(', ')
       const defaultTransfer = totalShares * Number(input.sale_price ?? 0)
       const rawTransferAmount = Number(input.proceeds_transfer_amount ?? defaultTransfer)
@@ -2136,7 +2137,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const transferText = input.proceeds_destination_asset_name
         ? `; transfer $${transferAmount.toLocaleString()} to ${input.proceeds_destination_asset_name}`
         : ''
-      return `Sell ${totalShares} ${input.symbol.toUpperCase()} shares from ${input.source_location_name} at $${input.sale_price}/share on ${input.sale_date} (lots: ${lotSummary})${transferText}`
+      return `Sell ${totalShares} ${input.symbol.toUpperCase()} shares from ${input.source_location_name} at $${input.sale_price}/share on ${formatDateMDY(input.sale_date)} (lots: ${lotSummary})${transferText}`
     }
     case 'update_asset_value':
       return `Update "${input.asset_name}" value to $${Number(input.price).toLocaleString()}`

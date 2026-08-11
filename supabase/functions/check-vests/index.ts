@@ -1,5 +1,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// Push notification body text is user-facing, so dates in it follow the
+// app-wide MM/DD/YYYY display convention (see src/lib/dates.ts) even though
+// this function can't import from src — it's a standalone Deno function.
+function formatDateMDY(value: string | null | undefined): string {
+  if (!value) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return value
+  const [, year, month, day] = match
+  return `${month}/${day}/${year}`
+}
+
 Deno.serve(async () => {
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -41,7 +52,7 @@ Deno.serve(async () => {
         body: JSON.stringify({
           user_id: userSettings.user_id,
           title: 'RSU Grant Vesting Soon',
-          body: `${grant.stock_subtypes.asset.name}: ${Number(grant.total_shares).toLocaleString()} shares vest on ${grant.vest_end}`,
+          body: `${grant.stock_subtypes.asset.name}: ${Number(grant.total_shares).toLocaleString()} shares vest on ${formatDateMDY(grant.vest_end)}`,
         }),
       })
     }

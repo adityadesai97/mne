@@ -208,8 +208,8 @@ describe('computeRsuVesting', () => {
     const today = new Date('2025-01-01')
     const result = computeRsuVesting([assetWithMultipleGrants], today)
     expect(result).toHaveLength(2)
-    expect(result[0].label).toContain('2023-01-01')
-    expect(result[1].label).toContain('2024-06-01')
+    expect(result[0].label).toContain('01/01/2023')
+    expect(result[1].label).toContain('06/01/2024')
   })
 })
 

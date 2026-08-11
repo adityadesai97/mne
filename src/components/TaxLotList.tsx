@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { ChevronDown, Trash2, Pencil } from 'lucide-react'
+import { formatDateMDY } from '@/lib/dates'
 
 interface EditValues {
   count: string
@@ -149,7 +150,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
         >
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div>
-              <p className="text-xs font-medium">{formatDateLabel(t.purchase_date)}</p>
+              <p className="text-xs font-medium">{formatDateMDY(t.purchase_date)}</p>
               <p className="text-[11px] text-muted-foreground">
                 {shares.toFixed(shares % 1 === 0 ? 0 : 4)} shares @ {fmt(costPerShare)}
                 {soldAtVest > 0 && <span className="text-muted-foreground/70"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
@@ -182,7 +183,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                   value={currentValue !== null ? fmt(currentValue) : '—'}
                   className={currentValue !== null && gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
                 />
-                <Metric label="Purchased" value={t.purchase_date ?? '—'} />
+                <Metric label="Purchased" value={formatDateMDY(t.purchase_date)} />
                 <Metric
                   label="Gain / loss"
                   value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
@@ -261,7 +262,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                   return (
                     <div key={group.grant.id} className="rounded-lg border border-border/50 bg-muted/20 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium">Grant {formatDateLabel(group.grant.grant_date)}</p>
+                        <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
                         <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
                           {group.transactions.length} tx
                         </p>
@@ -296,8 +297,8 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                           {fmtShares(vesting.unvestedShares)} unvested
                         </p>
                         <p className="text-[10px] text-muted-foreground mt-1">
-                          Vesting {formatDateLabel(group.grant.vest_start)} → {formatDateLabel(group.grant.vest_end)}
-                          {group.grant.ended_at && <> · Ended {formatDateLabel(group.grant.ended_at)}</>}
+                          Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
+                          {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
                         </p>
                       </div>
 
@@ -429,17 +430,6 @@ function computeGrantVesting(grant: any, transactions: any[]) {
   const unvestedShares = grant.ended_at ? 0 : Math.max(0, totalShares - normalizedVested)
 
   return { vestedShares: normalizedVested, unvestedShares }
-}
-
-function formatDateLabel(value: string | null | undefined) {
-  if (!value || value === 'Unknown') return value ?? '—'
-  const [year, month, day] = value.split('-').map(Number)
-  if (!year || !month || !day) return value
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
 }
 
 function Metric({ label, value, className = '' }: { label: string; value: string; className?: string }) {
