@@ -35,7 +35,7 @@ const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] 
 
 const VIEW_OPTIONS: { v: AssetView; label: string; icon: React.ElementType }[] = [
   { v: 'grid', label: 'Grid', icon: LayoutGrid },
-  { v: 'list', label: 'Simplified list', icon: List },
+  { v: 'list', label: 'List', icon: List },
 ]
 
 /**
