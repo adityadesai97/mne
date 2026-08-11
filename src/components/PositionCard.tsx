@@ -146,7 +146,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                   <p className="text-muted-foreground text-xs truncate">
                     {/* Share count comes from owned lots, not the quote, so it's
                         worth printing even while the price itself is pending. */}
-                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount)} sh` : ''}
+                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount)} shares` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -217,7 +217,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                 <>
                   <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount)} sh</span>
+                    <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount)} shares</span>
                     {/* Direction is carried by the arrow icon + sign, not by a
                         green/red hue — a hue picked to signal gain/loss could
                         easily collide with (or vanish into) the tile's own

@@ -399,7 +399,7 @@ export default function AssetDetail() {
                       <p className="text-3xl font-bold tabular-nums font-syne">
                         {fmt(value)}
                         {isStock && (
-                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} sh</span>
+                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} shares</span>
                         )}
                       </p>
                       {isStock && (
