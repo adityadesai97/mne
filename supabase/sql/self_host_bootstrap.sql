@@ -82,24 +82,19 @@ alter table public.assets add column if not exists ticker_id uuid;
 update public.assets set ownership = 'Individual' where ownership is null;
 alter table public.assets alter column ownership set default 'Individual';
 
--- Fixed Income super type (CD, Deposit, Bond subtypes) with interest rate + maturity date
+-- Fixed Income super type (CD, Deposit, Bond, T-Bill subtypes) with interest
+-- rate, maturity date, and face_value (the amount paid out at maturity for
+-- discount instruments like T-Bills — assets.price holds what was actually
+-- paid for them).
 alter table public.assets add column if not exists fixed_income_subtype text;
 alter table public.assets add column if not exists interest_rate numeric(6,3);
 alter table public.assets add column if not exists maturity_date date;
+alter table public.assets add column if not exists face_value numeric(12,4);
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'assets_fixed_income_subtype_check'
-      and conrelid = 'public.assets'::regclass
-  ) then
-    alter table public.assets
-      add constraint assets_fixed_income_subtype_check
-      check (fixed_income_subtype is null or fixed_income_subtype in ('CD', 'Deposit', 'Bond'));
-  end if;
-end $$;
+alter table public.assets drop constraint if exists assets_fixed_income_subtype_check;
+alter table public.assets
+  add constraint assets_fixed_income_subtype_check
+  check (fixed_income_subtype is null or fixed_income_subtype in ('CD', 'Deposit', 'Bond', 'T-Bill'));
 
 -- Some hosted projects carry an asset_type allowlist that predates migration
 -- history. Drop and recreate it here so 'Fixed Income' is allowed and the
@@ -239,6 +234,18 @@ begin
   end if;
 end $$;
 
+-- Bonds and T-Bills are tradable: a Fixed Income asset of either subtype can
+-- be bought in multiple lots over time (like stock tax lots), each with its
+-- own quantity and cost per unit. CD/Deposit remain flat-balance accounts
+-- (assets.price) since they aren't tradable positions.
+create table if not exists public.fixed_income_lots (
+  id uuid primary key default gen_random_uuid(),
+  asset_id uuid not null references public.assets(id) on delete cascade,
+  count numeric(14,4) not null,
+  cost_price numeric(12,4) not null,
+  purchase_date date not null
+);
+
 create table if not exists public.user_settings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -309,6 +316,7 @@ alter table public.assets enable row level security;
 alter table public.stock_subtypes enable row level security;
 alter table public.transactions enable row level security;
 alter table public.rsu_grants enable row level security;
+alter table public.fixed_income_lots enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
@@ -464,6 +472,26 @@ create policy own_rsu_grants_via_subtype
       from public.stock_subtypes st
       join public.assets a on a.id = st.asset_id
       where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists own_fixed_income_lots_via_asset on public.fixed_income_lots;
+create policy own_fixed_income_lots_via_asset
+  on public.fixed_income_lots
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.assets a
+      where a.id = asset_id and a.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.assets a
+      where a.id = asset_id and a.user_id = auth.uid()
     )
   );
 

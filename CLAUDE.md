@@ -49,22 +49,28 @@ assets ──→ tickers        (stocks only; null for 401k/cash/etc.)
 assets ──→ stock_subtypes (Market | ESPP | RSU — one per subtype per asset)
 stock_subtypes ──→ transactions  (individual tax lots with cost_price + purchase_date)
 stock_subtypes ──→ rsu_grants    (vest_start, vest_end, cliff_date, ended_at)
+assets ──→ fixed_income_lots     (Bond/T-Bill only — units + cost/unit + purchase_date, like stock tax lots)
 tickers ──→ ticker_themes ──→ themes
 themes ──→ theme_targets  (optional allocation target %)
 ```
 
-`assets.asset_type` is free text (no DB enum) but the app only creates: `Stock`, `401k`, `Cash`, `HSA`, and `Fixed Income`. `Fixed Income` is a super type covering CD, Deposit, and Bond accounts — `assets.fixed_income_subtype` ('CD' | 'Deposit' | 'Bond', DB-constrained) records which, alongside `assets.interest_rate` (annual %) and `assets.maturity_date`, both nullable and only meaningful when `asset_type = 'Fixed Income'`. Migration `20260811000000_add_fixed_income_asset_type.sql` folded the former standalone `CD` and `Deposit` asset types into this super type in place.
+`assets.asset_type` is free text (no DB enum) but the app only creates: `Stock`, `401k`, `Cash`, `HSA`, and `Fixed Income`. `Fixed Income` is a super type covering CD, Deposit, Bond, and T-Bill accounts — `assets.fixed_income_subtype` ('CD' | 'Deposit' | 'Bond' | 'T-Bill', DB-constrained) records which, alongside `assets.interest_rate` (annual %, Bond coupon) and `assets.maturity_date`, both nullable and only meaningful when `asset_type = 'Fixed Income'`. Migration `20260811000000_add_fixed_income_asset_type.sql` folded the former standalone `CD` and `Deposit` asset types into this super type in place. T-Bills (and any Bond bought below par) sell at a discount and pay face value at maturity rather than accruing periodic interest — `assets.face_value` (nullable, added in `20260811000001_add_face_value_to_assets.sql`) holds the per-unit maturity payout.
+
+**Bond and T-Bill are tradable** (migration `20260811000002_add_fixed_income_lots.sql`): bought in `fixed_income_lots` rows (`count` units × `cost_price` per unit × `purchase_date`), the same "buy over time in lots" shape as a stock's `transactions`, linked directly to `assets.id` (no intermediate subtype table — a Fixed Income asset only ever has one subtype). `assets.price`/`initial_price` are left `null` for these two subtypes; value is derived from lots instead (see Portfolio Math). CD and Deposit remain flat-balance accounts on `assets.price`, same as 401k/Cash/HSA.
 
 Every table has RLS enabled — users see only their own rows.
 
-All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transactions.ts`, `tickers.ts`, `locations.ts`, `settings.ts`, `grants.ts`, `snapshots.ts`, `themes.ts`. These are plain async functions that call `getSupabaseClient()` directly — no ORM, no query builder abstraction beyond the Supabase JS client.
+All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transactions.ts`, `tickers.ts`, `locations.ts`, `settings.ts`, `grants.ts`, `snapshots.ts`, `themes.ts`, `fixedIncomeLots.ts`. These are plain async functions that call `getSupabaseClient()` directly — no ORM, no query builder abstraction beyond the Supabase JS client.
 
 ### Portfolio Math
 
 `src/lib/portfolio.ts` contains all value calculations:
 - Stock value = shares (sum of `transactions.count`) × `tickers.current_price`
-- Non-stock value = `assets.price`
+- Tradable Fixed Income value (Bond/T-Bill) = sum of `fixed_income_lots.count × cost_price` — held at cost, not marked to market (there's no live bond/bill quote feed)
+- Other non-stock value (401k, Cash, HSA, CD, Deposit) = `assets.price`
 - Cost basis = sum of (`count × cost_price`) per tax lot
+- `computeUnrealizedGain` stays stock-only (P&L is a mark-to-market concept; never reported for non-stock assets, tradable or not)
+- `computeFixedIncomeExpectedReturn` — a **held-to-maturity projection** for a tradable Bond/T-Bill, distinct from unrealized gain: capital gain/loss to face value at maturity, plus (Bond only) coupon interest accrued from each lot's purchase date to `maturity_date` at `interest_rate`. Returns `null` without lots, `face_value`, or `maturity_date`.
 
 `src/lib/charts.ts` derives chart datasets (allocation, P&L, capital gains exposure, RSU vesting progress) by transforming the deeply-nested asset graph returned by `getAllAssets()`.
 
@@ -127,12 +133,13 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 
 **Write tools** (require user confirmation before executing):
 - `add_stock_transaction` / `add_stock_transactions`
-- `add_cash_asset` / `add_cash_assets`
+- `add_cash_asset` / `add_cash_assets` — for Bond/T-Bill, takes `count`/`cost_price`/`purchase_date` (the first lot) instead of `price`
+- `add_fixed_income_lot` / `add_fixed_income_lots` — buy more units of an *existing* Bond/T-Bill position
 - `add_ticker_to_watchlist`
 - `add_ticker_themes`
 - `add_rsu_grant` / `add_rsu_grants`
 - `sell_shares`
-- `update_asset_value`
+- `update_asset_value` — rejects Bond/T-Bill assets; their value is derived from lots, use `add_fixed_income_lot` instead
 
 Write operations display a structured preview table in the UI before the user confirms. Multiple write tools in one agent turn are batched into a single confirmation dialog. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
 
@@ -202,7 +209,7 @@ VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 
 **RLS on new tables**: Every new Supabase table needs an explicit RLS policy or all writes silently fail with a policy violation. Check `supabase/migrations/` for the pattern used on existing tables.
 
-**deleteAsset cascade**: There is no `ON DELETE CASCADE` at the DB level. `deleteAsset()` in `src/lib/db/assets.ts` manually deletes `transactions` → `rsu_grants` → `stock_subtypes` before deleting the asset. Any new child tables added to `stock_subtypes` must be added to this function.
+**deleteAsset cascade**: There is no `ON DELETE CASCADE` at the DB level. `deleteAsset()` in `src/lib/db/assets.ts` manually deletes `transactions` → `rsu_grants` → `stock_subtypes`, and `fixed_income_lots`, before deleting the asset. Any new child tables added to `stock_subtypes` (or directly to `assets`, like `fixed_income_lots`) must be added to this function.
 
 **Push notifications in production**: Requires `VITE_VAPID_PUBLIC_KEY` in `.env.local` and the three VAPID secrets (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) set in Supabase dashboard → Settings → Edge Functions → Secrets.
 
