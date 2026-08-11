@@ -13,7 +13,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ChevronDown, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { ChartNoAxesCombined, ChevronDown, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 
@@ -240,7 +240,17 @@ export default function Watchlist() {
         </div>
       )}
 
-      {loaded && tickers.map((t, i) => (
+      {loaded && tickers.map((t, i) => {
+        const currentPrice = Number(t.current_price ?? 0)
+        const previousClose = t.previous_close != null ? Number(t.previous_close) : null
+        const priceChangeClass = previousClose == null
+          ? ''
+          : currentPrice > previousClose
+            ? 'text-gain'
+            : currentPrice < previousClose
+              ? 'text-loss'
+              : ''
+        return (
         <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} whileTap={{ scale: 0.99 }} className="mx-4 mb-2">
           <Card>
           <CardContent className="p-4 cursor-pointer" onClick={() => toggleExpanded(t.id)}>
@@ -248,22 +258,26 @@ export default function Watchlist() {
               <div className="flex items-center gap-3 min-w-0">
                 {t.logo
                   ? <img src={t.logo} className="w-9 h-9 rounded-lg object-contain bg-muted flex-shrink-0 ring-1 ring-border/50" alt={t.symbol} />
-                  : <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0">{t.symbol.slice(0, 2)}</div>
+                  : (
+                    <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <ChartNoAxesCombined size={16} className="text-muted-foreground" />
+                    </div>
+                  )
                 }
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{t.symbol}</p>
-                    {t.is_owned && <Badge variant="secondary" className="text-xs">Owned</Badge>}
+                    {t.is_owned && <Badge variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">Owned</Badge>}
                   </div>
                   <div className="flex gap-1 mt-1 flex-wrap">
                     {t.ticker_themes?.map((tt: any) => (
-                      <Badge key={tt.theme.id} variant="secondary" className="text-xs">{tt.theme.name}</Badge>
+                      <Badge key={tt.theme.id} variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">{tt.theme.name}</Badge>
                     ))}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <p className="font-medium tabular-nums">${Number(t.current_price ?? 0).toFixed(2)}</p>
+                <p className={`font-medium tabular-nums ${priceChangeClass}`}>${currentPrice.toFixed(2)}</p>
                 <ChevronDown
                   size={14}
                   className={`text-muted-foreground/60 transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
@@ -300,7 +314,8 @@ export default function Watchlist() {
           </CardContent>
           </Card>
         </motion.div>
-      ))}
+        )
+      })}
       {loaded && tickers.length === 0 && !showForm && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center mt-16 px-4">
           <Star size={22} className="text-muted-foreground/50 mb-3" />
@@ -388,7 +403,7 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Pro
     <div className="pt-2 border-t border-border mt-2">
       <div className="flex flex-wrap gap-1 mb-2">
         {ticker.ticker_themes?.map((tt: any) => (
-          <span key={tt.theme.id} className="inline-flex items-center gap-1 bg-secondary text-secondary-foreground text-xs px-2 py-0.5 rounded-full">
+          <span key={tt.theme.id} className="inline-flex items-center gap-1 bg-muted/60 text-muted-foreground text-xs font-medium px-2 py-0.5 rounded-full">
             {tt.theme.name}
             <button onClick={() => handleRemove(tt.theme.id)} className="text-muted-foreground hover:text-foreground">×</button>
           </span>
