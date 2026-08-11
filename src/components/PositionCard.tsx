@@ -183,7 +183,13 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
 
   return (
     <motion.div
-      className="aspect-square"
+      // True square from `sm:` up, where 3-4 columns leave enough width (and
+      // therefore square-derived height) to fit a stock's icon + name +
+      // value + shares/gain line comfortably. Below that, 2 columns on a
+      // narrow phone make a true square too short for that same content —
+      // it was spilling out past the tile's bottom edge — so mobile gets a
+      // taller-than-wide ratio instead of a literal square.
+      className="aspect-[3/4] sm:aspect-square"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: Math.min(index, 10) * 0.03, ease: [0.25, 0.1, 0.25, 1] as const }}

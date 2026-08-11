@@ -136,7 +136,7 @@ function PortfolioSkeleton() {
       </div>
       <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-square w-full rounded-2xl" />
+          <Skeleton key={i} className="aspect-[3/4] sm:aspect-square w-full rounded-2xl" />
         ))}
       </div>
     </div>
