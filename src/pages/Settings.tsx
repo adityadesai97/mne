@@ -75,6 +75,27 @@ function ThemePicker({ value, onChange }: { value: 'light' | 'dark' | 'system'; 
   )
 }
 
+function AssetViewPicker({ value, onChange }: { value: 'grid' | 'list'; onChange: (v: 'grid' | 'list') => void }) {
+  const options: { v: 'grid' | 'list'; label: string }[] = [
+    { v: 'grid', label: 'Grid' },
+    { v: 'list', label: 'Simplified list' },
+  ]
+  return (
+    <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
+      {options.map(opt => (
+        <button
+          key={opt.v}
+          type="button"
+          onClick={() => onChange(opt.v)}
+          className={`flex-1 text-xs py-1 rounded-md transition-colors ${value === opt.v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function Hint({ text }: { text: string }) {
   return (
     <div className="relative group/hint inline-flex items-center">
@@ -108,6 +129,7 @@ export default function Settings() {
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
+  const [assetView, setAssetViewState] = useState<'grid' | 'list'>(config.assetView)
   const [editingKeys, setEditingKeys] = useState(false)
   const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
@@ -170,6 +192,11 @@ export default function Settings() {
     config.setTheme(v)
     applyTheme(v)
     setThemeState(v)
+  }
+
+  function handleAssetViewChange(v: 'grid' | 'list') {
+    config.setAssetView(v)
+    setAssetViewState(v)
   }
 
   function handleProviderChange(p: LLMProvider) {
@@ -326,6 +353,14 @@ export default function Settings() {
         <div className="bg-card rounded-xl px-4 py-4 space-y-2">
           <p className="text-sm font-medium">Theme</p>
           <ThemePicker value={theme} onChange={handleThemeChange} />
+        </div>
+        <div className="bg-card rounded-xl px-4 py-4 space-y-2">
+          <p className="text-sm font-medium">Asset view</p>
+          <p className="text-[11px] text-muted-foreground">
+            Grid shows large color-coded tiles on Portfolio; Simplified list
+            trades that in for a calmer, lower-chrome row per position.
+          </p>
+          <AssetViewPicker value={assetView} onChange={handleAssetViewChange} />
         </div>
         <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
           <div className="flex-1 min-w-0">
