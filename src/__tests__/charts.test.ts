@@ -186,6 +186,31 @@ describe('computeRsuVesting', () => {
     const result = computeRsuVesting([cashAsset])
     expect(result).toHaveLength(0)
   })
+
+  test('sorts rows by vest_end, soonest first, regardless of input/grant_date order', () => {
+    const assetWithMultipleGrants = {
+      ...stockAsset,
+      ticker: { ...stockAsset.ticker, symbol: 'MSFT' },
+      stock_subtypes: [
+        {
+          subtype: 'RSU',
+          transactions: [],
+          rsu_grants: [
+            // Listed latest-vest_end-first and with a later grant_date, so a
+            // naive "keep insertion order" or "sort by grant_date" would get
+            // this wrong — only sorting by vest_end passes.
+            { grant_date: '2024-06-01', total_shares: 50, vest_start: '2024-06-01', vest_end: '2028-06-01', cliff_date: null },
+            { grant_date: '2023-01-01', total_shares: 100, vest_start: '2023-01-01', vest_end: '2026-01-01', cliff_date: null },
+          ],
+        },
+      ],
+    }
+    const today = new Date('2025-01-01')
+    const result = computeRsuVesting([assetWithMultipleGrants], today)
+    expect(result).toHaveLength(2)
+    expect(result[0].label).toContain('2023-01-01')
+    expect(result[1].label).toContain('2024-06-01')
+  })
 })
 
 describe('computeThemeDistribution', () => {

@@ -362,14 +362,18 @@ export default function Charts() {
 
   const capitalGainsOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
+    // trigger: 'item' (not 'axis') deliberately — an axis-shadow pointer
+    // draws a rectangle spanning the whole plot's height regardless of
+    // which bar you're over, which for two bars this different in height
+    // reads as a hover box that doesn't match (fully "cover") the shorter
+    // one. Item trigger + the emphasis glow below hug the bar's own shape
+    // instead.
     tooltip: {
       ...tooltipBase,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
+      trigger: 'item',
       formatter: (params: unknown) => {
-        const rows = params as Array<{ axisValue: string; value: number }>
-        if (!rows.length) return ''
-        return `${rows[0].axisValue}<br/>${fmt(Number(rows[0].value))}`
+        const p = params as { name: string; value: number }
+        return `${p.name}<br/>${fmt(Number(p.value))}`
       },
     },
     grid: { left: 8, right: 16, top: 28, bottom: 16 },
@@ -403,6 +407,14 @@ export default function Charts() {
           // below it, not above (the 'top' side of its bounding box sits at
           // the shared baseline, not near the value it's labeling).
           label: { position: point.value >= 0 ? 'top' : 'bottom' },
+          // Glow that traces the bar's own (rounded) outline on hover —
+          // the actual hover feedback, now that there's no axis shadow.
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 14,
+              shadowColor: point.value >= 0 ? 'rgba(46,204,113,0.55)' : 'rgba(231,76,60,0.55)',
+            },
+          },
         })),
         barWidth: 34,
         label: {
@@ -459,7 +471,7 @@ export default function Charts() {
         type: 'bar',
         data: cvvData.map((point) => point.costBasis),
         barWidth: 14,
-        itemStyle: { color: MUTED_COLOR },
+        itemStyle: { color: MUTED_COLOR, borderRadius: [0, 4, 4, 0] },
         label: {
           show: true,
           position: 'right',
@@ -521,17 +533,31 @@ export default function Charts() {
         name: 'Vested',
         type: 'bar',
         stack: 'vest',
-        data: rsuData.map((point) => point.vestedShares),
+        data: rsuData.map((point) => ({
+          value: point.vestedShares,
+          itemStyle: {
+            color: GAIN_COLOR,
+            // Vested is normally the left segment of the stack, so its own
+            // right edge is a mid-stack seam, not the bar's actual tip —
+            // except at 100% vested, where Unvested has zero width and
+            // Vested becomes the whole (and therefore rounded) bar.
+            borderRadius: point.unvestedShares === 0 ? [0, 4, 4, 0] : 0,
+          },
+        })),
         barWidth: 18,
-        itemStyle: { color: GAIN_COLOR },
       },
       {
         name: 'Unvested',
         type: 'bar',
         stack: 'vest',
-        data: rsuData.map((point) => point.unvestedShares),
+        data: rsuData.map((point) => ({
+          value: point.unvestedShares,
+          itemStyle: {
+            color: MUTED_COLOR,
+            borderRadius: point.unvestedShares > 0 ? [0, 4, 4, 0] : 0,
+          },
+        })),
         barWidth: 18,
-        itemStyle: { color: MUTED_COLOR, borderRadius: [0, 4, 4, 0] },
         label: {
           show: true,
           position: 'right',

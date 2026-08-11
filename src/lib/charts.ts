@@ -92,7 +92,11 @@ export type RsuVestRow = {
 }
 
 export function computeRsuVesting(assets: any[], today: Date = new Date()): RsuVestRow[] {
-  const rows: RsuVestRow[] = []
+  // Each row carries its grant's vest_end alongside the public RsuVestRow
+  // fields so rows can be sorted chronologically (soonest to fully vest
+  // first — the same date the vest-alert edge function keys off of)
+  // before that sort key is stripped back off below.
+  const rows: (RsuVestRow & { vestEndTime: number })[] = []
   for (const a of assets) {
     for (const st of a.stock_subtypes ?? []) {
       if (st.subtype !== 'RSU') continue
@@ -122,11 +126,13 @@ export function computeRsuVesting(assets: any[], today: Date = new Date()): RsuV
           vestedShares: vested,
           unvestedShares: endedAt ? 0 : total - vested,
           totalShares: total,
+          vestEndTime: vestEnd.getTime(),
         })
       }
     }
   }
-  return rows
+  rows.sort((a, b) => a.vestEndTime - b.vestEndTime)
+  return rows.map(({ vestEndTime, ...row }) => row)
 }
 
 // ── Stock Distribution by Theme ───────────────────────────────
