@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartCandlestick, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { colorForAssetType } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
@@ -20,9 +20,13 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
         </div>
       )
     }
+    // No logo on file yet (still backfilling, or the profile fetch never
+    // found one) — a generic "this is a stock" glyph reads better here than
+    // ticker-symbol initials, which look like a broken-logo placeholder
+    // rather than an intentional choice.
     return (
-      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-sm" style={{ color: accent }}>
-        {asset.ticker?.symbol?.slice(0, 2) ?? '??'}
+      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+        <ChartCandlestick size={19} style={{ color: accent }} />
       </div>
     )
   }
