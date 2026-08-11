@@ -9,6 +9,18 @@
 // into the same "vivid mid-tone" envelope the app's other type colors
 // (src/lib/typeColors.ts) already live in, so every grid tile reads as the
 // same kind of color regardless of where it came from.
+//
+// Reading a canvas's pixels requires the image to have loaded with CORS
+// headers permitting it — otherwise the canvas is "tainted" and
+// getImageData throws. Logo hosts (Finnhub's included) are built for plain
+// <img> display, not canvas access, and typically don't send
+// Access-Control-Allow-Origin at all — so sampling the URL directly fails
+// silently on effectively every real logo (every tile falls back to its
+// type color, which is what was actually happening before this comment was
+// added). images.weserv.nl re-serves any image URL with a permissive CORS
+// header attached; it's used here only for the offscreen sampling image —
+// the logo <img> shown on the card still points straight at the original
+// URL, unaffected by any of this.
 
 const colorCache = new Map<string, string | null>()
 const pending = new Map<string, Promise<string | null>>()
@@ -54,6 +66,14 @@ function hslToRgbString(h: number, s: number, l: number) {
   const g = hue2rgb(p, q, h)
   const b = hue2rgb(p, q, h - 1 / 3)
   return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`
+}
+
+function toSamplingUrl(url: string): string {
+  // data:/blob: URIs are already same-origin as far as canvas is concerned
+  // (nothing to proxy); only http(s) logo URLs need the CORS workaround.
+  if (!/^https?:\/\//.test(url)) return url
+  const withoutScheme = url.replace(/^https?:\/\//, '')
+  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutScheme)}`
 }
 
 function sampleDominantColor(img: HTMLImageElement): string | null {
@@ -110,7 +130,7 @@ export function getLogoColor(url: string | null | undefined): Promise<string | n
       }
     }
     img.onerror = () => resolve(null)
-    img.src = url
+    img.src = toSamplingUrl(url)
   })
 
   pending.set(url, promise)
