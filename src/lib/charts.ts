@@ -1,4 +1,5 @@
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, netCount } from './portfolio'
+import { formatDateMDY } from './dates'
 
 // ── Portfolio Allocation ──────────────────────────────────────
 
@@ -119,7 +120,7 @@ export function computeRsuVesting(assets: any[], today: Date = new Date()): RsuV
           vested = Math.floor((elapsed / duration) * total)
         }
 
-        const label = `${a.ticker?.symbol ?? a.name} · ${grant.grant_date}${endedAt ? ' (Ended)' : ''}`
+        const label = `${a.ticker?.symbol ?? a.name} · ${formatDateMDY(grant.grant_date)}${endedAt ? ' (Ended)' : ''}`
 
         rows.push({
           label,

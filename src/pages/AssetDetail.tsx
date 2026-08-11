@@ -12,6 +12,7 @@ import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { revealUp } from '@/lib/motionPresets'
+import { formatDateMDY } from '@/lib/dates'
 
 interface EditAssetValues {
   name: string
@@ -400,7 +401,7 @@ export default function AssetDetail() {
                       <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% APY</Badge>
                     )}
                     {isFixedIncome && asset.maturity_date && (
-                      <Badge variant="secondary">Matures {asset.maturity_date}</Badge>
+                      <Badge variant="secondary">Matures {formatDateMDY(asset.maturity_date)}</Badge>
                     )}
                   </div>
                 )}
