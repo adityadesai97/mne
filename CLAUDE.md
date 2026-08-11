@@ -35,6 +35,8 @@ npx vitest --run charts.test      # single file
 
 On every app load, `src/layouts/AppLayout.tsx` runs a startup effect: loads assets, records a daily net worth snapshot, promotes stale Short Term tax lots to Long Term, and syncs API keys and the LLM provider to `user_settings`.
 
+`src/lib/priceRefresh.ts`'s `refreshPricesOncePerLoad()` refreshes every ticker's price from Finnhub at most once per page load (module-scoped promise, resets only on a real reload). Home and Portfolio both await it before their initial asset fetch, so whichever page is open on a fresh load renders current prices — not one triggered by AppLayout's own effect, since AppLayout doesn't own the asset state either page renders from.
+
 ### Data Model
 
 The current schema baseline lives in `supabase/migrations/20260302000000_baseline.sql`. Key relationships:

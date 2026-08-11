@@ -9,6 +9,7 @@ import { getSnapshots } from '@/lib/db/snapshots'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
+import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
@@ -18,7 +19,6 @@ import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 
-const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const LAST_VISIT_NET_WORTH_KEY = 'mne_last_visit_net_worth'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -31,17 +31,6 @@ function getGreeting(): { text: string; Icon: typeof Sun } {
   if (hour < 17) return { text: 'Good afternoon', Icon: Sun }
   if (hour < 21) return { text: 'Good evening', Icon: Sunset }
   return { text: 'Good night', Icon: Moon }
-}
-
-function formatRelativeTime(isoString: string | null): string | null {
-  if (!isoString) return null
-  const diff = Date.now() - new Date(isoString).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
 }
 
 const AXIS_COLOR = 'hsl(215,14%,55%)'
@@ -99,9 +88,6 @@ export default function Home() {
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [firstName, setFirstName] = useState<string | null>(null)
-  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
-    () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
-  )
   const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
     () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
   )
@@ -118,10 +104,15 @@ export default function Home() {
   }
 
   useEffect(() => {
-    getAllAssets()
-      .then(setAssets)
-      .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
-      .finally(() => setAssetsLoaded(true))
+    // Awaiting the (deduped, best-effort) price refresh first means a fresh
+    // page load renders with current prices instead of whatever was cached
+    // from the last visit — see src/lib/priceRefresh.ts.
+    refreshPricesOncePerLoad().finally(() => {
+      getAllAssets()
+        .then(setAssets)
+        .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
+        .finally(() => setAssetsLoaded(true))
+    })
   }, [])
 
   // "Since last visit" delta — compares this session's opening net worth
@@ -167,9 +158,9 @@ export default function Home() {
     if (config.finnhubApiKey) {
       try {
         await refreshAllPrices(config.finnhubApiKey)
-        const now = new Date().toISOString()
-        localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
-        setPricesRefreshedAt(now)
+        // Portfolio still shows a "Prices refreshed" timestamp read from
+        // this key, even though Home's own copy of that display is gone.
+        localStorage.setItem(PRICES_REFRESHED_AT_KEY, new Date().toISOString())
       } catch {
         showAppAlert('Price refresh failed. Check your Finnhub API key.', { variant: 'error' })
       }
@@ -589,7 +580,7 @@ export default function Home() {
             />
           </div>
 
-          {/* Mini meta row — positions + asset types + price freshness */}
+          {/* Mini meta row — positions + asset types */}
           <div className="flex gap-5 pt-3 border-t border-white/[0.05] relative">
             <div>
               <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Positions</p>
@@ -600,15 +591,6 @@ export default function Home() {
               <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Asset Types</p>
               <p className="text-sm font-medium tabular-nums mt-0.5">{uniqueAssetTypes}</p>
             </div>
-            {formatRelativeTime(pricesRefreshedAt) && (
-              <>
-                <div className="w-px bg-border" />
-                <div>
-                  <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Prices</p>
-                  <p className="text-sm font-medium tabular-nums mt-0.5">{formatRelativeTime(pricesRefreshedAt)}</p>
-                </div>
-              </>
-            )}
           </div>
 
           {/* Rotating insight ticker */}
