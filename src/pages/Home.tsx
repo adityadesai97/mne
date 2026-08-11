@@ -14,7 +14,6 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MiniSparkline } from '@/components/MiniSparkline'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
@@ -647,23 +646,15 @@ export default function Home() {
         <motion.div
           {...revealUp(0.1)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="relative bg-card shadow-card rounded-2xl p-5 overflow-hidden md:col-span-2"
+          className="bg-card shadow-card rounded-2xl p-5 md:col-span-2"
         >
-          {netWorthValues.length >= 2 && (
-            // Inset from the card's edge and rounded corner (rather than
-            // flush at 0,0) so the line's own peak/trough doesn't get
-            // clipped by the corner radius — it previously looked cut off.
-            <div className="absolute right-3 top-3 w-16 opacity-70 pointer-events-none">
-              <MiniSparkline values={netWorthValues.slice(-16)} color={stockIsGain ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} height={20} />
-            </div>
-          )}
-          <div className="mb-3 relative">
+          <div className="mb-3">
             <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
           </div>
-          <p className={`relative text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
-          <p className={`relative text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
