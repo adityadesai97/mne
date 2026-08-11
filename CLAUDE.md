@@ -100,7 +100,7 @@ Home chart range is in `localStorage` (`mne_home_chart_range`, values: `1M | 3M 
 
 `createLLMClient(provider, apiKey)` returns an `LLMClient` that implements the OpenAI `chat.completions.create` interface regardless of the underlying provider.
 
-Models used: `claude-sonnet-4-6` (Claude), `llama-3.3-70b-versatile` (Groq). Both are defined in `MODEL_FOR_PROVIDER`.
+Models used: `claude-sonnet-5` (Claude), `llama-3.3-70b-versatile` (Groq). Both are defined in `MODEL_FOR_PROVIDER`.
 
 All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMClient(config.llmProvider, config.activeApiKey)` so they work with either provider.
 
