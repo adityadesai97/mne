@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
@@ -47,21 +48,58 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
   )
 }
 
+/** Plain muted icon chip for the simplified list layout — no block color,
+ *  no async logo-color sampling, matching that layout's lower-chrome intent. */
+function LegacyAssetIcon({ asset }: { asset: any }) {
+  if (asset.asset_type === 'Stock') {
+    if (asset.ticker?.logo) {
+      return (
+        <img
+          src={asset.ticker.logo}
+          className="w-9 h-9 rounded-xl object-contain bg-muted flex-shrink-0"
+          alt={asset.ticker?.symbol ?? ''}
+        />
+      )
+    }
+    return (
+      <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+        <ChartNoAxesCombined size={16} className="text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const iconMap: Record<string, React.ElementType> = {
+    '401k': Briefcase,
+    'CD': Landmark,
+    'Cash': Banknote,
+    'Deposit': PiggyBank,
+    'HSA': Shield,
+  }
+  const IconComponent = iconMap[asset.asset_type] ?? Wallet
+
+  return (
+    <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+      <IconComponent size={17} className="text-muted-foreground" />
+    </div>
+  )
+}
+
 /**
- * A large square position tile in the Portfolio grid. The background is a
- * solid block color: non-stock assets get the shared per-asset-type color
- * (src/lib/typeColors.ts). Stocks get their own company's color, sampled
- * from the ticker's logo (src/lib/logoColor.ts) when that succeeds — and
- * when it doesn't (no logo on file, which in practice is mostly ETFs; or
- * sampling failed), a color hashed from the ticker symbol rather than the
- * flat Stock-type blue, so a portfolio with a lot of unlogo'd tickers reads
- * as a wall of distinct positions instead of a wall of identical blue
- * tiles. Every tile therefore renders immediately on its fallback color and
- * may recolor a moment later once its logo's sampled color resolves —
- * sampling is async and best-effort, never something the tile waits on to
- * render.
+ * A position in the Portfolio view. `'grid'` (default) is a large square
+ * tile with a solid block-color background: non-stock assets get the
+ * shared per-asset-type color (src/lib/typeColors.ts); stocks get their
+ * own company's color, sampled from the ticker's logo (src/lib/logoColor.ts)
+ * when that succeeds, or a color hashed from the ticker symbol otherwise
+ * (rather than one flat Stock-type blue for every unlogo'd ticker — mostly
+ * ETFs in practice). A tile renders immediately on its fallback color and
+ * may recolor a moment later once its logo's sampled color resolves.
+ *
+ * `'list'` is the simplified/legacy view (Settings → Appearance → Asset
+ * view): a plain compact row with no block color and no logo-color
+ * sampling, for users who'd rather scan a calm list than a wall of colored
+ * tiles.
  */
-export function PositionCard({ asset, index = 0 }: { asset: any; index?: number }) {
+export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
   const isStock = asset.asset_type === 'Stock'
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -78,6 +116,7 @@ export function PositionCard({ asset, index = 0 }: { asset: any; index?: number 
   const [accent, setAccent] = useState(fallbackColor)
 
   useEffect(() => {
+    if (layout !== 'grid') return
     setAccent(fallbackColor)
     if (!isStock || !logoUrl) return
     let cancelled = false
@@ -85,7 +124,62 @@ export function PositionCard({ asset, index = 0 }: { asset: any; index?: number 
       if (!cancelled && color) setAccent(color)
     })
     return () => { cancelled = true }
-  }, [isStock, logoUrl, fallbackColor])
+  }, [layout, isStock, logoUrl, fallbackColor])
+
+  if (layout === 'list') {
+    return (
+      <motion.div
+        className="mx-4 mb-2"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02, ease: [0.25, 0.1, 0.25, 1] as const }}
+        whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
+      >
+        <Link to={`/portfolio/${asset.id}`} className="block">
+          {/* A hover tint gives rows the same "this is clickable" affordance
+              a tile gets from lifting on hover, without the lift itself
+              reading oddly on something this thin. */}
+          <Card className="hover:bg-muted/40">
+            <CardContent className="p-3.5">
+              <div className="flex gap-3 items-center">
+                <LegacyAssetIcon asset={asset} />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="font-medium truncate">{asset.name}</p>
+                  <p className="text-muted-foreground text-xs truncate">
+                    {/* Share count comes from owned lots, not the quote, so it's
+                        worth printing even while the price itself is pending. */}
+                    {asset.location?.name} · {asset.asset_type}{isStock ? ` · ${fmtShares(shareCount)} sh` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="text-right">
+                    {isStock ? (
+                      noPriceData ? (
+                        <>
+                          <p className="font-semibold text-lg text-muted-foreground">—</p>
+                          <p className="text-xs text-muted-foreground">Price pending</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
+                          <p className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`} title={`Cost basis ${fmt(basis)}`}>
+                            {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
+                          </p>
+                        </>
+                      )
+                    ) : (
+                      <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
+                    )}
+                  </div>
+                  <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div

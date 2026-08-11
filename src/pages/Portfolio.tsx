@@ -153,6 +153,11 @@ export default function Portfolio() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
+  // Set in Settings → Appearance → Asset view; read once at mount, same as
+  // isMobile above — Portfolio remounts on route navigation, so a fresh
+  // read here already reflects whatever was last chosen in Settings.
+  const [assetView] = useState(() => config.assetView)
+  const isListView = assetView === 'list'
 
   useEffect(() => {
     getAllAssets()
@@ -194,6 +199,14 @@ export default function Portfolio() {
 
   const chips = ['All', ...assetTypes]
 
+  // The Name/Value/Gain picker only changes anything meaningful in the
+  // list view — that's the one view where row order is the whole story.
+  // The grid is a wall of same-size tiles where "largest first" is the
+  // only ordering that reads as intentional rather than arbitrary, so it
+  // always orders by value regardless of what the (hidden, in grid view)
+  // sort control last held.
+  const effectiveSort: SortOption = isListView ? sort : 'value'
+
   const displayed = useMemo(() => {
     let result = assets
 
@@ -207,20 +220,20 @@ export default function Portfolio() {
     }
 
     result = [...result].sort((a, b) => {
-      if (sort === 'name') {
+      if (effectiveSort === 'name') {
         return (a.name ?? '').localeCompare(b.name ?? '')
       }
-      if (sort === 'value') {
+      if (effectiveSort === 'value') {
         return computeAssetValue(b) - computeAssetValue(a)
       }
-      if (sort === 'gain') {
+      if (effectiveSort === 'gain') {
         return computeUnrealizedGain(b) - computeUnrealizedGain(a)
       }
       return 0
     })
 
     return result
-  }, [assets, search, activeType, sort])
+  }, [assets, search, activeType, effectiveSort])
 
   if (!assetsLoaded) {
     return <PortfolioSkeleton />
@@ -262,7 +275,9 @@ export default function Portfolio() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
+          {isListView && (
+            <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
+          )}
         </div>
       </div>
 
@@ -330,11 +345,19 @@ export default function Portfolio() {
         in on mount/filter via its own initial/animate; it just doesn't get
         an exit animation when filtered out.
       */}
-      <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {displayed.map((a, i) => (
-          <PositionCard key={a.id} asset={a} index={i} />
-        ))}
-      </div>
+      {isListView ? (
+        <div>
+          {displayed.map((a, i) => (
+            <PositionCard key={a.id} asset={a} index={i} layout="list" />
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {displayed.map((a, i) => (
+            <PositionCard key={a.id} asset={a} index={i} />
+          ))}
+        </div>
+      )}
 
       {assets.length > 0 && displayed.length === 0 && (
         <motion.div

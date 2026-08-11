@@ -7,6 +7,7 @@ const KEYS = {
   finnhubApiKey: 'mne_finnhub_api_key',
   needsSignIn: 'mne_needs_signin',
   theme: 'mne_theme',
+  assetView: 'mne_asset_view',
 }
 const LEGACY_CONNECTION_KEYS = ['mne_supabase_url', 'mne_supabase_anon_key', 'mne_last_user_id']
 const LEGACY_PROVIDER_KEYS = ['mne_gemini_api_key']
@@ -58,4 +59,8 @@ export const config = {
     return (localStorage.getItem(KEYS.theme) ?? 'dark') as 'light' | 'dark' | 'system'
   },
   setTheme(v: 'light' | 'dark' | 'system') { localStorage.setItem(KEYS.theme, v) },
+  get assetView(): 'grid' | 'list' {
+    return (localStorage.getItem(KEYS.assetView) ?? 'grid') as 'grid' | 'list'
+  },
+  setAssetView(v: 'grid' | 'list') { localStorage.setItem(KEYS.assetView, v) },
 }
