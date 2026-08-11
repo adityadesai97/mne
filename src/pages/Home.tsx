@@ -15,6 +15,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MiniSparkline } from '@/components/MiniSparkline'
+import { CardEyebrow } from '@/components/CardEyebrow'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -65,21 +66,6 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
     })
     return () => controls.stop()
   }, [target])
-}
-
-// Shared eyebrow label (icon + uppercase caption) so every card on this page
-// uses the same icon-badge treatment, text scale, and tracking — some cards
-// previously had a leading icon and others didn't, which is what made the
-// grid feel inconsistent. Always wrapped in a `mb-3` (or `flex ... mb-3` for
-// cards with trailing content, like the Daily Movers sort toggle) so every
-// card gets identical header-to-body spacing regardless of size.
-function CardEyebrow({ icon: Icon, className = 'text-muted-foreground', children }: { icon: typeof Sun; className?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-1.5 min-w-0">
-      <Icon size={11} className={`flex-shrink-0 ${className}`} aria-hidden="true" />
-      <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium truncate">{children}</p>
-    </div>
-  )
 }
 
 export default function Home() {
