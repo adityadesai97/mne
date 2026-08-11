@@ -208,7 +208,12 @@ export default function Portfolio() {
 
     if (search.trim()) {
       const query = search.trim().toLowerCase()
-      result = result.filter((a) => a.name?.toLowerCase().includes(query))
+      result = result.filter(
+        (a) =>
+          a.name?.toLowerCase().includes(query) ||
+          a.location?.name?.toLowerCase().includes(query) ||
+          a.location?.account_type?.toLowerCase().includes(query)
+      )
     }
 
     if (activeType !== 'All') {
