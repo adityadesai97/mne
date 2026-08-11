@@ -337,10 +337,16 @@ export default function Charts() {
         type: 'bar',
         data: capitalGainsData.map((point) => ({
           value: point.value,
-          itemStyle: { color: point.value >= 0 ? GAIN_COLOR : LOSS_COLOR },
+          itemStyle: {
+            color: point.value >= 0 ? GAIN_COLOR : LOSS_COLOR,
+            // Round the end of the bar farthest from the zero baseline, not
+            // always the top — otherwise negative bars round their corner
+            // at the baseline instead of at the tip, which reads as
+            // misaligned against the positive bar sharing that baseline.
+            borderRadius: point.value >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
+          },
         })),
         barWidth: 34,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
         label: {
           show: true,
           position: 'top',
