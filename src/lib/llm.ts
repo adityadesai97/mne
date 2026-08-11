@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import type { LLMProvider } from '@/store/config'
 
 export const MODEL_FOR_PROVIDER: Record<LLMProvider, string> = {
-  claude: 'claude-sonnet-4-6',
+  claude: 'claude-sonnet-5',
   groq: 'llama-3.3-70b-versatile',
 }
 
