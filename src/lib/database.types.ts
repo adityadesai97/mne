@@ -17,8 +17,11 @@ export type Database = {
       assets: {
         Row: {
           asset_type: string
+          fixed_income_subtype: string | null
           id: string
+          interest_rate: number | null
           location_id: string
+          maturity_date: string | null
           name: string
           notes: string | null
           ownership: string
@@ -28,8 +31,11 @@ export type Database = {
         }
         Insert: {
           asset_type: string
+          fixed_income_subtype?: string | null
           id?: string
+          interest_rate?: number | null
           location_id: string
+          maturity_date?: string | null
           name: string
           notes?: string | null
           ownership?: string
@@ -39,8 +45,11 @@ export type Database = {
         }
         Update: {
           asset_type?: string
+          fixed_income_subtype?: string | null
           id?: string
+          interest_rate?: number | null
           location_id?: string
+          maturity_date?: string | null
           name?: string
           notes?: string | null
           ownership?: string

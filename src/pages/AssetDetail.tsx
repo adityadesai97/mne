@@ -18,6 +18,9 @@ interface EditAssetValues {
   ownership: string
   notes: string
   price: string
+  fixedIncomeSubtype: string
+  interestRate: string
+  maturityDate: string
 }
 
 export default function AssetDetail() {
@@ -32,6 +35,9 @@ export default function AssetDetail() {
     ownership: '',
     notes: '',
     price: '',
+    fixedIncomeSubtype: '',
+    interestRate: '',
+    maturityDate: '',
   })
 
   useEffect(() => {
@@ -113,6 +119,7 @@ export default function AssetDetail() {
 
   async function handleSaveAsset() {
     try {
+      const isFixedIncome = asset.asset_type === 'Fixed Income'
       await upsertAsset({
         id: asset.id,
         user_id: asset.user_id,
@@ -123,6 +130,9 @@ export default function AssetDetail() {
         location_id: asset.location_id,
         asset_type: asset.asset_type,
         ticker_id: asset.ticker_id ?? null,
+        fixed_income_subtype: isFixedIncome ? (editValues.fixedIncomeSubtype || null) : asset.fixed_income_subtype ?? null,
+        interest_rate: isFixedIncome ? (editValues.interestRate ? Number(editValues.interestRate) : null) : asset.interest_rate ?? null,
+        maturity_date: isFixedIncome ? (editValues.maturityDate || null) : asset.maturity_date ?? null,
       })
       setEditing(false)
       if (id) setAsset(await getAssetById(id))
@@ -179,6 +189,7 @@ export default function AssetDetail() {
   }
 
   const isStock = asset.asset_type === 'Stock'
+  const isFixedIncome = asset.asset_type === 'Fixed Income'
   const value = computeAssetValue(asset)
   const shareCount = isStock ? computeShareCount(asset) : 0
   const gain = computeUnrealizedGain(asset)
@@ -223,6 +234,9 @@ export default function AssetDetail() {
                 ownership: asset.ownership ?? 'Individual',
                 notes: asset.notes ?? '',
                 price: String(asset.price ?? ''),
+                fixedIncomeSubtype: asset.fixed_income_subtype ?? 'CD',
+                interestRate: asset.interest_rate != null ? String(asset.interest_rate) : '',
+                maturityDate: asset.maturity_date ?? '',
               })
             }}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -290,6 +304,41 @@ export default function AssetDetail() {
                     />
                   </div>
                 )}
+                {isFixedIncome && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Subtype</label>
+                      <select
+                        value={editValues.fixedIncomeSubtype}
+                        onChange={e => setEditValues(v => ({ ...v, fixedIncomeSubtype: e.target.value }))}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="CD">CD</option>
+                        <option value="Deposit">Deposit</option>
+                        <option value="Bond">Bond</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editValues.interestRate}
+                        onChange={e => setEditValues(v => ({ ...v, interestRate: e.target.value }))}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Maturity</label>
+                      <input
+                        type="date"
+                        value={editValues.maturityDate}
+                        onChange={e => setEditValues(v => ({ ...v, maturityDate: e.target.value }))}
+                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-muted-foreground">Notes</label>
                   <textarea
@@ -324,11 +373,19 @@ export default function AssetDetail() {
                 className="relative"
               >
                 <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-2 font-medium">
-                  {asset.location?.name} · {asset.asset_type}
+                  {asset.location?.name} · {asset.asset_type}{isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}
                 </p>
                 <h2 className="font-syne text-2xl font-bold tracking-tight">{asset.name}</h2>
-                {asset.ownership && (
-                  <Badge variant="secondary" className="mt-2">{asset.ownership}</Badge>
+                {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date))) && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {asset.ownership && <Badge variant="secondary">{asset.ownership}</Badge>}
+                    {isFixedIncome && asset.interest_rate != null && (
+                      <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% APY</Badge>
+                    )}
+                    {isFixedIncome && asset.maturity_date && (
+                      <Badge variant="secondary">Matures {asset.maturity_date}</Badge>
+                    )}
+                  </div>
                 )}
 
                 <div className={asset.ownership ? 'mt-4' : 'mt-3'}>

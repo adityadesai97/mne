@@ -77,11 +77,13 @@ function isAccountType(value: unknown): value is 'Investment' | 'Checking' | 'Sa
 export function inferCashAccountType(input: {
   name?: unknown
   asset_type?: unknown
+  fixed_income_subtype?: unknown
   location_name?: unknown
   account_type?: unknown
 }): 'Investment' | 'Checking' | 'Savings' | 'Misc' {
   const explicit = String(input.account_type ?? '').trim()
   const assetType = String(input.asset_type ?? '').trim().toLowerCase()
+  const fixedIncomeSubtype = String(input.fixed_income_subtype ?? '').trim().toLowerCase()
   const combined = [
     String(input.name ?? ''),
     String(input.location_name ?? ''),
@@ -90,6 +92,9 @@ export function inferCashAccountType(input: {
 
   if (/\bchecking\b|\bcheckings?\b/.test(combined)) return 'Checking'
   if (/\bsavings?\b|\bhysa\b|\bhigh[- ]yield savings\b/.test(combined)) return 'Savings'
+  // CD/Deposit subtypes are Misc; a Bond subtype behaves like a brokerage holding.
+  if (assetType === 'fixed income' && fixedIncomeSubtype === 'bond') return 'Investment'
+  if (assetType === 'fixed income') return 'Misc'
   if (assetType === 'cd' || /\bcd\b|certificate of deposit/.test(combined)) return 'Misc'
   if (assetType === '401k' || /\b401k\b|\bira\b|\bbroker(age)?\b|\binvest(ment|ing)?\b/.test(combined)) return 'Investment'
   if (assetType === 'hsa') return 'Misc'
@@ -415,7 +420,7 @@ function buildPositionRows(assets: any[]): PositionRow[] {
     const accountType = String(asset?.location?.account_type ?? '')
 
     if (assetType !== 'Stock') {
-      // Non-stock assets (Cash, 401k, CD, HSA, Deposit, etc.) have no cost basis —
+      // Non-stock assets (Cash, 401k, Fixed Income, HSA, etc.) have no cost basis —
       // P&L is a stock-only concept and must never be reported for them.
       const marketValue = toNumber(asset?.price, 0)
       return {
@@ -1294,6 +1299,10 @@ For navigation/view requests use navigate_to. For data changes use the appropria
   - CDs / certificate of deposit accounts -> Misc
   - 401k / IRA / brokerage accounts -> Investment
   Ask a follow-up only when location_name or account_type is genuinely ambiguous.
+  Fixed Income assets (asset_type "Fixed Income") require fixed_income_subtype: CD, Deposit, or Bond.
+  - CD and Deposit subtypes -> account_type Misc
+  - Bond subtype -> account_type Investment
+  Include interest_rate (annual %) and maturity_date (YYYY-MM-DD) on Fixed Income assets when the user or document states them; leave them out rather than guessing.
 For sell_shares, require the source account/location name. For lot selection, require either:
 - single-lot: purchase_date + count
 - multi-lot: lots[] with purchase_date + count for each lot
@@ -1536,12 +1545,15 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_cash_asset',
-      description: 'Add a non-stock asset: 401k, CD, Cash, Deposit, or HSA',
+      description: 'Add a non-stock asset: 401k, Cash, HSA, or Fixed Income (CD, Deposit, or Bond subtype)',
       parameters: {
         type: 'object' as const,
         properties: {
           name: { type: 'string', description: 'Name of the account' },
-          asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
+          asset_type: { type: 'string', enum: ['401k', 'Fixed Income', 'Cash', 'HSA'] },
+          fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond'], description: 'Required when asset_type is "Fixed Income"' },
+          interest_rate: { type: 'number', description: 'Annual interest rate as a percentage, e.g. 4.5 for 4.5%. Only for Fixed Income.' },
+          maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond matures, if known. Only for Fixed Income.' },
           location_name: { type: 'string', description: 'Institution name' },
           account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
           ownership: { type: 'string', enum: ['Individual', 'Joint'] },
@@ -1556,7 +1568,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_cash_assets',
-      description: 'Add multiple non-stock assets (401k, CD, Cash, Deposit, HSA) at once.',
+      description: 'Add multiple non-stock assets (401k, Cash, HSA, Fixed Income) at once.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1566,7 +1578,10 @@ const tools = [
               type: 'object',
               properties: {
                 name: { type: 'string', description: 'Name of the account' },
-                asset_type: { type: 'string', enum: ['401k', 'CD', 'Cash', 'Deposit', 'HSA'] },
+                asset_type: { type: 'string', enum: ['401k', 'Fixed Income', 'Cash', 'HSA'] },
+                fixed_income_subtype: { type: 'string', enum: ['CD', 'Deposit', 'Bond'], description: 'Required when asset_type is "Fixed Income"' },
+                interest_rate: { type: 'number', description: 'Annual interest rate as a percentage, e.g. 4.5 for 4.5%. Only for Fixed Income.' },
+                maturity_date: { type: 'string', description: 'ISO date YYYY-MM-DD the CD/bond matures, if known. Only for Fixed Income.' },
                 location_name: { type: 'string', description: 'Institution name' },
                 account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
                 ownership: { type: 'string', enum: ['Individual', 'Joint'] },
@@ -1734,7 +1749,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'update_asset_value',
-      description: 'Update the current value of a non-stock asset (401k, CD, Cash, Deposit, HSA)',
+      description: 'Update the current value of a non-stock asset (401k, Cash, HSA, Fixed Income)',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1887,17 +1902,37 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       : [input]
     if (assets.length === 0) return []
 
+    const hasFixedIncome = assets.some((asset: any) => String(asset?.asset_type ?? '') === 'Fixed Income')
+    const columns = [
+      'Name', 'Type',
+      ...(hasFixedIncome ? ['Subtype', 'Rate', 'Maturity'] : []),
+      'Value', 'Location', 'Account', 'Ownership',
+    ]
+
     return [{
       title: 'Non-Stock Assets',
-      columns: ['Name', 'Type', 'Value', 'Location', 'Account', 'Ownership'],
-      rows: assets.map((asset: any) => [
-        String(asset?.name ?? '').trim() || '-',
-        String(asset?.asset_type ?? '').trim() || '-',
-        moneyToText(asset?.price),
-        String(asset?.location_name ?? '').trim() || '-',
-        String(asset?.account_type ?? '').trim() || '-',
-        String(asset?.ownership ?? '').trim() || '-',
-      ]),
+      columns,
+      rows: assets.map((asset: any) => {
+        const row = [
+          String(asset?.name ?? '').trim() || '-',
+          String(asset?.asset_type ?? '').trim() || '-',
+        ]
+        if (hasFixedIncome) {
+          const isFixedIncome = String(asset?.asset_type ?? '') === 'Fixed Income'
+          row.push(
+            isFixedIncome ? (String(asset?.fixed_income_subtype ?? '').trim() || '-') : '-',
+            isFixedIncome && asset?.interest_rate != null && asset.interest_rate !== '' ? `${numberToText(asset.interest_rate)}%` : '-',
+            isFixedIncome ? dateToText(asset?.maturity_date) : '-',
+          )
+        }
+        row.push(
+          moneyToText(asset?.price),
+          String(asset?.location_name ?? '').trim() || '-',
+          String(asset?.account_type ?? '').trim() || '-',
+          String(asset?.ownership ?? '').trim() || '-',
+        )
+        return row
+      }),
     }]
   }
 
@@ -1954,6 +1989,21 @@ function isValidIsoDate(value: unknown): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
 }
 
+function validateFixedIncomeFields(asset: any, label: string): string | null {
+  if (String(asset?.asset_type ?? '') !== 'Fixed Income') return null
+  const subtype = String(asset?.fixed_income_subtype ?? '')
+  if (!['CD', 'Deposit', 'Bond'].includes(subtype)) {
+    return `${label}: fixed_income_subtype is required for Fixed Income assets (CD, Deposit, or Bond)`
+  }
+  if (asset?.maturity_date != null && asset.maturity_date !== '' && !isValidIsoDate(asset.maturity_date)) {
+    return `${label}: invalid maturity date "${asset.maturity_date}". Use YYYY-MM-DD format`
+  }
+  if (asset?.interest_rate != null && asset.interest_rate !== '' && !Number.isFinite(Number(asset.interest_rate))) {
+    return `${label}: interest_rate must be a number`
+  }
+  return null
+}
+
 function validateWriteToolInput(toolName: string, input: any): string | null {
   if (toolName === 'add_stock_transaction') {
     if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
@@ -1986,6 +2036,8 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
     if (!input.name || !String(input.name).trim()) return 'Asset name is required'
     if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
     if (!input.location_name || !String(input.location_name).trim()) return 'Location name is required'
+    const fixedIncomeError = validateFixedIncomeFields(input, 'Asset')
+    if (fixedIncomeError) return fixedIncomeError
   }
 
   if (toolName === 'add_cash_assets') {
@@ -1995,6 +2047,8 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
       const a = assets[i]
       if (!a.name || !String(a.name).trim()) return `Asset ${i + 1}: name is required`
       if (!Number.isFinite(Number(a.price)) || Number(a.price) < 0) return `Asset ${i + 1}: price must be a non-negative number`
+      const fixedIncomeError = validateFixedIncomeFields(a, `Asset ${i + 1}`)
+      if (fixedIncomeError) return fixedIncomeError
     }
   }
 
@@ -2048,7 +2102,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
       return `Add ${transactions.length} stock transaction${transactions.length === 1 ? '' : 's'}`
     }
     case 'add_cash_asset':
-      return `Add ${input.asset_type} account "${input.name}" at ${input.location_name} worth $${Number(input.price).toLocaleString()}`
+      return `Add ${input.asset_type}${input.asset_type === 'Fixed Income' && input.fixed_income_subtype ? ` (${input.fixed_income_subtype})` : ''} account "${input.name}" at ${input.location_name} worth $${Number(input.price).toLocaleString()}`
     case 'add_cash_assets': {
       const assets = Array.isArray(input.assets) ? input.assets : []
       return `Add ${assets.length} non-stock asset${assets.length === 1 ? '' : 's'}`
@@ -2193,6 +2247,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
 
   if (toolName === 'add_cash_asset') {
     const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
+    const isFixedIncome = input.asset_type === 'Fixed Income'
     const { error } = await supabase.from('assets').insert({
       user_id: userId,
       name: input.name,
@@ -2202,6 +2257,9 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       price: input.price,
       initial_price: input.price,
       notes: input.notes ?? null,
+      fixed_income_subtype: isFixedIncome ? (input.fixed_income_subtype ?? null) : null,
+      interest_rate: isFixedIncome && input.interest_rate != null && input.interest_rate !== '' ? Number(input.interest_rate) : null,
+      maturity_date: isFixedIncome ? (input.maturity_date ?? null) : null,
     })
     if (error) throw new Error(`Failed to add asset: ${error.message}`)
     return

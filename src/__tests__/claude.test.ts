@@ -30,6 +30,23 @@ test('infers cd account type as misc', () => {
   expect(inferCashAccountType({ name: 'CD 3 Months', asset_type: 'CD', account_type: 'Savings' })).toBe('Misc')
 })
 
+test('infers fixed income CD subtype as misc', () => {
+  expect(inferCashAccountType({ name: 'Marcus CD', asset_type: 'Fixed Income', fixed_income_subtype: 'CD' })).toBe('Misc')
+})
+
+test('infers fixed income Deposit subtype as misc', () => {
+  expect(inferCashAccountType({ name: 'Term Deposit', asset_type: 'Fixed Income', fixed_income_subtype: 'Deposit' })).toBe('Misc')
+})
+
+test('infers fixed income Bond subtype as investment', () => {
+  expect(inferCashAccountType({ name: 'Treasury Bond', asset_type: 'Fixed Income', fixed_income_subtype: 'Bond' })).toBe('Investment')
+})
+
+test('system prompt documents fixed income subtypes', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toContain('fixed_income_subtype: CD, Deposit, or Bond')
+})
+
 test('system prompt requires grant_date whenever shares are described as vested', () => {
   const prompt = buildSystemPrompt([])
   expect(prompt).toContain('"vested"/"just vested"/"vesting"')
