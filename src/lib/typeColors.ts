@@ -5,7 +5,7 @@ export const TYPE_COLORS: Record<string, string> = {
   Stock: '#3B82F6',
   Cash: '#10B981',
   '401k': '#F59E0B',
-  CD: '#8B5CF6',
+  'Fixed Income': '#8B5CF6',
   'Real Estate': '#EC4899',
   Other: '#6B7280',
 }

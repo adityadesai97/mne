@@ -82,6 +82,37 @@ alter table public.assets add column if not exists ticker_id uuid;
 update public.assets set ownership = 'Individual' where ownership is null;
 alter table public.assets alter column ownership set default 'Individual';
 
+-- Fixed Income super type (CD, Deposit, Bond subtypes) with interest rate + maturity date
+alter table public.assets add column if not exists fixed_income_subtype text;
+alter table public.assets add column if not exists interest_rate numeric(6,3);
+alter table public.assets add column if not exists maturity_date date;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'assets_fixed_income_subtype_check'
+      and conrelid = 'public.assets'::regclass
+  ) then
+    alter table public.assets
+      add constraint assets_fixed_income_subtype_check
+      check (fixed_income_subtype is null or fixed_income_subtype in ('CD', 'Deposit', 'Bond'));
+  end if;
+end $$;
+
+-- Some hosted projects carry an asset_type allowlist that predates migration
+-- history. Drop and recreate it here so 'Fixed Income' is allowed and the
+-- guardrail is tracked going forward; a no-op on a DB that never had it.
+alter table public.assets drop constraint if exists assets_asset_type_check;
+
+update public.assets set fixed_income_subtype = 'CD', asset_type = 'Fixed Income' where asset_type = 'CD';
+update public.assets set fixed_income_subtype = 'Deposit', asset_type = 'Fixed Income' where asset_type = 'Deposit';
+
+alter table public.assets
+  add constraint assets_asset_type_check
+  check (asset_type in ('Stock', '401k', 'Fixed Income', 'Cash', 'HSA'));
+
 do $$
 begin
   if not exists (

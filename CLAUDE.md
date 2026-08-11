@@ -53,6 +53,8 @@ tickers ──→ ticker_themes ──→ themes
 themes ──→ theme_targets  (optional allocation target %)
 ```
 
+`assets.asset_type` is free text (no DB enum) but the app only creates: `Stock`, `401k`, `Cash`, `HSA`, and `Fixed Income`. `Fixed Income` is a super type covering CD, Deposit, and Bond accounts — `assets.fixed_income_subtype` ('CD' | 'Deposit' | 'Bond', DB-constrained) records which, alongside `assets.interest_rate` (annual %) and `assets.maturity_date`, both nullable and only meaningful when `asset_type = 'Fixed Income'`. Migration `20260811000000_add_fixed_income_asset_type.sql` folded the former standalone `CD` and `Deposit` asset types into this super type in place.
+
 Every table has RLS enabled — users see only their own rows.
 
 All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transactions.ts`, `tickers.ts`, `locations.ts`, `settings.ts`, `grants.ts`, `snapshots.ts`, `themes.ts`. These are plain async functions that call `getSupabaseClient()` directly — no ORM, no query builder abstraction beyond the Supabase JS client.

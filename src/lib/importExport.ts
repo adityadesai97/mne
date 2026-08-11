@@ -87,6 +87,9 @@ type ParsedAsset = {
   id?: string
   name: string
   assetType: string
+  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | null
+  interestRate: number | null
+  maturityDate: string | null
   locationId?: string
   locationName: string
   accountType: string
@@ -221,12 +224,41 @@ function toIsoDate(value: unknown): string | null {
 function normalizeAssetType(value: unknown): string {
   const normalized = asString(value).toLowerCase().replace(/\s+/g, '')
   if (normalized === '401(k)' || normalized === '401k') return '401k'
-  if (normalized === 'cd') return 'CD'
+  // CD, Deposit, and Bond are subtypes of the Fixed Income super type — an
+  // older export or a competitor's export may still tag these as their own
+  // top-level asset type, so fold them in here.
+  if (normalized === 'cd' || normalized === 'deposit' || normalized === 'bond' || normalized === 'bonds' || normalized === 'fixedincome') return 'Fixed Income'
   if (normalized === 'cash') return 'Cash'
-  if (normalized === 'deposit') return 'Deposit'
   if (normalized === 'hsa') return 'HSA'
   if (normalized === 'stock') return 'Stock'
   return asString(value) || 'Other'
+}
+
+function normalizeFixedIncomeSubtype(value: unknown): 'CD' | 'Deposit' | 'Bond' | null {
+  const normalized = asString(value).toLowerCase().replace(/\s+/g, '')
+  if (normalized === 'cd' || normalized === 'certificateofdeposit') return 'CD'
+  if (normalized === 'deposit') return 'Deposit'
+  if (normalized === 'bond' || normalized === 'bonds') return 'Bond'
+  return null
+}
+
+// Fixed Income fields only apply once assetType has resolved to 'Fixed Income'.
+// rawTypeCandidate is whatever value was originally fed into normalizeAssetType
+// (e.g. a legacy export's asset_type of "CD" or "Deposit") — a fallback so
+// imports from before the Fixed Income super type still land on the right
+// subtype even without an explicit fixed_income_subtype field.
+function fixedIncomeFieldsFrom(assetType: string, source: Record<string, unknown>, rawTypeCandidate: unknown): {
+  fixedIncomeSubtype: 'CD' | 'Deposit' | 'Bond' | null
+  interestRate: number | null
+  maturityDate: string | null
+} {
+  if (assetType !== 'Fixed Income') return { fixedIncomeSubtype: null, interestRate: null, maturityDate: null }
+  const explicitSubtype = normalizeFixedIncomeSubtype(source.fixed_income_subtype ?? source.fixedIncomeSubtype)
+  return {
+    fixedIncomeSubtype: explicitSubtype ?? normalizeFixedIncomeSubtype(rawTypeCandidate) ?? 'CD',
+    interestRate: asNumber(source.interest_rate ?? source.interestRate),
+    maturityDate: toIsoDate(source.maturity_date ?? source.maturityDate),
+  }
 }
 
 function normalizeAccountType(value: unknown): string {
@@ -509,10 +541,12 @@ function normalizeLegacyMneExport(data: Record<string, unknown>): ParsedImport {
     const locationId = normalizeUuid(location.id ?? item.location_id)
     if (locationName) locations.push({ id: locationId, name: locationName, accountType })
 
+    const assetType = normalizeAssetType(item.asset_type ?? item.assetTypeName)
     return {
       id: normalizeUuid(item.id),
       name: asString(item.name) || 'Imported Asset',
-      assetType: normalizeAssetType(item.asset_type ?? item.assetTypeName),
+      assetType,
+      ...fixedIncomeFieldsFrom(assetType, item, item.asset_type ?? item.assetTypeName),
       locationId,
       locationName,
       accountType,
@@ -600,10 +634,12 @@ function normalizeMoolaExport(data: Record<string, unknown>): ParsedImport {
     const accountType = normalizeAccountType(item.locationAccountType ?? item.account_type)
     if (locationName) locations.push({ name: locationName, accountType })
 
+    const assetType = normalizeAssetType(item.assetTypeName ?? item.asset_type)
     return {
       id: normalizeUuid(item.id),
       name: asString(item.name) || 'Imported Asset',
-      assetType: normalizeAssetType(item.assetTypeName ?? item.asset_type),
+      assetType,
+      ...fixedIncomeFieldsFrom(assetType, item, item.assetTypeName ?? item.asset_type),
       locationName,
       accountType,
       ownership: normalizeOwnership(item.ownership),
@@ -738,10 +774,12 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
     const linkedTicker = tickerId ? tickerById.get(tickerId) : undefined
     const locationName = asString(row.locationName ?? row.location_name) || linkedLocation?.name || 'Imported'
     const accountType = normalizeAccountType(row.accountType ?? row.account_type ?? linkedLocation?.accountType)
+    const assetType = normalizeAssetType(row.assetType ?? row.asset_type)
     return {
       id: normalizeUuid(row.id),
       name: asString(row.name) || 'Imported Asset',
-      assetType: normalizeAssetType(row.assetType ?? row.asset_type),
+      assetType,
+      ...fixedIncomeFieldsFrom(assetType, row, row.assetType ?? row.asset_type),
       locationId,
       locationName,
       accountType,
@@ -868,10 +906,12 @@ export function serializeForExport(data: { assets: any[]; tickers: any[]; themes
     const tickerId = normalizeUuid(rawAsset.ticker_id ?? tickerObj.id)
     const tickerSymbol = asString(rawAsset.tickerSymbol ?? rawAsset.ticker ?? tickerObj.symbol).toUpperCase() || null
 
+    const assetType = normalizeAssetType(rawAsset.asset_type ?? rawAsset.assetTypeName)
     assets.push({
       id: assetId,
       name: asString(rawAsset.name) || 'Imported Asset',
-      assetType: normalizeAssetType(rawAsset.asset_type ?? rawAsset.assetTypeName),
+      assetType,
+      ...fixedIncomeFieldsFrom(assetType, rawAsset, rawAsset.asset_type ?? rawAsset.assetTypeName),
       locationId,
       locationName,
       accountType,
@@ -1014,6 +1054,7 @@ export async function exportCsv() {
     'Asset Name', 'Symbol', 'Asset Type', 'Subtype', 'Location', 'Account Type', 'Ownership',
     'Shares', 'Cost Price', 'Purchase Date', 'Capital Gains Status',
     'Current Price', 'Market Value', 'Unrealized Gain/Loss',
+    'Interest Rate (%)', 'Maturity Date',
   ]
   csvRows.push(headers)
 
@@ -1050,16 +1091,22 @@ export async function exportCsv() {
             shares, costPrice, purchaseDate, gainsStatus,
             currentPrice ?? '', marketValue !== null ? marketValue.toFixed(2) : '',
             unrealizedGain !== null ? unrealizedGain.toFixed(2) : '',
+            '', '',
           ].map(csvCell))
         }
       }
     } else {
       // Non-stock asset: single row. P&L is a stock-only concept — never reported for cash-like assets.
       const price = Number(asset.price ?? 0)
+      const isFixedIncome = assetType === 'Fixed Income'
+      const subtypeName = isFixedIncome ? String((asset as any).fixed_income_subtype ?? '') : ''
+      const interestRate = isFixedIncome ? (asset as any).interest_rate ?? '' : ''
+      const maturityDate = isFixedIncome ? String((asset as any).maturity_date ?? '') : ''
       csvRows.push([
-        name, symbol, assetType, '', location, accountType, ownership,
+        name, symbol, assetType, subtypeName, location, accountType, ownership,
         '', '', '', '',
         price, price.toFixed(2), '',
+        interestRate, maturityDate,
       ].map(csvCell))
     }
   }
@@ -1255,6 +1302,9 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         ticker_id: tickerId,
         price: isStock ? null : asset.price,
         initial_price: isStock ? null : (asset.initialPrice ?? asset.price),
+        fixed_income_subtype: asset.fixedIncomeSubtype,
+        interest_rate: asset.interestRate,
+        maturity_date: asset.maturityDate,
       }
       if (asset.id) assetPayload.id = asset.id
 

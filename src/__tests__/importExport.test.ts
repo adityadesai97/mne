@@ -261,6 +261,60 @@ test('keeps RSU grants when dates use short year format', () => {
   expect(rsuSubtype.rsuGrants[0].totalShares).toBe(29)
 })
 
+test('serializes a Fixed Income asset with subtype, rate, and maturity', () => {
+  const data = {
+    assets: [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Marcus CD',
+        asset_type: 'Fixed Income',
+        fixed_income_subtype: 'CD',
+        interest_rate: 4.5,
+        maturity_date: '2027-01-15',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Marcus', account_type: 'Misc' },
+        location_id: '22222222-2222-4222-8222-222222222222',
+        stock_subtypes: [],
+      },
+    ],
+    tickers: [],
+    themes: [],
+  }
+  const result = serializeForExport(data)
+  const asset = result.data.assets[0] as any
+  expect(asset.assetType).toBe('Fixed Income')
+  expect(asset.fixedIncomeSubtype).toBe('CD')
+  expect(asset.interestRate).toBe(4.5)
+  expect(asset.maturityDate).toBe('2027-01-15')
+})
+
+test('migrates legacy CD/Deposit asset types into Fixed Income on import', () => {
+  const raw = JSON.stringify({
+    schema: 'mne.export.v2',
+    version: '2.0',
+    exportedAt: '2026-02-17T00:00:00.000Z',
+    data: {
+      locations: [],
+      themes: [],
+      tickers: [],
+      tickerThemes: [],
+      themeTargets: [],
+      assets: [
+        { id: '66666666-6666-4666-8666-666666666666', name: 'Ally CD', assetType: 'CD', ownership: 'Individual' },
+        { id: '77777777-7777-4777-8777-777777777777', name: 'Term Deposit', assetType: 'Deposit', ownership: 'Individual' },
+      ],
+      stockSubtypes: [],
+      transactions: [],
+      rsuGrants: [],
+    },
+  })
+
+  const result = parseImport(raw)
+  expect(result.assets[0].assetType).toBe('Fixed Income')
+  expect(result.assets[0].fixedIncomeSubtype).toBe('CD')
+  expect(result.assets[1].assetType).toBe('Fixed Income')
+  expect(result.assets[1].fixedIncomeSubtype).toBe('Deposit')
+})
+
 test('parses multi-grant RSU bundles from Moola-style exports', () => {
   const raw = JSON.stringify({
     version: '1.0',
