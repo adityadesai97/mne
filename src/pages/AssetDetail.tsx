@@ -197,6 +197,17 @@ export default function AssetDetail() {
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const isGain = gain >= 0
   const noPriceData = isStock && asset.ticker?.current_price == null
+  // Live per-share quote, colored the same way as the Watchlist row: green/red
+  // against the ticker's last-refreshed previous close, neutral until one exists.
+  const tickerPrice = Number(asset.ticker?.current_price ?? 0)
+  const tickerPreviousClose = asset.ticker?.previous_close != null ? Number(asset.ticker.previous_close) : null
+  const tickerPriceChangeClass = tickerPreviousClose == null
+    ? ''
+    : tickerPrice > tickerPreviousClose
+      ? 'text-gain'
+      : tickerPrice < tickerPreviousClose
+        ? 'text-loss'
+        : ''
   const stockTransactionCount = isStock
     ? (asset.stock_subtypes ?? []).reduce(
       (sum: number, st: any) => sum + (st.transactions?.length ?? 0),
@@ -376,6 +387,12 @@ export default function AssetDetail() {
                   {asset.location?.name} · {asset.asset_type}{isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}
                 </p>
                 <h2 className="font-syne text-2xl font-bold tracking-tight">{asset.name}</h2>
+                {isStock && asset.ticker && !noPriceData && (
+                  <p className="text-sm mt-1 flex items-center gap-1.5">
+                    <span className="text-muted-foreground">{asset.ticker.symbol}</span>
+                    <span className={`font-medium tabular-nums ${tickerPriceChangeClass}`}>${tickerPrice.toFixed(2)}</span>
+                  </p>
+                )}
                 {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date))) && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {asset.ownership && <Badge variant="secondary">{asset.ownership}</Badge>}
