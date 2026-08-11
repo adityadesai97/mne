@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
-import { colorForAssetType } from '@/lib/typeColors'
+import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
 
 function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
@@ -50,11 +50,16 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
 /**
  * A large square position tile in the Portfolio grid. The background is a
  * solid block color: non-stock assets get the shared per-asset-type color
- * (src/lib/typeColors.ts); stocks get their own company's color, sampled
- * from the ticker's logo (src/lib/logoColor.ts) when that succeeds. Every
- * tile therefore renders immediately on its type color and may recolor a
- * moment later once its logo's sampled color resolves — sampling is async
- * and best-effort, never something the tile waits on to render.
+ * (src/lib/typeColors.ts). Stocks get their own company's color, sampled
+ * from the ticker's logo (src/lib/logoColor.ts) when that succeeds — and
+ * when it doesn't (no logo on file, which in practice is mostly ETFs; or
+ * sampling failed), a color hashed from the ticker symbol rather than the
+ * flat Stock-type blue, so a portfolio with a lot of unlogo'd tickers reads
+ * as a wall of distinct positions instead of a wall of identical blue
+ * tiles. Every tile therefore renders immediately on its fallback color and
+ * may recolor a moment later once its logo's sampled color resolves —
+ * sampling is async and best-effort, never something the tile waits on to
+ * render.
  */
 export function PositionCard({ asset, index = 0 }: { asset: any; index?: number }) {
   const isStock = asset.asset_type === 'Stock'
@@ -66,19 +71,21 @@ export function PositionCard({ asset, index = 0 }: { asset: any; index?: number 
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
 
-  const typeColor = colorForAssetType(asset.asset_type, index)
+  const fallbackColor = isStock
+    ? colorForTicker(asset.ticker?.symbol ?? asset.name ?? String(index))
+    : colorForAssetType(asset.asset_type, index)
   const logoUrl = asset.ticker?.logo as string | undefined
-  const [accent, setAccent] = useState(typeColor)
+  const [accent, setAccent] = useState(fallbackColor)
 
   useEffect(() => {
-    setAccent(typeColor)
+    setAccent(fallbackColor)
     if (!isStock || !logoUrl) return
     let cancelled = false
     getLogoColor(logoUrl).then((color) => {
       if (!cancelled && color) setAccent(color)
     })
     return () => { cancelled = true }
-  }, [isStock, logoUrl, typeColor])
+  }, [isStock, logoUrl, fallbackColor])
 
   return (
     <motion.div
