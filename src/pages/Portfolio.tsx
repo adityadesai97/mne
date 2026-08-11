@@ -10,9 +10,8 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
+import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { showAppAlert } from '@/lib/appAlerts'
-
-const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -160,10 +159,15 @@ export default function Portfolio() {
   const isListView = assetView === 'list'
 
   useEffect(() => {
-    getAllAssets()
-      .then(setAssets)
-      .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
-      .finally(() => setAssetsLoaded(true))
+    // Awaiting the (deduped, best-effort) price refresh first means a fresh
+    // page load renders with current prices instead of whatever was cached
+    // from the last visit — see src/lib/priceRefresh.ts.
+    refreshPricesOncePerLoad().finally(() => {
+      getAllAssets()
+        .then(setAssets)
+        .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
+        .finally(() => setAssetsLoaded(true))
+    })
   }, [])
 
   useEffect(() => {
