@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartCandlestick, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Briefcase, Landmark, Banknote, PiggyBank, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount } from '@/lib/portfolio'
 import { colorForAssetType } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
@@ -26,7 +26,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
     // rather than an intentional choice.
     return (
       <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-        <ChartCandlestick size={19} style={{ color: accent }} />
+        <ChartNoAxesCombined size={19} style={{ color: accent }} />
       </div>
     )
   }
