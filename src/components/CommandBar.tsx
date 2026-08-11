@@ -417,6 +417,11 @@ export function CommandBar({ open, onClose }: Props) {
     }
   }
 
+  // Once the first message has been sent, the compact panel switches from
+  // "input on top" to "input pinned to the bottom, fullscreen toggle stays
+  // up top" — same shape the expanded thread view uses.
+  const hasStarted = loading || done || !!compactResult
+
   const expandedMinHeight = isMobileViewport ? 160 : 240
   const expandedMaxHeight = Math.max(
     expandedMinHeight,
@@ -476,69 +481,122 @@ export function CommandBar({ open, onClose }: Props) {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.12, delay: 0.08 }}
+                  className="flex flex-col"
                 >
-                  <div className="flex items-center border-b border-border px-4 py-3 gap-2">
-                    <textarea
-                      ref={inputRef}
-                      autoFocus
-                      rows={1}
-                      placeholder="Ask anything or issue a command..."
-                      value={query}
-                      onChange={e => setQuery(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                        if (e.key === 'Escape') handleClose()
-                      }}
-                      className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
-                      style={{ maxHeight: '144px' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={toggleFullscreen}
-                      className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                      title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                    >
-                      {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                      title="Attach CSV, PDF, or image"
-                    >
-                      <Paperclip size={16} />
-                    </button>
-                  </div>
-                  {attachment && (
-                    <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/30 text-xs text-muted-foreground">
-                      <Paperclip size={11} className="shrink-0" />
-                      <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                      <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  )}
-                  {loading && (
-                    <div className="p-4 space-y-2">
-                      <div className="flex justify-end">
-                        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[90%] inline-block whitespace-pre-wrap break-words">
-                          {pendingQuery}
-                        </span>
+                  {hasStarted ? (
+                    <>
+                      {/* Header — fullscreen toggle stays pinned at the top once a message has gone out */}
+                      <div className="flex items-center justify-end gap-1 px-3 pt-2 pb-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
+                          aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                        >
+                          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                        </button>
                       </div>
-                      <ThinkingBubble />
-                    </div>
-                  )}
-                  {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
-                  {compactResult && !loading && !done && (
-                    <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
-                      <CommandResult action={compactResult} onDone={handleWriteDone} onClose={handleClose} />
-                    </div>
-                  )}
-                  {!compactResult && !loading && !done && (
-                    <p className="p-4 text-muted-foreground text-xs">
-                      Try: "What's my net worth?" or "Add 10 AAPL shares at $220 bought today"
-                    </p>
+                      <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
+                        {loading && (
+                          <div className="p-4 space-y-2">
+                            <div className="flex justify-end">
+                              <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[90%] inline-block whitespace-pre-wrap break-words">
+                                {pendingQuery}
+                              </span>
+                            </div>
+                            <ThinkingBubble />
+                          </div>
+                        )}
+                        {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
+                        {compactResult && !loading && !done && (
+                          <CommandResult action={compactResult} onDone={handleWriteDone} onClose={handleClose} />
+                        )}
+                      </div>
+                      {/* Input pinned to the bottom, matching the expanded thread's footer */}
+                      <div className="border-t border-border flex-shrink-0">
+                        {attachment && (
+                          <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                            <Paperclip size={11} className="shrink-0" />
+                            <span className="truncate max-w-[220px]">{attachment.filename}</span>
+                            <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 px-4 py-3">
+                          <textarea
+                            ref={inputRef}
+                            rows={1}
+                            placeholder="Reply..."
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                              if (e.key === 'Escape') handleClose()
+                            }}
+                            className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                            style={{ maxHeight: '144px' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            title="Attach CSV, PDF, or image"
+                          >
+                            <Paperclip size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center border-b border-border px-4 py-3 gap-2">
+                        <textarea
+                          ref={inputRef}
+                          autoFocus
+                          rows={1}
+                          placeholder="Ask anything or issue a command..."
+                          value={query}
+                          onChange={e => setQuery(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                            if (e.key === 'Escape') handleClose()
+                          }}
+                          className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
+                          style={{ maxHeight: '144px' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                        >
+                          {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                          title="Attach CSV, PDF, or image"
+                        >
+                          <Paperclip size={16} />
+                        </button>
+                      </div>
+                      {attachment && (
+                        <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                          <Paperclip size={11} className="shrink-0" />
+                          <span className="truncate max-w-[220px]">{attachment.filename}</span>
+                          <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                            <X size={12} />
+                          </button>
+                        </div>
+                      )}
+                      <p className="p-4 text-muted-foreground text-xs">
+                        Try: "What's my net worth?" or "Add 10 AAPL shares at $220 bought today"
+                      </p>
+                    </>
                   )}
                 </motion.div>
               ) : (
