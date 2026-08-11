@@ -1181,6 +1181,25 @@ async function executeReadTool(
   throw new Error(`Unsupported read tool: ${toolName}`)
 }
 
+// User-facing phrasing for each read tool, used in the agent trace shown in
+// the command bar. Keep these in plain language ("Reviewed your stock
+// positions") rather than internal tool names — the trace is meant to tell
+// the user what the assistant looked at, not how the agent loop works.
+const READ_TOOL_FRIENDLY_LABEL: Record<string, string> = {
+  get_portfolio_summary: 'Checked your portfolio summary',
+  get_positions: 'Reviewed your stock positions',
+  get_transactions: 'Looked up your transaction and tax lot history',
+  get_net_worth_timeseries: 'Reviewed your net worth history',
+  get_exposure_breakdown: 'Checked your exposure breakdown',
+  analyze_tax_lots: 'Analyzed your capital gains tax lots',
+  simulate_portfolio_actions: 'Simulated the scenario you asked about',
+  recommend_actions_for_goal: 'Worked out recommendations for your goal',
+}
+
+function friendlyReadToolLabel(toolName: string): string {
+  return READ_TOOL_FRIENDLY_LABEL[toolName] ?? `Looked up ${toolName.replace(/_/g, ' ')}`
+}
+
 function summarizeReadToolResult(toolName: string, result: any): string {
   if (toolName === 'get_portfolio_summary') {
     const netWorth = toNumber(result?.totals?.netWorth, 0)
@@ -2976,7 +2995,6 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
     } as AgentTrace,
   })
 
-  addTrace('Received user command', clipText(lastUserContent, 180))
   const supabase = getSupabaseClient()
   const { data: authData, error: authError } = await supabase.auth.getUser()
   if (authError) {
@@ -3001,7 +3019,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const justAskedTransfer =
     previousMessage?.role === 'assistant' && isTransferProceedsPrompt(previousMessage.content)
   if (isSaleUtterance(lastUserContent) && !mentionsTransferIntent(lastUserContent) && !justAskedTransfer) {
-    addTrace('Requested sale-proceeds clarification')
+    addTrace('Asked where to send the sale proceeds')
     return withTrace({
       type: 'text',
       message: 'Do you want to transfer the sale proceeds somewhere? Reply with destination (and optional amount), or say "no transfer".',
@@ -3012,7 +3030,6 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
     getAllAssets(),
     getAllTickers(),
   ])
-  addTrace('Loaded portfolio state', `${assets.length} asset(s), ${allTickers.length} ticker(s)`)
 
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
@@ -3033,9 +3050,6 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const analysisContext = shouldAttachComputedContext
     ? buildFocusedPortfolioContext(lastUserContent, assets, allTickers, false)
     : null
-  if (analysisContext) {
-    addTrace('Attached computed portfolio context', mentionsNetWorth(lastUserContent) ? 'Net-worth directive enabled' : undefined)
-  }
 
   let systemPrompt = baseSystemPrompt
   if (analysisContext) {
@@ -3078,7 +3092,6 @@ ${JSON.stringify(analysisContext, null, 2)}`
         }
       } else {
         // Groq cannot process document blocks — fall back to structured text extraction.
-        addTrace('Extracting PDF text')
         const { extractTextFromPdf } = await import('./fileParser')
         const extractedText = await extractTextFromPdf(attachment)
         claudeMessages[lastIdx] = {
@@ -3111,11 +3124,10 @@ ${JSON.stringify(analysisContext, null, 2)}`
       }
     }
 
-    addTrace('File attachment injected', `${attachment.filename} (${attachment.type.toUpperCase()})`)
+    addTrace('Read your attached file', `${attachment.filename} (${attachment.type.toUpperCase()})`)
   }
 
   let response = await runLLM(systemPrompt, claudeMessages)
-  addTrace('Initial model pass complete')
 
   let snapshotsCache: any[] | null = null
   const getSnapshotsCached = async () => {
@@ -3137,21 +3149,11 @@ ${JSON.stringify(analysisContext, null, 2)}`
       name: tc.function.name,
       input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
     }))
-    if (toolUsesInRound.length === 0) {
-      addTrace('No read tools requested', `Round ${round + 1}`)
-      break
-    }
+    if (toolUsesInRound.length === 0) break
 
     const readToolUses = toolUsesInRound.filter((tool) => READ_TOOL_NAMES.has(tool.name))
     const hasNonReadToolUse = toolUsesInRound.some((tool) => !READ_TOOL_NAMES.has(tool.name))
-    if (readToolUses.length === 0 || hasNonReadToolUse) {
-      if (hasNonReadToolUse) {
-        addTrace('Stopped read-tool loop', 'Model requested navigation or write tools')
-      }
-      break
-    }
-
-    addTrace('Executing read tools', `Round ${round + 1}, ${readToolUses.length} tool call(s)`)
+    if (readToolUses.length === 0 || hasNonReadToolUse) break
 
     const toolResultMessages = await Promise.all(readToolUses.map(async (tool) => {
       try {
@@ -3159,13 +3161,10 @@ ${JSON.stringify(analysisContext, null, 2)}`
           assets,
           getSnapshotsCached,
         })
-        addTrace(
-          `Read tool: ${tool.name}`,
-          `${summarizeReadToolResult(tool.name, result)}${tool.input ? ` | input ${clipText(tool.input, 120)}` : ''}`,
-        )
+        addTrace(friendlyReadToolLabel(tool.name), summarizeReadToolResult(tool.name, result))
         return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: true, result }) }
       } catch (error: any) {
-        addTrace(`Read tool failed: ${tool.name}`, String(error?.message ?? 'Read tool failed'))
+        addTrace(`Couldn't complete: ${friendlyReadToolLabel(tool.name)}`, String(error?.message ?? 'Read tool failed'))
         return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: false, error: String(error?.message ?? 'Read tool failed') }) }
       }
     }))
@@ -3176,21 +3175,14 @@ ${JSON.stringify(analysisContext, null, 2)}`
       ...toolResultMessages,
     ]
     response = await runLLM(systemPrompt, claudeMessages)
-    addTrace('Model re-run with read tool results', `Round ${round + 1}`)
   }
 
   const maxReasoningSteps = 2
   for (let step = 0; step < maxReasoningSteps; step += 1) {
-    if ((response.choices[0]?.message?.tool_calls?.length ?? 0) > 0) {
-      addTrace('Exited clarification loop', 'Model emitted tool calls')
-      break
-    }
+    if ((response.choices[0]?.message?.tool_calls?.length ?? 0) > 0) break
 
     const assistantText = extractTextFromResponse(response)
-    if (!looksLikePortfolioDetailQuestion(assistantText)) {
-      addTrace('Clarification loop not needed')
-      break
-    }
+    if (!looksLikePortfolioDetailQuestion(assistantText)) break
 
     const expandedContext = buildFocusedPortfolioContext(lastUserContent, assets, allTickers, true)
     const hiddenFollowUp = `Use this computed portfolio context and answer the user's original question.
@@ -3199,7 +3191,7 @@ If data is still missing after reviewing this context, state assumptions clearly
 
 Computed Portfolio Context (JSON):
 ${JSON.stringify(expandedContext, null, 2)}`
-    addTrace('Triggered hidden follow-up reasoning pass', `Step ${step + 1}`)
+    if (step === 0) addTrace('Took a closer look at your portfolio for a more precise answer')
 
     claudeMessages = [
       ...claudeMessages,
@@ -3207,7 +3199,6 @@ ${JSON.stringify(expandedContext, null, 2)}`
       { role: 'user', content: hiddenFollowUp },
     ]
     response = await runLLM(baseSystemPrompt, claudeMessages)
-    addTrace('Model re-run with expanded context', `Step ${step + 1}`)
   }
 
   const rawFinalCalls = response.choices[0]?.message?.tool_calls ?? []
@@ -3218,7 +3209,6 @@ ${JSON.stringify(expandedContext, null, 2)}`
   }))
   if (toolUses.length === 0) {
     const text = extractTextFromResponse(response)
-    addTrace('Returned final text response')
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
   }
 
@@ -3233,7 +3223,6 @@ ${JSON.stringify(expandedContext, null, 2)}`
 
   if (writeTools.length === 0) {
     const text = extractTextFromResponse(response)
-    addTrace('Returned final text response')
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
   }
 
