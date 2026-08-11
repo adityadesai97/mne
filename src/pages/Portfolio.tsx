@@ -207,13 +207,14 @@ export default function Portfolio() {
     let result = assets
 
     if (search.trim()) {
-      const query = search.trim().toLowerCase()
-      result = result.filter(
-        (a) =>
-          a.name?.toLowerCase().includes(query) ||
-          a.location?.name?.toLowerCase().includes(query) ||
-          a.location?.account_type?.toLowerCase().includes(query)
-      )
+      const tokens = search.trim().toLowerCase().split(/\s+/)
+      result = result.filter((a) => {
+        const haystack = [a.name, a.location?.name, a.location?.account_type]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return tokens.every((token) => haystack.includes(token))
+      })
     }
 
     if (activeType !== 'All') {
