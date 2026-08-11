@@ -203,14 +203,6 @@ export default function Portfolio() {
 
   const chips = ['All', ...assetTypes]
 
-  // The Name/Value/Gain picker only changes anything meaningful in the
-  // list view — that's the one view where row order is the whole story.
-  // The grid is a wall of same-size tiles where "largest first" is the
-  // only ordering that reads as intentional rather than arbitrary, so it
-  // always orders by value regardless of what the (hidden, in grid view)
-  // sort control last held.
-  const effectiveSort: SortOption = isListView ? sort : 'value'
-
   const displayed = useMemo(() => {
     let result = assets
 
@@ -224,20 +216,20 @@ export default function Portfolio() {
     }
 
     result = [...result].sort((a, b) => {
-      if (effectiveSort === 'name') {
+      if (sort === 'name') {
         return (a.name ?? '').localeCompare(b.name ?? '')
       }
-      if (effectiveSort === 'value') {
+      if (sort === 'value') {
         return computeAssetValue(b) - computeAssetValue(a)
       }
-      if (effectiveSort === 'gain') {
+      if (sort === 'gain') {
         return computeUnrealizedGain(b) - computeUnrealizedGain(a)
       }
       return 0
     })
 
     return result
-  }, [assets, search, activeType, effectiveSort])
+  }, [assets, search, activeType, sort])
 
   if (!assetsLoaded) {
     return <PortfolioSkeleton />
@@ -279,9 +271,7 @@ export default function Portfolio() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {isListView && (
-            <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
-          )}
+          <OptionDropdown value={sort} options={SORT_OPTIONS} onChange={setSort} ariaLabel="Sort by" />
         </div>
       </div>
 
