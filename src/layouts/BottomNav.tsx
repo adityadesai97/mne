@@ -24,11 +24,15 @@ export default function BottomNav() {
   const activeIndex = visibleTabs.findIndex((t) => isTabActive(t.to, pathname))
 
   const tabRefs = useRef<Array<HTMLAnchorElement | null>>([])
-  const [indicator, setIndicator] = useState<{ x: number; w: number; h: number } | null>(null)
+  const [indicator, setIndicator] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
   const measure = () => {
     const el = tabRefs.current[activeIndex]
-    if (el) setIndicator({ x: el.offsetLeft, w: el.offsetWidth, h: el.offsetHeight })
+    // offsetTop isn't 0 here — <Liquid>'s own `py-2` pushes the row's
+    // content down from its padding edge (what `top` in absolute
+    // positioning is measured from), so it has to be captured per tab
+    // rather than assumed, same as Sidebar's vertical indicator does.
+    if (el) setIndicator({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight })
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,8 +73,9 @@ export default function BottomNav() {
           <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
               aria-hidden="true"
-              className="absolute top-0 left-0 rounded-2xl pointer-events-none"
+              className="absolute left-0 rounded-2xl pointer-events-none"
               style={{
+                top: indicator.y,
                 width: indicator.w,
                 height: indicator.h,
                 transform: `translateX(${indicator.x}px)`,
