@@ -106,34 +106,6 @@ input, select, textarea {
     var(--grad) border-box;
 }
 
-/* Spinning comet border — used on the ⌘K pill */
-@property --cmdk-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-/* Spin once on load (3 rotations, ease-out), then pulse glow forever */
-@keyframes cmdkSpin {
-  from { --cmdk-angle: 0deg; }
-  to   { --cmdk-angle: 1080deg; }
-}
-
-@keyframes cmdkPulse {
-  from { box-shadow: none; }
-  to   { box-shadow: 0 0 16px rgba(0,80,245,0.55), 0 0 32px rgba(40,120,255,0.30); }
-}
-
-.border-spin {
-  border: 2px solid transparent;
-  background:
-    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
-    conic-gradient(from var(--cmdk-angle), #002FCC, #0050F5, #2878FF, #5099FF, #002FCC) border-box;
-  animation:
-    cmdkSpin 4.5s cubic-bezier(0.16, 1, 0.3, 1) 1 forwards,
-    cmdkPulse 0.8s ease-out 4.5s 1 forwards;
-}
-
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 

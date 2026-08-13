@@ -17,3 +17,30 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   }
   globalThis.IntersectionObserver = MockIntersectionObserver
 }
+
+// jsdom doesn't implement ResizeObserver either (used by liquid-gooey's
+// measurement engine, among others) — same rationale as above.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class MockResizeObserver implements ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = MockResizeObserver
+}
+
+// jsdom doesn't implement matchMedia (used for prefers-color-scheme /
+// prefers-reduced-motion checks by border-beam and liquid-gooey). A stub
+// that reports "no preference" matches jsdom's own light/no-motion defaults.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }) as MediaQueryList
+}

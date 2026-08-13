@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
+import { BorderBeam } from 'border-beam'
 import BottomNav from './BottomNav'
 import Sidebar from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
 import { AppAlertsHost } from '@/components/AppAlertsHost'
+import { useAppTheme } from '@/hooks/useAppTheme'
 import { getAllAssets } from '@/lib/db/assets'
 import { computeTotalNetWorth } from '@/lib/portfolio'
 import { recordDailySnapshot, backfillHistoricalSnapshots } from '@/lib/db/snapshots'
@@ -48,22 +50,33 @@ function readSafeAreaInsets() {
 }
 
 function CmdKFab({ onOpen }: { onOpen: () => void }) {
+  const theme = useAppTheme()
   return (
-    <motion.button
-      layoutId="cmdk"
-      onClick={onOpen}
-      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40 border-spin text-muted-foreground text-xs px-3.5 py-2 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors"
-      aria-label="Open command bar"
-      style={{
-        borderRadius: 999,
-        ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))',
-      }}
+    // Fixed positioning lives on this wrapper, not on the BorderBeam div below
+    // it: BorderBeam's own stylesheet sets `position: relative` on the
+    // element it renders, which would fight a `fixed` class placed directly
+    // on it. The button stays the `layoutId="cmdk"` shared-transition anchor
+    // — it's still the same DOM node CommandBar's panel morphs from/to, just
+    // now normally in-flow inside the beam's box instead of positioned itself.
+    <div
+      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40"
+      style={{ ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))' }}
     >
-      <span className="inline-flex items-center md:hidden" aria-hidden="true">
-        <Sparkles size={16} />
-      </span>
-      <span className="hidden md:inline">⌘K</span>
-    </motion.button>
+      <BorderBeam size="sm" colorVariant="ocean" theme={theme}>
+        <motion.button
+          layoutId="cmdk"
+          onClick={onOpen}
+          className="bg-card text-muted-foreground text-xs px-3.5 py-2 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors"
+          aria-label="Open command bar"
+          style={{ borderRadius: 999 }}
+        >
+          <span className="inline-flex items-center md:hidden" aria-hidden="true">
+            <Sparkles size={16} />
+          </span>
+          <span className="hidden md:inline">⌘K</span>
+        </motion.button>
+      </BorderBeam>
+    </div>
   )
 }
 
