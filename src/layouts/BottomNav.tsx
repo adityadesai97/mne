@@ -45,11 +45,26 @@ export default function BottomNav() {
       className="md:hidden fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-card/75 border-t border-white/5 z-50"
       style={{ paddingBottom: 'calc(0.5rem + var(--app-safe-bottom, 0px))' }}
     >
-      {/* Goo blur is kept small relative to the tab row: a large sigma would
-          smooth the pill's rounded ends into a shallower curve. There's only
-          ever one blob here (no neighbours to bridge into) — the liquid
-          effect is purely the Move trail as the indicator slides tab to tab. */}
-      <Liquid blur={4} fill="hsl(var(--primary) / 0.1)" className="flex justify-around py-2">
+      {/*
+        The fill MUST be opaque: the goo filter blurs the silhouette and then
+        pushes its alpha through a steep contrast curve to re-sharpen the
+        edge (new_alpha = contrast * old_alpha + intercept, ~18x by default)
+        — a translucent fill (e.g. the previous 10%-opacity tint) never
+        clears that curve's threshold and gets crushed to fully transparent
+        everywhere, which is why the pill didn't render at all. Content
+        sitting on the pill inverts to `--primary-foreground` to stay legible
+        on the solid color, same treatment as the desktop Sidebar's pill.
+        Goo blur is kept small relative to the tab row: a large sigma would
+        smooth the pill's rounded ends into a shallower curve. There's only
+        ever one blob here (no neighbours to bridge into) — the liquid
+        effect is purely the Move trail as the indicator slides tab to tab.
+      */}
+      <Liquid
+        blur={4}
+        fill="hsl(var(--primary))"
+        shadow="0 2px 8px hsl(var(--primary) / 0.35)"
+        className="flex justify-around py-2"
+      >
         {indicator && (
           <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
@@ -72,7 +87,7 @@ export default function BottomNav() {
             end={to === '/'}
             className={({ isActive }) =>
               `flex flex-col items-center gap-1 px-4 py-1.5 text-xs transition-colors duration-150 ${
-                isActive ? 'text-primary' : 'text-muted-foreground active:text-foreground'
+                isActive ? 'text-primary-foreground' : 'text-muted-foreground active:text-foreground'
               }`
             }
           >
