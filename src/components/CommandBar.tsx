@@ -198,12 +198,28 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
  *  multiple words popping in at once rather than a smooth token-by-token
  *  stream. Queues incoming text and drains a little of it every animation
  *  frame instead, so the display advances at a steady pace regardless of
- *  how unevenly the chunks actually arrived. */
+ *  how unevenly the chunks actually arrived.
+ *
+ *  Also absorbs runCommand's multi-round agent loop: every round streams
+ *  (onStreamStart fires per round, not once per command — see claude.ts),
+ *  including rounds whose text is provisional and gets silently discarded
+ *  — e.g. the reasoning-steps loop re-asks with more context when a reply
+ *  reads like the model stalling on a clarifying question instead of
+ *  answering. A hard reset between rounds would flash back to the thinking
+ *  orb and then stream a second time, which reads as broken. startRound
+ *  marks the boundary without blanking anything — whatever's currently
+ *  shown stays put (frozen, not stale-looking, since a discarded round's
+ *  text was itself a complete-looking reply) until the very first delta of
+ *  the NEXT round actually arrives, at which point that delta's own drain
+ *  tick clears the old text and starts fresh. If a round produces no text
+ *  at all (a pure tool call), nothing changes — the previous round's text
+ *  simply lingers until real content replaces it. */
 function useSmoothedStream() {
   const [displayed, setDisplayed] = useState('')
   const queueRef = useRef('')
   const rafRef = useRef(0)
   const runningRef = useRef(false)
+  const pendingClearRef = useRef(false)
 
   const drain = useCallback(() => {
     if (!queueRef.current) {
@@ -217,7 +233,14 @@ function useSmoothedStream() {
     const chunk = Math.max(1, Math.ceil(queueRef.current.length / 12))
     const next = queueRef.current.slice(0, chunk)
     queueRef.current = queueRef.current.slice(chunk)
-    setDisplayed(prev => prev + next)
+    // Captured by value, not read lazily inside the updater: setState's
+    // updater function runs on React's own schedule, by which point the
+    // very next line here would already have flipped the ref back to
+    // false — reading pendingClearRef.current *inside* the updater always
+    // saw false, silently defeating the clear and concatenating instead.
+    const shouldClear = pendingClearRef.current
+    pendingClearRef.current = false
+    setDisplayed(prev => (shouldClear ? '' : prev) + next)
     rafRef.current = requestAnimationFrame(drain)
   }, [])
 
@@ -229,8 +252,16 @@ function useSmoothedStream() {
     }
   }, [drain])
 
+  const startRound = useCallback(() => {
+    queueRef.current = ''
+    pendingClearRef.current = true
+  }, [])
+
+  // A hard reset — new user message, panel closed, the whole command
+  // finished or errored — blanks immediately, no lingering text.
   const reset = useCallback(() => {
     queueRef.current = ''
+    pendingClearRef.current = false
     runningRef.current = false
     cancelAnimationFrame(rafRef.current)
     setDisplayed('')
@@ -238,7 +269,7 @@ function useSmoothedStream() {
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
 
-  return { displayed, push, reset }
+  return { displayed, push, startRound, reset }
 }
 
 /** Shows the thinking-orbs "solving" indicator until the first token of the
@@ -289,7 +320,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { displayed: streamingText, push: pushStreamDelta, reset: resetStream } = useSmoothedStream()
+  const { displayed: streamingText, push: pushStreamDelta, startRound: startStreamRound, reset: resetStream } = useSmoothedStream()
   const [done, setDone] = useState(false)
   const [writesDone, setWritesDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
@@ -439,7 +470,7 @@ export function CommandBar({ open, onClose }: Props) {
     const pendingAttachment = attachment
     try {
       const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined, {
-        onStreamStart: resetStream,
+        onStreamStart: startStreamRound,
         onTextDelta: pushStreamDelta,
       })
       if (action.type === 'text') {
