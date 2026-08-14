@@ -28,6 +28,9 @@
     --gain: 142 71% 45%;
     --loss: 0 84% 60%;
     --display-font: 'Manrope', sans-serif;
+    /* fluid-functionalism hover/active surface tints (ported values) */
+    --hover: rgba(255, 255, 255, 0.06);
+    --active: rgba(255, 255, 255, 0.1);
   }
 
   html.light {
@@ -52,6 +55,8 @@
     --ring: 220 100% 50%;
     --gain: 142 60% 36%;
     --loss: 0 72% 51%;
+    --hover: rgba(0, 0, 0, 0.04);
+    --active: rgba(0, 0, 0, 0.07);
   }
 }
 
@@ -116,3 +121,31 @@ html.light .logo-adaptive { filter: brightness(0); }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* fluid-functionalism shimmer-text (thinking-steps active row label).
+   Keyframe is namespaced (fluid-shimmer-text) to avoid colliding with the
+   tailwind.config.ts `shimmer` keyframe already used by animate-shimmer
+   (skeleton.tsx) — that one animates transform, this one animates a
+   background-position text-clip gradient. Uses mne's own hsl(var(--x))
+   tokens instead of the source's light-dark() so it follows mne's
+   html.light class-based theming. */
+@keyframes fluid-shimmer-text {
+  0% { background-position: 0% 0; }
+  100% { background-position: 100% 0; }
+}
+
+.shimmer-text {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--muted-foreground)) 35%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground)) 65%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: fluid-shimmer-text 1.5s ease-in-out infinite;
+}

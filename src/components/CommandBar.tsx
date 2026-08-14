@@ -6,6 +6,20 @@ import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
 import { showAppAlert } from '@/lib/appAlerts'
+import {
+  Table as FluidTable,
+  TableHeader as FluidTableHeader,
+  TableBody as FluidTableBody,
+  TableRow as FluidTableRow,
+  TableHead as FluidTableHead,
+  TableCell as FluidTableCell,
+} from '@/components/fluid/table'
+import {
+  ThinkingSteps,
+  ThinkingStepsHeader,
+  ThinkingStepsContent,
+  ThinkingStep,
+} from '@/components/fluid/thinking-steps'
 
 function normalizeErrorMessage(message: string): string {
   if (/Cannot coerce the result to a single JSON object|JSON object requested, multiple \(or no\) rows returned/i.test(message)) {
@@ -102,31 +116,28 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
       }
       blocks.push(
         <div key={`table-${i}`} className="overflow-x-auto rounded-md border border-border/70">
-          <table className="min-w-full text-xs">
-            <thead className="bg-muted/40">
-              <tr>
+          <FluidTable size="compact">
+            <FluidTableHeader>
+              <FluidTableRow>
                 {headers.map((header, idx) => (
-                  <th
-                    key={idx}
-                    className={`px-2 py-1.5 font-semibold whitespace-nowrap ${ALIGN_CLASS[aligns[idx] ?? 'left']}`}
-                  >
+                  <FluidTableHead key={idx} className={`whitespace-nowrap ${ALIGN_CLASS[aligns[idx] ?? 'left']}`}>
                     {parseInlineMd(header)}
-                  </th>
+                  </FluidTableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </FluidTableRow>
+            </FluidTableHeader>
+            <FluidTableBody>
               {rows.map((row, rowIdx) => (
-                <tr key={rowIdx} className={`border-t border-border/60 ${rowIdx % 2 === 1 ? 'bg-muted/10' : ''}`}>
+                <FluidTableRow key={rowIdx} index={rowIdx}>
                   {headers.map((_, colIdx) => (
-                    <td key={colIdx} className={`px-2 py-1.5 align-top tabular-nums ${ALIGN_CLASS[aligns[colIdx] ?? 'left']}`}>
+                    <FluidTableCell key={colIdx} className={`align-top tabular-nums ${ALIGN_CLASS[aligns[colIdx] ?? 'left']}`}>
                       {parseTableCell(row[colIdx] ?? '')}
-                    </td>
+                    </FluidTableCell>
                   ))}
-                </tr>
+                </FluidTableRow>
               ))}
-            </tbody>
-          </table>
+            </FluidTableBody>
+          </FluidTable>
         </div>,
       )
       continue
@@ -1004,16 +1015,28 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
         </div>
         <div className="text-sm text-foreground max-w-[80%] space-y-2 bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-2.5">
           {renderAssistantMarkdown(message.content)}
+          {traceSteps.length > 0 && (
+            <ThinkingSteps
+              size="compact"
+              open={showTrace}
+              onOpenChange={setShowTrace}
+              className="w-full -mx-1"
+            >
+              <ThinkingStepsHeader>Agent trace</ThinkingStepsHeader>
+              <ThinkingStepsContent>
+                {traceSteps.map((step, idx) => (
+                  <ThinkingStep
+                    key={`${idx}-${step.label}`}
+                    label={step.label}
+                    description={step.detail}
+                    status="complete"
+                    isLast={idx === traceSteps.length - 1}
+                  />
+                ))}
+              </ThinkingStepsContent>
+            </ThinkingSteps>
+          )}
           <div className="pt-1 flex items-center gap-3">
-            {traceSteps.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTrace((prev) => !prev)}
-                className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showTrace ? 'Hide trace' : 'Show trace'}
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setFeedbackOpen((prev) => !prev)}
@@ -1024,21 +1047,6 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
               Feedback
             </button>
           </div>
-          {showTrace && traceSteps.length > 0 && (
-            <div className="rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-1.5">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Agent Trace</p>
-              {traceSteps.map((step, idx) => (
-                <div key={`${idx}-${step.label}`} className="text-xs leading-relaxed">
-                  <p className="font-medium text-foreground">
-                    {idx + 1}. {step.label}
-                  </p>
-                  {step.detail && (
-                    <p className="text-muted-foreground">{step.detail}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
           {feedbackOpen && (
             <FeedbackForm agentResponse={message.content} userQuery={userQuery} onDismiss={() => setFeedbackOpen(false)} />
           )}
