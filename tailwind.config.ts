@@ -47,6 +47,8 @@ const config: Config = {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
+        hover: 'var(--hover)',
+        active: 'var(--active)',
       },
       borderRadius: {
         lg: 'var(--radius)',
