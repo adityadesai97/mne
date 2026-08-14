@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X, Paperclip, Sparkles, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
@@ -191,25 +192,12 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
   return <div className="space-y-2">{blocks}</div>
 }
 
-/** Three-dot "typing" indicator, iMessage-style — replaces the old static
- *  "Thinking..." text with a small bouncing-dots animation. */
-function ThinkingDots() {
-  return (
-    <div className="flex items-center gap-1 py-0.5" role="status" aria-label="Thinking">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
-          animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut', delay: i * 0.15 }}
-        />
-      ))}
-    </div>
-  )
-}
-
-/** Assistant-style bubble (avatar + rounded muted background) wrapping the
- *  typing dots, so "thinking" reads as a chat bubble like any other reply. */
+/** Assistant-style bubble (avatar + rounded muted background) wrapping a
+ *  thinking-orbs "solving" indicator — a canvas orb with bands that scramble
+ *  in quarter turns and click back solved — so "thinking" reads as a chat
+ *  bubble like any other reply. Replaces the earlier bouncing-dots
+ *  indicator; `theme="auto"` follows the app's dark/light class the same way
+ *  the rest of the command bar does, with no extra wiring needed. */
 function ThinkingBubble() {
   return (
     <div className="flex items-start gap-2">
@@ -217,7 +205,7 @@ function ThinkingBubble() {
         <Sparkles size={11} className="text-primary" aria-hidden="true" />
       </div>
       <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3">
-        <ThinkingDots />
+        <ThinkingOrb state="solving" size={20} theme="auto" />
       </div>
     </div>
   )
