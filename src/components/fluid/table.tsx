@@ -182,7 +182,12 @@ const TableRow = forwardRef<HTMLTableRowElement, TableRowProps>(
         data-proximity-index={index}
         className={cn(
           "group/row relative z-10 border-b transition-[border-color] duration-80",
-          hideBorder ? "border-transparent" : "border-accent/40",
+          // Source repo's --accent is a neutral gray; mne's --accent is the
+          // brand blue (same as --primary), so border-accent/40 rendered as
+          // a visible blue hairline instead of a subtle row divider. Use
+          // mne's own --border token (what every other hairline in the app
+          // uses) instead.
+          hideBorder ? "border-transparent" : "border-border/70",
           isBodyRow && activeIdx === index && "is-active",
           className
         )}
