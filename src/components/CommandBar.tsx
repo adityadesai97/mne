@@ -192,24 +192,81 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
   return <div className="space-y-2">{blocks}</div>
 }
 
-/** Assistant-style bubble (avatar + rounded muted background). Shows the
- *  thinking-orbs "solving" indicator until the first token of the reply
- *  actually starts streaming in, then swaps to the live text itself —
- *  rendered plain (not through renderAssistantMarkdown) since a reply
- *  mid-stream is, by definition, incomplete markdown; the settled message
- *  gets full markdown rendering once the call resolves. */
+/** Decouples the on-screen reveal rate from the network's actual delivery
+ *  rate. SSE deltas arrive bursty — several can land within the same JS
+ *  tick and React batches them into one re-render — which read as clumps of
+ *  multiple words popping in at once rather than a smooth token-by-token
+ *  stream. Queues incoming text and drains a little of it every animation
+ *  frame instead, so the display advances at a steady pace regardless of
+ *  how unevenly the chunks actually arrived. */
+function useSmoothedStream() {
+  const [displayed, setDisplayed] = useState('')
+  const queueRef = useRef('')
+  const rafRef = useRef(0)
+  const runningRef = useRef(false)
+
+  const drain = useCallback(() => {
+    if (!queueRef.current) {
+      runningRef.current = false
+      return
+    }
+    // A fixed fraction per frame, not a fixed character count: trickles a
+    // couple of characters at a time normally, but catches up within a
+    // handful of frames if a large burst lands at once, instead of visibly
+    // lagging behind arrival.
+    const chunk = Math.max(1, Math.ceil(queueRef.current.length / 12))
+    const next = queueRef.current.slice(0, chunk)
+    queueRef.current = queueRef.current.slice(chunk)
+    setDisplayed(prev => prev + next)
+    rafRef.current = requestAnimationFrame(drain)
+  }, [])
+
+  const push = useCallback((delta: string) => {
+    queueRef.current += delta
+    if (!runningRef.current) {
+      runningRef.current = true
+      rafRef.current = requestAnimationFrame(drain)
+    }
+  }, [drain])
+
+  const reset = useCallback(() => {
+    queueRef.current = ''
+    runningRef.current = false
+    cancelAnimationFrame(rafRef.current)
+    setDisplayed('')
+  }, [])
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
+
+  return { displayed, push, reset }
+}
+
+/** Shows the thinking-orbs "solving" indicator until the first token of the
+ *  reply actually starts streaming in, then swaps to the live text itself in
+ *  an assistant-style avatar + bubble — rendered plain (not through
+ *  renderAssistantMarkdown) since a reply mid-stream is, by definition,
+ *  incomplete markdown; the settled message gets full markdown rendering
+ *  once the call resolves.
+ *
+ *  No avatar while the orb is showing: pairing a second "this is the agent"
+ *  icon next to the orb read as two competing markers doing the same job.
+ *  The avatar returns once there's real text, matching the settled
+ *  message's own look. */
 function ThinkingBubble({ streamingText }: { streamingText: string }) {
+  if (!streamingText) {
+    return (
+      <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3 inline-block">
+        <ThinkingOrb state="solving" size={20} theme="auto" />
+      </div>
+    )
+  }
   return (
     <div className="flex items-start gap-2">
       <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
         <Sparkles size={11} className="text-primary" aria-hidden="true" />
       </div>
       <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3 max-w-[80%]">
-        {streamingText ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap break-words">{streamingText}</p>
-        ) : (
-          <ThinkingOrb state="solving" size={20} theme="auto" />
-        )}
+        <p className="text-sm text-foreground whitespace-pre-wrap break-words">{streamingText}</p>
       </div>
     </div>
   )
@@ -232,7 +289,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
+  const { displayed: streamingText, push: pushStreamDelta, reset: resetStream } = useSmoothedStream()
   const [done, setDone] = useState(false)
   const [writesDone, setWritesDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
@@ -346,7 +403,7 @@ export function CommandBar({ open, onClose }: Props) {
       setDone(false)
       setAttachment(null)
       setPendingQuery('')
-      setStreamingText('')
+      resetStream()
       msgIdRef.current = 0
     }
   }, [open])
@@ -373,7 +430,7 @@ export function CommandBar({ open, onClose }: Props) {
     setLoading(true)
     setDone(false)
     setCompactResult(null)
-    setStreamingText('')
+    resetStream()
 
     if (wasExpanded) {
       setDisplayMessages(prev => [...prev, { id: nextId(), role: 'user', content: userContent }])
@@ -382,8 +439,8 @@ export function CommandBar({ open, onClose }: Props) {
     const pendingAttachment = attachment
     try {
       const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined, {
-        onStreamStart: () => setStreamingText(''),
-        onTextDelta: (delta) => setStreamingText(prev => prev + delta),
+        onStreamStart: resetStream,
+        onTextDelta: pushStreamDelta,
       })
       if (action.type === 'text') {
         setDisplayMessages(prev => [
@@ -412,7 +469,7 @@ export function CommandBar({ open, onClose }: Props) {
       }
     } finally {
       setLoading(false)
-      setStreamingText('')
+      resetStream()
     }
   }
 
