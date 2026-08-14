@@ -17,10 +17,26 @@ export interface NormalizedResponse {
   choices: [{ message: { content: string | null; tool_calls?: NormalizedToolCall[] } }]
 }
 
+// ── Streaming callbacks ───────────────────────────────────────────────────────
+export interface StreamCallbacks {
+  /** Called with each incremental text chunk as the model generates its
+   *  reply. Never fires for tool-call argument JSON — only visible reply
+   *  text. */
+  onTextDelta?: (delta: string) => void
+  /** Called once, before any onTextDelta for a given `create()` call — lets
+   *  a consumer accumulating deltas into a buffer know to clear it. Needed
+   *  because runCommand's agent loop can call `create()` several times
+   *  (tool-use rounds) before the round that produces the final reply. */
+  onStreamStart?: () => void
+}
+
 export interface LLMClient {
   chat: {
     completions: {
-      create(params: { model: string; max_tokens?: number; temperature?: number; messages: any[]; tools?: any[] }): Promise<NormalizedResponse>
+      create(
+        params: { model: string; max_tokens?: number; temperature?: number; messages: any[]; tools?: any[] },
+        callbacks?: StreamCallbacks,
+      ): Promise<NormalizedResponse>
     }
   }
 }
@@ -82,13 +98,16 @@ class ClaudeAdapter {
 
   chat = {
     completions: {
-      create: async (params: {
-        model: string
-        max_tokens?: number
-        temperature?: number
-        messages: any[]
-        tools?: any[]
-      }): Promise<NormalizedResponse> => {
+      create: async (
+        params: {
+          model: string
+          max_tokens?: number
+          temperature?: number
+          messages: any[]
+          tools?: any[]
+        },
+        callbacks?: StreamCallbacks,
+      ): Promise<NormalizedResponse> => {
         const systemMessages = params.messages.filter(m => m.role === 'system')
         const system = systemMessages.map(m => m.content).join('\n') || undefined
         const conversationMessages = toAnthropicMessages(params.messages.filter(m => m.role !== 'system'))
@@ -97,7 +116,8 @@ class ClaudeAdapter {
           description: t.function.description ?? '',
           input_schema: t.function.parameters,
         })) as Anthropic.Tool[] | undefined
-        const response = await this.anthropic.messages.create({
+        callbacks?.onStreamStart?.()
+        const stream = this.anthropic.messages.stream({
           model: params.model,
           max_tokens: params.max_tokens ?? 1024,
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
@@ -105,7 +125,74 @@ class ClaudeAdapter {
           messages: conversationMessages,
           ...(tools?.length ? { tools } : {}),
         })
+        if (callbacks?.onTextDelta) {
+          stream.on('text', (delta) => callbacks.onTextDelta!(delta))
+        }
+        const response = await stream.finalMessage()
         return toNormalizedResponse(response)
+      },
+    },
+  }
+}
+
+// ── Groq adapter (OpenAI-compatible) ─────────────────────────────────────────
+class GroqAdapter {
+  private openai: OpenAI
+
+  constructor(apiKey: string) {
+    this.openai = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1', dangerouslyAllowBrowser: true })
+  }
+
+  chat = {
+    completions: {
+      create: async (
+        params: {
+          model: string
+          max_tokens?: number
+          temperature?: number
+          messages: any[]
+          tools?: any[]
+        },
+        callbacks?: StreamCallbacks,
+      ): Promise<NormalizedResponse> => {
+        callbacks?.onStreamStart?.()
+        const stream = await this.openai.chat.completions.create({
+          model: params.model,
+          max_tokens: params.max_tokens,
+          ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+          messages: params.messages,
+          ...(params.tools?.length ? { tools: params.tools } : {}),
+          stream: true,
+        })
+
+        let content = ''
+        // Tool-call argument fragments arrive indexed by position, in
+        // whatever order the model interleaves them — accumulate per index,
+        // not by concatenating chunks in arrival order.
+        const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string }>()
+
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta
+          if (!delta) continue
+          if (delta.content) {
+            content += delta.content
+            callbacks?.onTextDelta?.(delta.content)
+          }
+          for (const tc of delta.tool_calls ?? []) {
+            const existing = toolCallsByIndex.get(tc.index) ?? { id: '', name: '', arguments: '' }
+            if (tc.id) existing.id = tc.id
+            if (tc.function?.name) existing.name += tc.function.name
+            if (tc.function?.arguments) existing.arguments += tc.function.arguments
+            toolCallsByIndex.set(tc.index, existing)
+          }
+        }
+
+        const toolCalls: NormalizedToolCall[] = [...toolCallsByIndex.values()].map(tc => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.arguments },
+        }))
+        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined } }] }
       },
     },
   }
@@ -114,9 +201,5 @@ class ClaudeAdapter {
 // ── Factory ───────────────────────────────────────────────────────────────────
 export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClient {
   if (provider === 'claude') return new ClaudeAdapter(apiKey)
-  return new OpenAI({
-    apiKey,
-    baseURL: 'https://api.groq.com/openai/v1',
-    dangerouslyAllowBrowser: true,
-  }) as unknown as LLMClient
+  return new GroqAdapter(apiKey)
 }
