@@ -1,7 +1,7 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Search, X, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown, LayoutGrid, List } from 'lucide-react'
+import { Search, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown, LayoutGrid, List } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -9,6 +9,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DissolveClearInput } from '@/components/ui/DissolveClearInput'
 import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -293,30 +294,14 @@ export default function Portfolio() {
       </div>
 
       <div className="px-4 mb-3">
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search positions…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-muted/70 rounded-xl pl-9 pr-9 py-2.5 text-sm w-full border border-transparent focus:border-primary/40 focus:bg-card transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
-          />
-          <AnimatePresence>
-            {search && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.7 }}
-                onClick={() => setSearch('')}
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X size={15} />
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
+        <DissolveClearInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search positions…"
+          icon={<Search size={15} className="absolute left-3 top-1/2 z-[4] -translate-y-1/2 text-muted-foreground pointer-events-none" />}
+          wrapperClassName="w-full bg-muted/70 rounded-xl border border-transparent focus-within:border-primary/40 focus-within:bg-card transition-colors focus-within:ring-1 focus-within:ring-primary/40"
+          fieldClassName="pl-9 pr-9 py-2.5 text-sm"
+        />
       </div>
 
       <LayoutGroup id="type-chips">
