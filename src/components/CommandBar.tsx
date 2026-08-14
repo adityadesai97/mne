@@ -192,20 +192,24 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
   return <div className="space-y-2">{blocks}</div>
 }
 
-/** Assistant-style bubble (avatar + rounded muted background) wrapping a
- *  thinking-orbs "solving" indicator — a canvas orb with bands that scramble
- *  in quarter turns and click back solved — so "thinking" reads as a chat
- *  bubble like any other reply. Replaces the earlier bouncing-dots
- *  indicator; `theme="auto"` follows the app's dark/light class the same way
- *  the rest of the command bar does, with no extra wiring needed. */
-function ThinkingBubble() {
+/** Assistant-style bubble (avatar + rounded muted background). Shows the
+ *  thinking-orbs "solving" indicator until the first token of the reply
+ *  actually starts streaming in, then swaps to the live text itself —
+ *  rendered plain (not through renderAssistantMarkdown) since a reply
+ *  mid-stream is, by definition, incomplete markdown; the settled message
+ *  gets full markdown rendering once the call resolves. */
+function ThinkingBubble({ streamingText }: { streamingText: string }) {
   return (
     <div className="flex items-start gap-2">
       <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
         <Sparkles size={11} className="text-primary" aria-hidden="true" />
       </div>
-      <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3">
-        <ThinkingOrb state="solving" size={20} theme="auto" />
+      <div className="bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-3 max-w-[80%]">
+        {streamingText ? (
+          <p className="text-sm text-foreground whitespace-pre-wrap break-words">{streamingText}</p>
+        ) : (
+          <ThinkingOrb state="solving" size={20} theme="auto" />
+        )}
       </div>
     </div>
   )
@@ -228,6 +232,7 @@ export function CommandBar({ open, onClose }: Props) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [streamingText, setStreamingText] = useState('')
   const [done, setDone] = useState(false)
   const [writesDone, setWritesDone] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
@@ -341,6 +346,7 @@ export function CommandBar({ open, onClose }: Props) {
       setDone(false)
       setAttachment(null)
       setPendingQuery('')
+      setStreamingText('')
       msgIdRef.current = 0
     }
   }, [open])
@@ -367,6 +373,7 @@ export function CommandBar({ open, onClose }: Props) {
     setLoading(true)
     setDone(false)
     setCompactResult(null)
+    setStreamingText('')
 
     if (wasExpanded) {
       setDisplayMessages(prev => [...prev, { id: nextId(), role: 'user', content: userContent }])
@@ -374,7 +381,10 @@ export function CommandBar({ open, onClose }: Props) {
 
     const pendingAttachment = attachment
     try {
-      const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined)
+      const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined, {
+        onStreamStart: () => setStreamingText(''),
+        onTextDelta: (delta) => setStreamingText(prev => prev + delta),
+      })
       if (action.type === 'text') {
         setDisplayMessages(prev => [
           ...prev,
@@ -402,6 +412,7 @@ export function CommandBar({ open, onClose }: Props) {
       }
     } finally {
       setLoading(false)
+      setStreamingText('')
     }
   }
 
@@ -493,7 +504,7 @@ export function CommandBar({ open, onClose }: Props) {
                                 {pendingQuery}
                               </span>
                             </div>
-                            <ThinkingBubble />
+                            <ThinkingBubble streamingText={streamingText} />
                           </div>
                         )}
                         {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
@@ -651,7 +662,7 @@ export function CommandBar({ open, onClose }: Props) {
                           exit={{ opacity: 0, transition: { duration: 0.15 } }}
                           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         >
-                          <ThinkingBubble />
+                          <ThinkingBubble streamingText={streamingText} />
                         </motion.div>
                       )}
                     </AnimatePresence>

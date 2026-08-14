@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CommandBar } from '../components/CommandBar'
 import { runCommand } from '../lib/claude'
@@ -55,6 +55,33 @@ test('renders a markdown table in the assistant reply with aligned, colored cell
   expect(headerCell).toHaveClass('text-right')
 
   expect(document.querySelector('table')).toBeInTheDocument()
+})
+
+test('streams the reply into the thinking bubble as tokens arrive, before the call resolves', async () => {
+  let resolveRunCommand: (value: any) => void = () => {}
+  vi.mocked(runCommand).mockImplementation((_messages, _attachment, streamCallbacks) => {
+    return new Promise((resolve) => {
+      resolveRunCommand = resolve
+      streamCallbacks?.onStreamStart?.()
+      streamCallbacks?.onTextDelta?.('Your net worth ')
+      streamCallbacks?.onTextDelta?.('is $10,000.')
+    })
+  })
+
+  const user = userEvent.setup()
+  render(<CommandBar open={true} onClose={() => {}} />)
+  const input = screen.getByPlaceholderText(/ask anything/i)
+  await user.type(input, "what's my net worth?")
+  await user.keyboard('{Enter}')
+
+  // Visible while runCommand's promise is still pending — proves this came
+  // from the streaming callback, not the resolved action.
+  expect(await screen.findByText('Your net worth is $10,000.')).toBeInTheDocument()
+
+  await act(async () => {
+    resolveRunCommand({ type: 'text', message: 'Your net worth is $10,000.' })
+  })
+  expect(await screen.findByText('Your net worth is $10,000.')).toBeInTheDocument()
 })
 
 test('full screen toggle button expands and restores the panel', async () => {

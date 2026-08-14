@@ -1,5 +1,5 @@
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
-import type { NormalizedResponse } from './llm'
+import type { NormalizedResponse, StreamCallbacks } from './llm'
 import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
 import { getAllAssets } from './db/assets'
@@ -3212,7 +3212,7 @@ async function executeMockNotification(type: string, userId: string): Promise<vo
   }
 }
 
-export async function runCommand(messages: Message[], attachment?: FileAttachment): Promise<any> {
+export async function runCommand(messages: Message[], attachment?: FileAttachment, streamCallbacks?: StreamCallbacks): Promise<any> {
   const lastUserContent = messages.findLast(m => m.role === 'user')?.content ?? ''
   const traceSteps: AgentTraceStep[] = []
   const addTrace = (label: string, detail?: string) => {
@@ -3267,6 +3267,13 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
   const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename, attachment?.type)
 
+  // Every round (tool-decision rounds included, not just the one that turns
+  // out to be the final reply) streams — the caller can't know in advance
+  // which round will be the terminal one, and by the time a round's full
+  // response has been awaited it's too late to have streamed it. In
+  // practice tool-only rounds emit little or no visible text before calling
+  // a tool, so this mostly matters for the final round; onStreamStart lets
+  // the caller reset its buffer between rounds regardless.
   const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
     max_tokens: 8192,
@@ -3275,7 +3282,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
     ...(attachment ? { temperature: 0 } : {}),
     messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
     tools,
-  })
+  }, streamCallbacks)
 
   const shouldAttachComputedContext = isAnalyticalQuestion(lastUserContent) || mentionsNetWorth(lastUserContent)
   const analysisContext = shouldAttachComputedContext
