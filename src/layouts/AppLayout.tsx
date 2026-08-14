@@ -62,11 +62,23 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
       className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40"
       style={{ ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))' }}
     >
-      <BorderBeam size="sm" colorVariant="ocean" theme={theme}>
+      {/*
+        `bg-card` (the button's original fill) sits only ~3 lightness points
+        from `bg-background` in both themes — with the rotating "sm" beam
+        dim at any given instant everywhere except the one point it's
+        currently passing through, the button could fall back to nearly
+        that fill alone and read as blending into the page. `bg-secondary`
+        has roughly double the contrast gap in both themes, plus a
+        persistent shadow for elevation that doesn't depend on the beam's
+        rotation phase at all — brightness/strength raise the beam itself
+        on top of that baseline, rather than being the only thing carrying
+        the button's visibility.
+      */}
+      <BorderBeam size="sm" colorVariant="ocean" theme={theme} brightness={1.6} strength={1}>
         <motion.button
           layoutId="cmdk"
           onClick={onOpen}
-          className="bg-card text-muted-foreground text-xs px-3.5 py-2 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors"
+          className="bg-secondary text-muted-foreground text-xs px-3.5 py-2 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors shadow-lg"
           aria-label="Open command bar"
           style={{ borderRadius: 999 }}
         >
