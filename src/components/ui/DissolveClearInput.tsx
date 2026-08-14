@@ -250,25 +250,33 @@ export function DissolveClearInput({
         className="pointer-events-none absolute inset-0 z-[3] opacity-0"
         style={{ mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
       />
-      {/* Stays mounted through the ~1s dissolve (not just while hasValue) so
+      {/* The vertical centering lives on this static wrapper, not on the
+          motion.button itself: framer-motion's `animate` composes the
+          element's full `transform` from its own motion values (scale here),
+          which silently overwrites — not adds to — a `-translate-y-1/2`
+          Tailwind class placed directly on an animated element. Keeping the
+          translate on an unanimated ancestor sidesteps that entirely.
+          Stays mounted through the ~1s dissolve (not just while hasValue) so
           it doesn't pop out the instant the value clears, ahead of the text
           it's meant to be triggering. */}
-      <AnimatePresence>
-        {(hasValue || clearing) && (
-          <motion.button
-            type="button"
-            initial={{ opacity: 0, scale: 0.7 }}
-            animate={{ opacity: clearing ? 0 : 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.7 }}
-            transition={clearing ? { duration: OUT_DUR / 1000 } : undefined}
-            onClick={handleClear}
-            aria-label={clearAriaLabel}
-            className="absolute right-3 top-1/2 z-[4] -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X size={15} />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <div className="absolute right-3 top-1/2 z-[4] -translate-y-1/2">
+        <AnimatePresence>
+          {(hasValue || clearing) && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: clearing ? 0 : 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={clearing ? { duration: OUT_DUR / 1000 } : undefined}
+              onClick={handleClear}
+              aria-label={clearAriaLabel}
+              className="block text-muted-foreground hover:text-foreground"
+            >
+              <X size={15} />
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   )
 }
