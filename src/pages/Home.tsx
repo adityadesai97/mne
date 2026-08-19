@@ -1,7 +1,7 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, History, Lightbulb, RefreshCw, Wallet, PieChart, Activity, Crown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, Lightbulb, RefreshCw, Wallet, PieChart, Activity, Crown } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
@@ -20,7 +20,6 @@ import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
-const LAST_VISIT_NET_WORTH_KEY = 'mne_last_visit_net_worth'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 type HomeChartRange = typeof HOME_CHART_RANGES[number]
 
@@ -76,7 +75,6 @@ export default function Home() {
   const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
     () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
   )
-  const [lastVisitDelta, setLastVisitDelta] = useState<number | null>(null)
   const [insightIndex, setInsightIndex] = useState(0)
   const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
@@ -99,22 +97,6 @@ export default function Home() {
         .finally(() => setAssetsLoaded(true))
     })
   }, [])
-
-  // "Since last visit" delta — compares this session's opening net worth
-  // against the value stored on the *previous* visit, then overwrites it for
-  // next time. Gated on assetsLoaded (not on `assets` itself) so it fires
-  // once per mount/session, not on every pull-to-refresh within one visit.
-  useEffect(() => {
-    if (!assetsLoaded || assets.length === 0) return
-    const current = computeTotalNetWorth(assets)
-    const stored = localStorage.getItem(LAST_VISIT_NET_WORTH_KEY)
-    if (stored !== null) {
-      const prev = Number(stored)
-      if (Number.isFinite(prev)) setLastVisitDelta(current - prev)
-    }
-    localStorage.setItem(LAST_VISIT_NET_WORTH_KEY, String(current))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetsLoaded])
 
   useEffect(() => {
     getSupabaseClient().auth.getUser().then(({ data }) => {
@@ -364,12 +346,14 @@ export default function Home() {
     return [...dailyMovers].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 5)
   }, [dailyMovers, moverSort])
 
-  // Today's change, from the tail of the net worth series — drives the
-  // ambient glow's color. Neutral (brand) glow until there's at least two
-  // points to compare.
+  // Today's change, from the tail of the net worth series (today's snapshot
+  // vs yesterday's, one row per day) — drives both the ambient glow's color
+  // and the daily change figure shown under the hero number.
+  const previousNetWorthValue = netWorthValues.length >= 2 ? netWorthValues[netWorthValues.length - 2] : null
   const todayChange = netWorthValues.length >= 2
-    ? netWorthValues[netWorthValues.length - 1] - netWorthValues[netWorthValues.length - 2]
+    ? netWorthValues[netWorthValues.length - 1] - previousNetWorthValue!
     : 0
+  const todayChangePercent = previousNetWorthValue ? (todayChange / previousNetWorthValue) * 100 : 0
   const hasMood = netWorthValues.length >= 2 && todayChange !== 0
   const moodIsPositive = todayChange >= 0
 
@@ -513,20 +497,21 @@ export default function Home() {
             </p>
           </div>
 
-          {lastVisitDelta !== null && Math.abs(lastVisitDelta) >= 1 && (
+          {hasMood && Math.abs(todayChange) >= 1 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.3 }}
-              className="mb-4 relative inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+              className={`mb-4 relative inline-flex items-center gap-1 text-[11px] ${moodIsPositive ? 'text-gain' : 'text-loss'}`}
             >
-              <History size={11} aria-hidden="true" />
+              {moodIsPositive ? <TrendingUp size={11} aria-hidden="true" /> : <TrendingDown size={11} aria-hidden="true" />}
               <span>
-                {lastVisitDelta >= 0 ? '+' : ''}{fmtCurrency(lastVisitDelta)} since last visit
+                {todayChange >= 0 ? '+' : ''}{fmtCurrency(todayChange)} ({todayChange >= 0 ? '+' : ''}{todayChangePercent.toFixed(2)}%) today
               </span>
             </motion.div>
+          ) : (
+            <div className="mb-4" />
           )}
-          {(lastVisitDelta === null || Math.abs(lastVisitDelta) < 1) && <div className="mb-4" />}
 
           {/* Chart range selector */}
           <div className="flex items-center justify-end gap-1.5 mb-1.5 relative">
