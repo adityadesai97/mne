@@ -7,6 +7,7 @@ import { Briefcase, Landmark, Banknote, Shield, Wallet, ChartNoAxesCombined, Arr
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount } from '@/lib/portfolio'
 import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
   if (asset.asset_type === 'Stock') {
@@ -108,6 +109,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
   const unitCount = isTradable ? computeFixedIncomeLotCount(asset) : 0
+  const [hideValues] = useHideValues()
 
   const fallbackColor = isStock
     ? colorForTicker(asset.ticker?.symbol ?? asset.name ?? String(index))
@@ -161,14 +163,17 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         </>
                       ) : (
                         <>
-                          <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
-                          <p className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`} title={`Cost basis ${fmt(basis)}`}>
+                          <p className={`font-semibold font-syne tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                          <p
+                            className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}
+                            title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
+                          >
                             {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
                           </p>
                         </>
                       )
                     ) : (
-                      <p className="font-semibold font-syne tabular-nums">{fmt(value)}</p>
+                      <p className={`font-semibold font-syne tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                     )}
                   </div>
                   <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
@@ -217,7 +222,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                 </>
               ) : (
                 <>
-                  <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
+                  <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount)} shares</span>
                     {/* Direction is carried by the arrow icon + sign, not by a
@@ -226,7 +231,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         block color. */}
                     <span
                       className="inline-flex items-center gap-0.5 text-[11px] font-semibold bg-white/20 rounded-full pl-1 pr-1.5 py-0.5"
-                      title={`Cost basis ${fmt(basis)}`}
+                      title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
                     >
                       {isGain ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
                       {gainPct.toFixed(1)}%
@@ -236,11 +241,11 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
               )
             ) : isTradable ? (
               <>
-                <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
+                <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                 <span className="text-[11px] text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
               </>
             ) : (
-              <p className="font-semibold text-xl font-syne tabular-nums leading-tight">{fmt(value)}</p>
+              <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
             )}
           </div>
         </div>

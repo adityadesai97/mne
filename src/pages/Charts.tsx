@@ -12,6 +12,7 @@ import { CardEyebrow } from '@/components/CardEyebrow'
 import { Skeleton } from '@/components/ui/skeleton'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import {
   groupByAssetType,
   groupByLocation,
@@ -71,11 +72,13 @@ function fmtCompact(n: number) {
 
 function donutOption(
   data: { name: string; value: number; color: string }[],
-  centerLabel?: { label: string; value: string },
+  centerLabel: { label: string; value: string } | undefined,
+  hideValues: boolean,
 ): EChartsOption {
   return {
     backgroundColor: 'transparent',
     tooltip: {
+      show: !hideValues,
       ...tooltipBase,
       trigger: 'item',
       formatter: (params: unknown) => {
@@ -150,11 +153,13 @@ function DonutWithLegend({
   colorData,
   height,
   emptyLabel,
+  hideValues,
 }: {
   option: EChartsOption
   colorData: { name: string; value: number; color: string }[]
   height: number
   emptyLabel: string
+  hideValues: boolean
 }) {
   const chartRef = useRef<ReactECharts | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
@@ -174,19 +179,21 @@ function DonutWithLegend({
 
   return (
     <>
-      <ReactECharts
-        ref={chartRef}
-        option={option}
-        style={{ width: '100%', height }}
-        notMerge
-        opts={{ renderer: 'svg' }}
-        onEvents={{
-          mouseover: (params: { componentType?: string; name?: string }) => {
-            if (params.componentType === 'series' && params.name) setHovered(params.name)
-          },
-          mouseout: () => setHovered(null),
-        }}
-      />
+      <div className={hiddenValueClass(hideValues)}>
+        <ReactECharts
+          ref={chartRef}
+          option={option}
+          style={{ width: '100%', height }}
+          notMerge
+          opts={{ renderer: 'svg' }}
+          onEvents={{
+            mouseover: (params: { componentType?: string; name?: string }) => {
+              if (params.componentType === 'series' && params.name) setHovered(params.name)
+            },
+            mouseout: () => setHovered(null),
+          }}
+        />
+      </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
         {colorData.map((slice) => (
           <button
@@ -215,6 +222,7 @@ export default function Charts() {
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
+  const [hideValues] = useHideValues()
 
   useEffect(() => {
     getAllAssets()
@@ -273,22 +281,23 @@ export default function Charts() {
     color: PALETTE[index % PALETTE.length],
   }))
   const themeDistributionOption = useMemo<EChartsOption>(
-    () => donutOption(themeDistributionColorData, { label: 'Total', value: fmtCompact(themeDistributionTotal) }),
-    [themeDistributionColorData, themeDistributionTotal],
+    () => donutOption(themeDistributionColorData, { label: 'Total', value: fmtCompact(themeDistributionTotal) }, hideValues),
+    [themeDistributionColorData, themeDistributionTotal, hideValues],
   )
   const allocationOption = useMemo<EChartsOption>(
-    () => donutOption(allocationColorData, { label: 'Total', value: fmtCompact(allocationTotal) }),
-    [allocationColorData, allocationTotal],
+    () => donutOption(allocationColorData, { label: 'Total', value: fmtCompact(allocationTotal) }, hideValues),
+    [allocationColorData, allocationTotal, hideValues],
   )
 
   const locationOption = useMemo<EChartsOption>(
-    () => donutOption(locationColorData, { label: 'Total', value: fmtCompact(locationTotal) }),
-    [locationColorData, locationTotal],
+    () => donutOption(locationColorData, { label: 'Total', value: fmtCompact(locationTotal) }, hideValues),
+    [locationColorData, locationTotal, hideValues],
   )
 
   const pnlOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
+      show: !hideValues,
       ...tooltipBase,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -340,7 +349,7 @@ export default function Charts() {
         },
       },
     ],
-  }), [pnlData])
+  }), [pnlData, hideValues])
 
   const capitalGainsData = useMemo(
     () => [
@@ -369,6 +378,7 @@ export default function Charts() {
     // one. Item trigger + the emphasis glow below hug the bar's own shape
     // instead.
     tooltip: {
+      show: !hideValues,
       ...tooltipBase,
       trigger: 'item',
       formatter: (params: unknown) => {
@@ -435,11 +445,12 @@ export default function Charts() {
         },
       },
     ],
-  }), [capitalGainsAxisBounds.max, capitalGainsAxisBounds.min, capitalGainsData])
+  }), [capitalGainsAxisBounds.max, capitalGainsAxisBounds.min, capitalGainsData, hideValues])
 
   const cvvOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
+      show: !hideValues,
       ...tooltipBase,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -495,7 +506,7 @@ export default function Charts() {
         },
       },
     ],
-  }), [cvvData])
+  }), [cvvData, hideValues])
 
   const rsuOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
@@ -662,7 +673,7 @@ export default function Charts() {
               ))}
             </div>
           </div>
-          <DonutWithLegend option={allocationOption} colorData={allocationColorData} height={220} emptyLabel="No data" />
+          <DonutWithLegend option={allocationOption} colorData={allocationColorData} height={220} emptyLabel="No data" hideValues={hideValues} />
         </motion.div>
 
         {/* BY ACCOUNT */}
@@ -674,7 +685,7 @@ export default function Charts() {
           <div className="mb-3">
             <CardEyebrow icon={Landmark}>By Account</CardEyebrow>
           </div>
-          <DonutWithLegend option={locationOption} colorData={locationColorData} height={220} emptyLabel="No data" />
+          <DonutWithLegend option={locationOption} colorData={locationColorData} height={220} emptyLabel="No data" hideValues={hideValues} />
         </motion.div>
 
         {/* STOCK DISTRIBUTION BY THEME */}
@@ -702,6 +713,7 @@ export default function Charts() {
             colorData={themeDistributionColorData}
             height={220}
             emptyLabel="No themed stock data yet"
+            hideValues={hideValues}
           />
         </motion.div>
 
@@ -716,7 +728,9 @@ export default function Charts() {
             <div className="mb-3">
               <CardEyebrow icon={Scale}>Capital Gains Exposure</CardEyebrow>
             </div>
-            <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
+            <div className={hiddenValueClass(hideValues)}>
+              <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
+            </div>
           </motion.div>
         )}
 
@@ -732,12 +746,14 @@ export default function Charts() {
                 Unrealized P&amp;L by Position
               </CardEyebrow>
             </div>
-            <ReactECharts
-              option={pnlOption}
-              style={{ width: '100%', height: Math.max(180, pnlData.length * 44) }}
-              notMerge
-              opts={{ renderer: 'svg' }}
-            />
+            <div className={hiddenValueClass(hideValues)}>
+              <ReactECharts
+                option={pnlOption}
+                style={{ width: '100%', height: Math.max(180, pnlData.length * 44) }}
+                notMerge
+                opts={{ renderer: 'svg' }}
+              />
+            </div>
           </motion.div>
         )}
 
@@ -751,12 +767,14 @@ export default function Charts() {
             <div className="mb-3">
               <CardEyebrow icon={BarChart3}>Cost Basis vs Current Value</CardEyebrow>
             </div>
-            <ReactECharts
-              option={cvvOption}
-              style={{ width: '100%', height: Math.max(180, cvvData.length * 60) }}
-              notMerge
-              opts={{ renderer: 'svg' }}
-            />
+            <div className={hiddenValueClass(hideValues)}>
+              <ReactECharts
+                option={cvvOption}
+                style={{ width: '100%', height: Math.max(180, cvvData.length * 60) }}
+                notMerge
+                opts={{ renderer: 'svg' }}
+              />
+            </div>
           </motion.div>
         )}
 
