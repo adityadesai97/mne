@@ -18,6 +18,7 @@ import { CardEyebrow } from '@/components/CardEyebrow'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -80,6 +81,7 @@ export default function Home() {
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
   const heroRef = useRef<HTMLParagraphElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
+  const [hideValues] = useHideValues()
 
   function handleRangeChange(range: HomeChartRange) {
     localStorage.setItem(HOME_CHART_RANGE_KEY, range)
@@ -203,6 +205,7 @@ export default function Home() {
   const netWorthOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
+      show: !hideValues,
       backgroundColor: TOOLTIP_BG,
       borderColor: 'rgba(255,255,255,0.08)',
       borderWidth: 1,
@@ -277,7 +280,7 @@ export default function Home() {
         data: netWorthValues,
       },
     ],
-  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues])
+  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues, hideValues])
 
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
@@ -491,7 +494,7 @@ export default function Home() {
           <div className="mb-1 relative">
             <p
               ref={heroRef}
-              className="text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne"
+              className={`text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne ${hiddenValueClass(hideValues)}`}
             >
               {fmtCurrency(totalValue)}
             </p>
@@ -505,7 +508,7 @@ export default function Home() {
               className={`mb-4 relative inline-flex items-center gap-1 text-[11px] ${moodIsPositive ? 'text-gain' : 'text-loss'}`}
             >
               {moodIsPositive ? <TrendingUp size={11} aria-hidden="true" /> : <TrendingDown size={11} aria-hidden="true" />}
-              <span>
+              <span className={hiddenValueClass(hideValues)}>
                 {todayChange >= 0 ? '+' : ''}{fmtCurrency(todayChange)} ({todayChange >= 0 ? '+' : ''}{todayChangePercent.toFixed(2)}%) today
               </span>
             </motion.div>
@@ -541,7 +544,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="relative mb-4 -mx-1">
+          <div className={`relative mb-4 -mx-1 ${hiddenValueClass(hideValues)}`}>
             <ReactECharts
               option={netWorthOption}
               style={{ width: '100%', height: isMobile ? 130 : 150 }}
@@ -617,7 +620,7 @@ export default function Home() {
                         style={{ backgroundColor: color }}
                       />
                     </div>
-                    <p className="text-[10px] tabular-nums text-muted-foreground mt-1">{fmtCurrency(value)}</p>
+                    <p className={`text-[10px] tabular-nums text-muted-foreground mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(value)}</p>
                   </div>
                 )
               })}
@@ -636,7 +639,7 @@ export default function Home() {
           <div className="mb-3">
             <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
           </div>
-          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
           <p className={`text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
@@ -697,7 +700,7 @@ export default function Home() {
                   <p className={`text-sm font-bold tabular-nums font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
                     {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
                   </p>
-                  <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+                  <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
                     {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
                   </p>
                 </motion.div>
@@ -721,7 +724,7 @@ export default function Home() {
           </div>
           <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
           {bestAsset && (
-            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
               {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
             </p>
           )}
@@ -744,7 +747,7 @@ export default function Home() {
           </div>
           <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
           {largestAsset && (
-            <p className="text-lg font-bold tabular-nums font-syne mt-1">{fmtCurrency(largestValue)}</p>
+            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
           )}
           {largestAsset && (
             <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>

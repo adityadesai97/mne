@@ -8,6 +8,7 @@ const KEYS = {
   needsSignIn: 'mne_needs_signin',
   theme: 'mne_theme',
   assetView: 'mne_asset_view',
+  hideValues: 'mne_hide_values',
 }
 const LEGACY_CONNECTION_KEYS = ['mne_supabase_url', 'mne_supabase_anon_key', 'mne_last_user_id']
 const LEGACY_PROVIDER_KEYS = ['mne_gemini_api_key']
@@ -63,4 +64,8 @@ export const config = {
     return (localStorage.getItem(KEYS.assetView) ?? 'grid') as 'grid' | 'list'
   },
   setAssetView(v: 'grid' | 'list') { localStorage.setItem(KEYS.assetView, v) },
+  get hideValues(): boolean {
+    return localStorage.getItem(KEYS.hideValues) === 'true'
+  },
+  setHideValues(v: boolean) { localStorage.setItem(KEYS.hideValues, v ? 'true' : 'false') },
 }

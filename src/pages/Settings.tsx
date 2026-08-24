@@ -8,6 +8,7 @@ import { exportData, importData, setActiveImportController } from '@/lib/importE
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
+import { useHideValues } from '@/hooks/useHideValues'
 import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus } from 'lucide-react'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -98,6 +99,7 @@ export default function Settings() {
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
+  const [hideValues, setHideValues] = useHideValues()
   const [editingKeys, setEditingKeys] = useState(false)
   const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
@@ -316,6 +318,19 @@ export default function Settings() {
         <div className="bg-card rounded-xl px-4 py-4 space-y-2">
           <p className="text-sm font-medium">Theme</p>
           <ThemePicker value={theme} onChange={handleThemeChange} />
+        </div>
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Hide values</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Blur dollar amounts on Home, Portfolio, and Charts
+            </p>
+          </div>
+          <Toggle
+            enabled={hideValues}
+            onEnable={() => setHideValues(true)}
+            onDisable={() => setHideValues(false)}
+          />
         </div>
       </div>
 
