@@ -58,9 +58,20 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
     // on it. The button stays the `layoutId="cmdk"` shared-transition anchor
     // — it's still the same DOM node CommandBar's panel morphs from/to, just
     // now normally in-flow inside the beam's box instead of positioned itself.
+    //
+    // translateZ(0) forces this onto its own GPU compositor layer — without
+    // it, iOS Safari can fail to keep a `position: fixed` element pinned
+    // during an active touch-scroll (it visibly trails/scrolls with the
+    // page and only snaps back to the correct spot once the gesture ends).
+    // That's a distinct bug from the overflow-x-hidden containing-block
+    // issue fixed elsewhere in this file — promoting to a layer is the
+    // standard mitigation for it.
     <div
       className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40"
-      style={{ ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))' }}
+      style={{
+        ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))',
+        transform: 'translateZ(0)',
+      }}
     >
       {/*
         `bg-card` (the button's original fill) sits only ~3 lightness points
@@ -250,7 +261,7 @@ export default function AppLayout() {
       {cgAlert && (
         <div
           className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
-          style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)' }}
+          style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
         >
           <span>{cgAlert}</span>
           <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
