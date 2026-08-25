@@ -66,10 +66,21 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
     // That's a distinct bug from the overflow-x-hidden containing-block
     // issue fixed elsewhere in this file — promoting to a layer is the
     // standard mitigation for it.
+    //
+    // The bottom offset reads env(safe-area-inset-bottom) directly, not the
+    // JS-measured --app-safe-bottom var: on iOS Safari that inset isn't a
+    // device constant, it actually tracks the bottom toolbar's own
+    // show/hide state (0 while the toolbar covers the home-indicator area,
+    // the full inset once it auto-hides on scroll and exposes it). The
+    // browser updates env() in the same paint as its native toolbar
+    // animation; round-tripping that same value through a debounced
+    // React-state probe (necessarily a tick or more behind) is exactly
+    // what made this element visibly lag/misplace itself while the toolbar
+    // was animating — i.e. right at the top/bottom of a scroll gesture.
     <div
       className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40"
       style={{
-        ['--fab-bottom' as string]: 'calc(6rem + var(--app-safe-bottom, 0px))',
+        ['--fab-bottom' as string]: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
         transform: 'translateZ(0)',
       }}
     >
@@ -261,7 +272,11 @@ export default function AppLayout() {
       {cgAlert && (
         <div
           className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
-          style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
+          // Native env(), not the JS-measured --app-safe-top var — see the
+          // CmdKFab comment above for why: the browser updates env() in
+          // sync with its own toolbar animation, a debounced React-state
+          // round-trip can't.
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
         >
           <span>{cgAlert}</span>
           <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>

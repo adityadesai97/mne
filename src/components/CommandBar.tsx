@@ -548,17 +548,19 @@ export function CommandBar({ open, onClose }: Props) {
             onClick={handleClose}
           />
 
-          {/* Panel — shares layoutId with CmdKFab pill */}
+          {/* Panel — shares layoutId with CmdKFab pill. Padding reads
+              env(safe-area-inset-*) directly rather than the JS-measured
+              --app-safe-* vars — see AppLayout.tsx's CmdKFab comment. */}
           <div
             className={`fixed left-0 right-0 top-0 z-50 flex items-start justify-center pointer-events-none ${isFullscreen ? '' : 'px-4'}`}
             style={{
               height: `${viewportHeight}px`,
               paddingTop: isFullscreen
-                ? 'var(--app-safe-top, 0px)'
+                ? 'env(safe-area-inset-top, 0px)'
                 : isMobileViewport
-                  ? 'calc(var(--app-safe-top, 0px) + 0.5rem)'
-                  : 'max(4rem, calc(var(--app-safe-top, 0px) + 1rem))',
-              paddingBottom: isFullscreen ? 'var(--app-safe-bottom, 0px)' : 'calc(var(--app-safe-bottom, 0px) + 0.75rem)',
+                  ? 'calc(env(safe-area-inset-top, 0px) + 0.5rem)'
+                  : 'max(4rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
+              paddingBottom: isFullscreen ? 'env(safe-area-inset-bottom, 0px)' : 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
             }}
           >
             <motion.div
