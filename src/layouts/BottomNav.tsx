@@ -35,7 +35,6 @@ export default function BottomNav() {
     if (el) setIndicator({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight })
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(measure, [activeIndex, visibleTabs.length])
 
   useEffect(() => {
