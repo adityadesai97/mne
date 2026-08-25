@@ -32,6 +32,12 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   const [hideValues] = useHideValues()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  // Subtype sections (Market/ESPP/RSU) and RSU grant blocks start collapsed
+  // — a stock with a lot of activity otherwise dumps every lot and grant on
+  // screen at once. Individual lot rows (expandedIds above) already worked
+  // this way; this just extends the same pattern one level up.
+  const [expandedSubtypeIds, setExpandedSubtypeIds] = useState<Set<string>>(new Set())
+  const [expandedGrantIds, setExpandedGrantIds] = useState<Set<string>>(new Set())
   const [editValues, setEditValues] = useState<EditValues>({
     count: '',
     cost_price: '',
@@ -42,6 +48,22 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
 
   function toggleExpanded(id: string) {
     setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleSubtypeExpanded(id: string) {
+    setExpandedSubtypeIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleGrantExpanded(id: string) {
+    setExpandedGrantIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -248,89 +270,118 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
         const rsuGrants = st.rsu_grants ?? []
         const isRsuSubtype = st.subtype === 'RSU'
         const rsuGrantGroups = isRsuSubtype ? groupRsuActivityByGrant(rsuGrants, transactions) : null
+        const isSubtypeOpen = expandedSubtypeIds.has(st.id)
 
         return (
           <div key={st.id}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{st.subtype}</p>
+            <button
+              type="button"
+              onClick={() => toggleSubtypeExpanded(st.id)}
+              aria-expanded={isSubtypeOpen}
+              className="w-full flex items-center justify-between mb-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 ${isSubtypeOpen ? 'rotate-180' : ''}`} />
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{st.subtype}</p>
+              </div>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
                 {transactions.length} tx
                 {rsuGrants.length > 0 && <> · {rsuGrants.length} grant{rsuGrants.length === 1 ? '' : 's'}</>}
               </p>
-            </div>
+            </button>
 
-            {isRsuSubtype && rsuGrantGroups ? (
-              <div className="space-y-2">
-                {rsuGrantGroups.grants.map(group => {
-                  const vesting = computeGrantVesting(group.grant, group.transactions)
-                  return (
-                    <div key={group.grant.id} className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                          {group.transactions.length} tx
-                        </p>
-                      </div>
+            {/* Same CSS grid-rows accordion as individual lot rows below. */}
+            <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isSubtypeOpen ? '1fr' : '0fr' }}>
+              <div className="overflow-hidden">
+                {isRsuSubtype && rsuGrantGroups ? (
+                  <div className="space-y-2">
+                    {rsuGrantGroups.grants.map(group => {
+                      const vesting = computeGrantVesting(group.grant, group.transactions)
+                      const isGrantOpen = expandedGrantIds.has(group.grant.id)
+                      return (
+                        <div key={group.grant.id} className="rounded-lg border border-border/50 bg-muted/20">
+                          <button
+                            type="button"
+                            onClick={() => toggleGrantExpanded(group.grant.id)}
+                            aria-expanded={isGrantOpen}
+                            className="w-full flex items-center justify-between gap-2 p-3"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 flex-shrink-0 ${isGrantOpen ? 'rotate-180' : ''}`} />
+                              <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                              {group.transactions.length} tx
+                            </p>
+                          </button>
 
-                      <div className="mt-2 rounded-md border border-border/60 bg-card px-2.5 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium tabular-nums">{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</p>
-                          <div className="flex items-center gap-2">
-                            {group.grant.ended_at ? (
-                              <Badge variant="outline" className="text-[10px]">Ended</Badge>
-                            ) : onEndGrant ? (
-                              <button
-                                onClick={() => { void onEndGrant(group.grant.id) }}
-                                className="text-[11px] text-loss bg-loss/10 px-2 py-1 rounded hover:bg-loss/20 transition-colors"
-                              >
-                                End Grant
-                              </button>
-                            ) : null}
-                            {onDeleteGrant && (
-                              <button
-                                onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
-                                className="text-muted-foreground hover:text-destructive transition-colors"
-                                aria-label="Delete grant"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            )}
+                          <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isGrantOpen ? '1fr' : '0fr' }}>
+                            <div className="overflow-hidden">
+                              <div className="px-3 pb-3">
+                                <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs font-medium tabular-nums">{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</p>
+                                    <div className="flex items-center gap-2">
+                                      {group.grant.ended_at ? (
+                                        <Badge variant="outline" className="text-[10px]">Ended</Badge>
+                                      ) : onEndGrant ? (
+                                        <button
+                                          onClick={() => { void onEndGrant(group.grant.id) }}
+                                          className="text-[11px] text-loss bg-loss/10 px-2 py-1 rounded hover:bg-loss/20 transition-colors"
+                                        >
+                                          End Grant
+                                        </button>
+                                      ) : null}
+                                      {onDeleteGrant && (
+                                        <button
+                                          onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
+                                          className="text-muted-foreground hover:text-destructive transition-colors"
+                                          aria-label="Delete grant"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                                    {fmtShares(vesting.unvestedShares)} unvested
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground mt-1">
+                                    Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
+                                    {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
+                                  </p>
+                                </div>
+
+                                <div className="mt-2 space-y-2">
+                                  {group.transactions.length > 0 ? (
+                                    group.transactions.map((t: any) => renderTransactionCard(t))
+                                  ) : (
+                                    <p className="text-[11px] text-muted-foreground">No transactions mapped to this grant yet.</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">
-                          {fmtShares(vesting.unvestedShares)} unvested
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
-                          {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
-                        </p>
-                      </div>
+                      )
+                    })}
 
-                      <div className="mt-2 space-y-2">
-                        {group.transactions.length > 0 ? (
-                          group.transactions.map((t: any) => renderTransactionCard(t))
-                        ) : (
-                          <p className="text-[11px] text-muted-foreground">No transactions mapped to this grant yet.</p>
-                        )}
+                    {rsuGrantGroups.unassignedTransactions.length > 0 && (
+                      <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-3">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Unmatched Transactions</p>
+                        <div className="space-y-2">
+                          {rsuGrantGroups.unassignedTransactions.map((t: any) => renderTransactionCard(t))}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-
-                {rsuGrantGroups.unassignedTransactions.length > 0 && (
-                  <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Unmatched Transactions</p>
-                    <div className="space-y-2">
-                      {rsuGrantGroups.unassignedTransactions.map((t: any) => renderTransactionCard(t))}
-                    </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {transactions.map((t: any) => renderTransactionCard(t))}
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="space-y-2">
-                {transactions.map((t: any) => renderTransactionCard(t))}
-              </div>
-            )}
+            </div>
           </div>
         )
       })}
