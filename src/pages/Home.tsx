@@ -205,7 +205,6 @@ export default function Home() {
   const netWorthOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
-      show: !hideValues,
       backgroundColor: TOOLTIP_BG,
       borderColor: 'rgba(255,255,255,0.08)',
       borderWidth: 1,
@@ -280,7 +279,7 @@ export default function Home() {
         data: netWorthValues,
       },
     ],
-  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues, hideValues])
+  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues])
 
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
@@ -544,7 +543,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className={`relative mb-4 -mx-1 ${hiddenValueClass(hideValues)}`}>
+          <div className="relative mb-4 -mx-1">
             <ReactECharts
               option={netWorthOption}
               style={{ width: '100%', height: isMobile ? 130 : 150 }}
