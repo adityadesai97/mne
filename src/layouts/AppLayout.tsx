@@ -215,17 +215,6 @@ export default function AppLayout() {
           paddingBottom: 'calc(4rem + var(--app-safe-bottom, 0px))',
         }}
       >
-        <AppAlertsHost />
-        <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
-        {cgAlert && (
-          <div
-            className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
-            style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)' }}
-          >
-            <span>{cgAlert}</span>
-            <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
-          </div>
-        )}
         {/*
           Plain CSS animation, not framer-motion AnimatePresence: this
           wrapper sits around every single page in the app (it's the one
@@ -242,11 +231,35 @@ export default function AppLayout() {
         <div key={location.pathname} className="flex-1 animate-pageIn">
           <Outlet />
         </div>
-        <AnimatePresence>
-          {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
-        </AnimatePresence>
-        {!cmdOpen && <BottomNav />}
       </div>
+
+      {/*
+        Every `position: fixed` overlay lives here, as a sibling of the
+        `overflow-x-hidden` content wrapper above rather than nested inside
+        it. iOS Safari (and other WebKit browsers) treats an ancestor with
+        `overflow` set to anything but `visible` as the containing block for
+        `position: fixed` descendants instead of the viewport — so a fixed
+        element nested inside that wrapper scrolls along with its content
+        rather than staying pinned. That's what made the command bar FAB
+        (and would equally have hit BottomNav, CommandBar's own panel, the
+        capital-gains banner, and toast alerts) appear to scroll with the
+        page on mobile.
+      */}
+      <AppAlertsHost />
+      <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
+      {cgAlert && (
+        <div
+          className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"
+          style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.5rem)' }}
+        >
+          <span>{cgAlert}</span>
+          <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
+        </div>
+      )}
+      <AnimatePresence>
+        {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
+      </AnimatePresence>
+      {!cmdOpen && <BottomNav />}
     </div>
   )
 }
