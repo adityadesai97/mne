@@ -34,9 +34,26 @@ export function useHideValues(): [boolean, (v: boolean) => void] {
  * on bold tabular-nums digits, which is what let the Home hero number
  * (text-[3.1rem] font-bold) show through. Pass 'lg' (16px) for that kind of
  * large hero/headline figure, where even 12px leaves shapes guessable.
+ *
+ * Also disables pointer events and forces the element onto its own GPU
+ * layer:
+ * - pointer-events-none stops hover/click from leaking hidden data through
+ *   an interactive path a static blur doesn't cover — a chart's own hover
+ *   tooltip/emphasis glow, a title="Cost basis $X" attribute, etc. Safe
+ *   everywhere this is used: on a chart wrapper it makes the whole chart
+ *   inert (which is the point); on a value nested inside a larger
+ *   clickable card (e.g. PositionCard) it doesn't block that ancestor's
+ *   own click handling, since a pointer-events-none element is skipped
+ *   during hit-testing and the event just falls through to whatever is
+ *   positioned underneath.
+ * - transform-gpu (translate3d(0,0,0)) promotes the element to a
+ *   composited layer immediately. Without it, toggling a `filter: blur()`
+ *   class could paint with the pre-blur (un-expanded) bounds until some
+ *   later repaint — e.g. a scroll — recomputed them, showing a hard boxy
+ *   edge around the blur in the meantime instead of a smooth falloff.
  */
 export function hiddenValueClass(hidden: boolean, extra = '', strength: 'sm' | 'md' | 'lg' = 'md'): string {
   if (!hidden) return extra
   const blur = strength === 'sm' ? 'blur-sm' : strength === 'lg' ? 'blur-lg' : 'blur-md'
-  return `${blur} select-none ${extra}`.trim()
+  return `${blur} select-none pointer-events-none transform-gpu ${extra}`.trim()
 }

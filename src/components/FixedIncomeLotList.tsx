@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Trash2, Pencil, Plus } from 'lucide-react'
 import { formatDateMDY } from '@/lib/dates'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 interface Lot {
   id: string
@@ -29,6 +30,7 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
   onEditLot: (id: string, values: { count: number; cost_price: number; purchase_date: string }) => Promise<void>
   onDeleteLot: (id: string) => Promise<void>
 }) {
+  const [hideValues] = useHideValues()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [values, setValues] = useState<FormValues>(EMPTY_FORM)
@@ -139,8 +141,8 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
             <div className="min-w-0">
               <p className="text-xs font-medium">{formatDateMDY(lot.purchase_date)}</p>
               <p className="text-[11px] text-muted-foreground truncate">
-                {fmtUnits(count)} units @ {fmt(costPrice)} = {fmt(totalCost)}
-                {totalFace != null && <span className="text-muted-foreground/70"> · face {fmt(totalFace)}</span>}
+                {fmtUnits(count)} units @ <span className={hiddenValueClass(hideValues)}>{fmt(costPrice)} = {fmt(totalCost)}</span>
+                {totalFace != null && <span className={hiddenValueClass(hideValues, 'text-muted-foreground/70')}> · face {fmt(totalFace)}</span>}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

@@ -18,6 +18,7 @@ import {
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { revealUp } from '@/lib/motionPresets'
 import { formatDateMDY } from '@/lib/dates'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 interface EditAssetValues {
   name: string
@@ -33,6 +34,7 @@ interface EditAssetValues {
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [hideValues] = useHideValues()
   const [asset, setAsset] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -457,7 +459,7 @@ export default function AssetDetail() {
                 {isStock && asset.ticker && !noPriceData && (
                   <p className="text-sm mt-1 flex items-center gap-1.5">
                     <span className="text-muted-foreground">{asset.ticker.symbol}</span>
-                    <span className={`font-medium tabular-nums ${tickerPriceChangeClass}`}>${tickerPrice.toFixed(2)}</span>
+                    <span className={hiddenValueClass(hideValues, `font-medium tabular-nums ${tickerPriceChangeClass}`)}>${tickerPrice.toFixed(2)}</span>
                   </p>
                 )}
                 {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
@@ -470,7 +472,7 @@ export default function AssetDetail() {
                       <Badge variant="secondary">Matures {formatDateMDY(asset.maturity_date)}</Badge>
                     )}
                     {isFixedIncome && asset.face_value != null && (
-                      <Badge variant="secondary">Face {fmt(Number(asset.face_value))}</Badge>
+                      <Badge variant="secondary" className={hiddenValueClass(hideValues)}>Face {fmt(Number(asset.face_value))}</Badge>
                     )}
                   </div>
                 )}
@@ -484,7 +486,7 @@ export default function AssetDetail() {
                   ) : (
                     <>
                       <p className="text-3xl font-bold tabular-nums font-syne">
-                        {fmt(value)}
+                        <span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>
                         {isStock && (
                           <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} shares</span>
                         )}
@@ -493,7 +495,7 @@ export default function AssetDetail() {
                         )}
                       </p>
                       {isStock && (
-                        <p className={`text-base mt-1 tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+                        <p className={hiddenValueClass(hideValues, `text-base mt-1 tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`)}>
                           {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
                         </p>
                       )}
@@ -555,20 +557,22 @@ export default function AssetDetail() {
           <motion.div {...revealUp(0.08)} className="bg-card shadow-card rounded-2xl p-5">
             <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">Expected Return to Maturity</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <Metric label="Cost basis" value={fmt(expectedReturn.costBasis)} />
-              <Metric label="Face value at maturity" value={fmt(expectedReturn.faceValueTotal)} />
+              <Metric label="Cost basis" value={fmt(expectedReturn.costBasis)} hidden={hideValues} />
+              <Metric label="Face value at maturity" value={fmt(expectedReturn.faceValueTotal)} hidden={hideValues} />
               {asset.fixed_income_subtype === 'Bond' && (
-                <Metric label="Coupon income" value={fmt(expectedReturn.interestIncome)} />
+                <Metric label="Coupon income" value={fmt(expectedReturn.interestIncome)} hidden={hideValues} />
               )}
               <Metric
                 label={asset.fixed_income_subtype === 'Bond' ? 'Price gain/loss' : 'Discount captured'}
                 value={`${expectedReturn.capitalGain >= 0 ? '+' : ''}${fmt(expectedReturn.capitalGain)}`}
                 className={expectedReturn.capitalGain >= 0 ? 'text-gain' : 'text-loss'}
+                hidden={hideValues}
               />
               <Metric
                 label="Total expected return"
                 value={`${expectedReturn.totalExpectedReturn >= 0 ? '+' : ''}${fmt(expectedReturn.totalExpectedReturn)}${expectedReturn.expectedReturnPct != null ? ` (${expectedReturn.expectedReturnPct.toFixed(1)}%)` : ''}`}
                 className={expectedReturn.totalExpectedReturn >= 0 ? 'text-gain' : 'text-loss'}
+                hidden={hideValues}
               />
               {expectedReturn.annualizedYieldPct != null && (
                 <Metric label="Annualized yield" value={`${expectedReturn.annualizedYieldPct.toFixed(2)}%`} />
@@ -598,11 +602,11 @@ function fmtShares(n: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
-function Metric({ label, value, className = '' }: { label: string; value: string; className?: string }) {
+function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
   return (
     <div>
       <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={`text-sm font-medium tabular-nums mt-0.5 ${className}`}>{value}</p>
+      <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
     </div>
   )
 }
