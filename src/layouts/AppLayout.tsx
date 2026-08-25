@@ -16,6 +16,7 @@ import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
+import { subscribeToResumeConversationRequests } from '@/lib/commandBarBridge'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -118,7 +119,18 @@ export default function AppLayout() {
   const location = useLocation()
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
+
+  // Settings' conversation history list lives outside CommandBar's tree —
+  // this bridges its "continue this conversation" click into opening the
+  // panel resumed on that conversation.
+  useEffect(() => {
+    return subscribeToResumeConversationRequests((conversationId) => {
+      setResumeConversationId(conversationId)
+      setCmdOpen(true)
+    })
+  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -268,7 +280,12 @@ export default function AppLayout() {
         page on mobile.
       */}
       <AppAlertsHost />
-      <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
+      <CommandBar
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        resumeConversationId={resumeConversationId}
+        onResumeHandled={() => setResumeConversationId(null)}
+      />
       {cgAlert && (
         <div
           className="fixed top-0 left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center"

@@ -5,6 +5,7 @@ import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
+import { saveConversation, getConversation, type ConversationMessage } from '@/lib/db/conversations'
 import { showAppAlert } from '@/lib/appAlerts'
 import {
   Table as FluidTable,
@@ -319,12 +320,46 @@ type DisplayMessage =
   | { id: number; role: 'assistant'; kind: 'text'; content: string; trace?: AgentTrace }
   | { id: number; role: 'assistant'; kind: 'action'; action: any }
 
+/** A one-line human-readable summary of a non-text agent action, for
+ *  conversation history — an action's `execute` closure isn't serializable
+ *  and a write flow only makes sense to run once, so history records what
+ *  happened rather than replaying it. */
+function summarizeAction(action: any): string {
+  if (!action || typeof action !== 'object') return String(action ?? '')
+  if (action.type === 'navigate') return `Navigated to ${action.route}`
+  if (action.type === 'write_confirm') return action.confirmationMessage ?? 'Requested confirmation to make a change.'
+  if (action.type === 'write_confirm_queue') {
+    const confirmations = Array.isArray(action.confirmations) ? action.confirmations : []
+    const messages = confirmations.map((c: any) => c?.confirmationMessage).filter(Boolean)
+    return messages.length > 0 ? messages.join('\n') : 'Requested confirmation to make changes.'
+  }
+  if (action.type === 'error') return `Error: ${action.message ?? 'Something went wrong'}`
+  return action.message ?? 'Action performed.'
+}
+
+/** Converts on-screen messages to the plain {role, content} shape saved to
+ *  `command_conversations` — the same shape buildHistory feeds back to the
+ *  LLM, so a resumed conversation's context matches what's shown. */
+function serializeDisplayMessages(messages: DisplayMessage[]): ConversationMessage[] {
+  return messages.map((m): ConversationMessage => {
+    if (m.role === 'user') return { role: 'user', content: m.content }
+    if (m.kind === 'text') return { role: 'assistant', content: m.content }
+    return { role: 'assistant', content: summarizeAction(m.action) }
+  })
+}
+
 interface Props {
   open: boolean
   onClose: () => void
+  /** Set by the conversation history list (Settings) to reopen the panel
+   *  resumed on a previously saved conversation. */
+  resumeConversationId?: string | null
+  /** Called once the resume request above has been consumed (loaded or
+   *  failed) so the caller can clear it. */
+  onResumeHandled?: () => void
 }
 
-export function CommandBar({ open, onClose }: Props) {
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled }: Props) {
   const [query, setQuery] = useState('')
   const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
@@ -342,6 +377,11 @@ export function CommandBar({ open, onClose }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const msgIdRef = useRef(0)
+  // The DB row this thread is being saved to. null until the first
+  // exchange is persisted (or a resumed conversation is loaded), after
+  // which every later exchange updates the same row instead of creating a
+  // new one.
+  const conversationIdRef = useRef<string | null>(null)
 
   const handleClose = () => {
     if (writesDone) {
@@ -447,8 +487,45 @@ export function CommandBar({ open, onClose }: Props) {
       setPendingQuery('')
       resetStream()
       msgIdRef.current = 0
+      conversationIdRef.current = null
     }
   }, [open])
+
+  // Resuming a saved conversation from Settings' history list: load its
+  // messages, show them as an already-expanded thread, and keep saving
+  // further replies to that same row.
+  useEffect(() => {
+    if (!open || !resumeConversationId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const conversation = await getConversation(resumeConversationId)
+        if (cancelled || !conversation) return
+        conversationIdRef.current = conversation.id
+        setDisplayMessages(conversation.messages.map((m) => (
+          m.role === 'user'
+            ? { id: nextId(), role: 'user' as const, content: m.content }
+            : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content }
+        )))
+        setIsExpanded(true)
+      } catch (e) {
+        console.error('Failed to load conversation', e)
+      } finally {
+        if (!cancelled) onResumeHandled?.()
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, resumeConversationId])
+
+  const persistConversation = useCallback(async (messages: DisplayMessage[]) => {
+    const serialized = serializeDisplayMessages(messages)
+    if (serialized.length === 0) return
+    try {
+      conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized })
+    } catch (e) {
+      console.error('Failed to save conversation history', e)
+    }
+  }, [])
 
   useEffect(() => {
     if (inputRef.current) autoGrow(inputRef.current)
@@ -474,8 +551,16 @@ export function CommandBar({ open, onClose }: Props) {
     setCompactResult(null)
     resetStream()
 
+    // Messages already on screen, plus the user's turn if the thread is
+    // already expanded (compact mode adds its user bubble below, once the
+    // reply shape is known). Captured explicitly, rather than via a
+    // functional setState update, so the exact resulting array can also be
+    // handed to persistConversation below.
+    const baseMessages: DisplayMessage[] = wasExpanded
+      ? [...displayMessages, { id: nextId(), role: 'user', content: userContent }]
+      : displayMessages
     if (wasExpanded) {
-      setDisplayMessages(prev => [...prev, { id: nextId(), role: 'user', content: userContent }])
+      setDisplayMessages(baseMessages)
     }
 
     const pendingAttachment = attachment
@@ -485,29 +570,47 @@ export function CommandBar({ open, onClose }: Props) {
         onTextDelta: pushStreamDelta,
       })
       if (action.type === 'text') {
-        setDisplayMessages(prev => [
-          ...prev,
+        const updated: DisplayMessage[] = [
+          ...baseMessages,
           ...(!wasExpanded ? [{ id: nextId(), role: 'user' as const, content: userContent }] : []),
           { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message, trace: action.trace },
-        ])
+        ]
+        setDisplayMessages(updated)
         setIsExpanded(true)
+        void persistConversation(updated)
       } else if (wasExpanded) {
-        setDisplayMessages(prev => [
-          ...prev,
+        const updated: DisplayMessage[] = [
+          ...baseMessages,
           { id: nextId(), role: 'assistant' as const, kind: 'action', action },
-        ])
+        ]
+        setDisplayMessages(updated)
+        void persistConversation(updated)
       } else {
         setCompactResult(action)
+        // The compact panel doesn't render this exchange as a thread, but
+        // it still happened — record it in conversation history.
+        void persistConversation([
+          ...baseMessages,
+          { id: nextId(), role: 'user' as const, content: userContent },
+          { id: nextId(), role: 'assistant' as const, kind: 'action', action },
+        ])
       }
     } catch (e: any) {
       const errAction = { type: 'error', message: normalizeErrorMessage(e.message || 'Something went wrong') }
       if (wasExpanded) {
-        setDisplayMessages(prev => [
-          ...prev,
+        const updated: DisplayMessage[] = [
+          ...baseMessages,
           { id: nextId(), role: 'assistant' as const, kind: 'action', action: errAction },
-        ])
+        ]
+        setDisplayMessages(updated)
+        void persistConversation(updated)
       } else {
         setCompactResult(errAction)
+        void persistConversation([
+          ...baseMessages,
+          { id: nextId(), role: 'user' as const, content: userContent },
+          { id: nextId(), role: 'assistant' as const, kind: 'action', action: errAction },
+        ])
       }
     } finally {
       setLoading(false)

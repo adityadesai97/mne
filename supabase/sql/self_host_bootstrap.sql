@@ -304,6 +304,20 @@ create table if not exists public.command_feedback (
   created_at timestamptz not null default now()
 );
 
+-- Command bar conversation history. `messages` is a JSONB array of
+-- {role, content} — the same shape threaded through runCommand's history —
+-- read/written as a whole, so no child table is needed.
+create table if not exists public.command_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  messages jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists command_conversations_user_updated_idx
+  on public.command_conversations (user_id, updated_at desc);
+
 -- RLS
 alter table public.allowed_emails enable row level security;
 alter table public.admin_users enable row level security;
@@ -321,6 +335,7 @@ alter table public.user_settings enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
 alter table public.command_feedback enable row level security;
+alter table public.command_conversations enable row level security;
 
 drop policy if exists allowlist_self_read on public.allowed_emails;
 create policy allowlist_self_read
@@ -522,6 +537,14 @@ create policy own_net_worth_snapshots
 drop policy if exists own_command_feedback on public.command_feedback;
 create policy own_command_feedback
   on public.command_feedback
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_command_conversations on public.command_conversations;
+create policy own_command_conversations
+  on public.command_conversations
   for all
   to authenticated
   using (auth.uid() = user_id)
