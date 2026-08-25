@@ -146,20 +146,41 @@ export default function AppLayout() {
   }, [])
 
   useEffect(() => {
-    const updateInsets = () => setSafeInsets(readSafeAreaInsets())
     const vv = window.visualViewport
+    let debounceId: number | undefined
 
-    updateInsets()
-    window.addEventListener('resize', updateInsets)
-    window.addEventListener('orientationchange', updateInsets)
-    vv?.addEventListener('resize', updateInsets)
-    vv?.addEventListener('scroll', updateInsets)
+    const applyInsets = () => {
+      const next = readSafeAreaInsets()
+      // Bail out on a no-op recalculation so an unchanged value doesn't
+      // still trigger a re-render (and a CSS var rewrite on the fixed FAB
+      // and BottomNav) for nothing.
+      setSafeInsets(prev => (prev.top === next.top && prev.bottom === next.bottom ? prev : next))
+    }
+
+    // Mobile Safari/Chrome fire visualViewport 'resize'/'scroll' repeatedly
+    // while their dynamic toolbar (address bar) animates open/closed during
+    // a scroll gesture — recalculating (and re-rendering) on every one of
+    // those ticks was what made the fixed CmdKFab visibly jump mid-scroll.
+    // Debouncing collapses a whole gesture's worth of events into one
+    // recalculation after it settles, keeping the inset correction without
+    // the mid-scroll churn.
+    const scheduleUpdate = () => {
+      if (debounceId !== undefined) window.clearTimeout(debounceId)
+      debounceId = window.setTimeout(applyInsets, 150)
+    }
+
+    applyInsets()
+    window.addEventListener('resize', scheduleUpdate)
+    window.addEventListener('orientationchange', scheduleUpdate)
+    vv?.addEventListener('resize', scheduleUpdate)
+    vv?.addEventListener('scroll', scheduleUpdate)
 
     return () => {
-      window.removeEventListener('resize', updateInsets)
-      window.removeEventListener('orientationchange', updateInsets)
-      vv?.removeEventListener('resize', updateInsets)
-      vv?.removeEventListener('scroll', updateInsets)
+      if (debounceId !== undefined) window.clearTimeout(debounceId)
+      window.removeEventListener('resize', scheduleUpdate)
+      window.removeEventListener('orientationchange', scheduleUpdate)
+      vv?.removeEventListener('resize', scheduleUpdate)
+      vv?.removeEventListener('scroll', scheduleUpdate)
     }
   }, [])
 
