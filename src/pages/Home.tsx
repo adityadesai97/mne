@@ -494,7 +494,7 @@ export default function Home() {
           <div className="mb-1 relative">
             <p
               ref={heroRef}
-              className={`text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne ${hiddenValueClass(hideValues)}`}
+              className={`text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne ${hiddenValueClass(hideValues, '', 'lg')}`}
             >
               {fmtCurrency(totalValue)}
             </p>
