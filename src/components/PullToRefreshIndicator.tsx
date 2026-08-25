@@ -21,7 +21,12 @@ export function PullToRefreshIndicator({ pullY, refreshing }: Props) {
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.15 }}
           className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none"
-          style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 8px)' }}
+          // Native env(), not the JS-measured --app-safe-top var — see
+          // AppLayout.tsx's CmdKFab comment: the inset itself tracks
+          // Safari's toolbar show/hide state, which only env() stays in
+          // sync with (this indicator's own gesture runs right at the
+          // scroll boundary where that toolbar animates).
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}
         >
           <div className="bg-card border border-border/60 rounded-full p-2 shadow-md">
             {refreshing ? (

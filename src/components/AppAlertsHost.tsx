@@ -83,7 +83,9 @@ export function AppAlertsHost() {
     <>
       <div
         className="fixed top-0 right-0 z-[90] pointer-events-none w-full md:w-auto p-3 md:p-4"
-        style={{ paddingTop: 'calc(var(--app-safe-top, 0px) + 0.75rem)' }}
+        // Native env(), not the JS-measured --app-safe-top var — see
+        // AppLayout.tsx's CmdKFab comment for why.
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
       >
         <div className="flex flex-col items-stretch md:items-end gap-2">
           <AnimatePresence>

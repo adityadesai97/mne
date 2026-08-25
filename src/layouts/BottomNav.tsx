@@ -52,7 +52,13 @@ export default function BottomNav() {
       // pinned during an active touch-scroll (see AppLayout.tsx's CmdKFab
       // for the fuller explanation); backdrop-blur here makes this nav an
       // especially likely candidate for that same glitch.
-      style={{ paddingBottom: 'calc(0.5rem + var(--app-safe-bottom, 0px))', transform: 'translateZ(0)' }}
+      //
+      // Native env(safe-area-inset-bottom), not the JS-measured
+      // --app-safe-bottom var — also explained on CmdKFab: that inset
+      // itself changes as Safari's bottom toolbar shows/hides on scroll,
+      // and only env() tracks that in the same paint as the toolbar's own
+      // animation.
+      style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', transform: 'translateZ(0)' }}
     >
       {/*
         The fill MUST be opaque: the goo filter blurs the silhouette and then
