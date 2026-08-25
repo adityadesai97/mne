@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { config } from '@/store/config'
 import type { LLMProvider } from '@/store/config'
 import { exportData, importData, setActiveImportController, type ExportScope } from '@/lib/importExport'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
@@ -289,10 +289,9 @@ export default function Settings() {
     }
   }
 
-  function handleToggleConversationHistory() {
-    const next = !showConversationHistory
-    setShowConversationHistory(next)
-    if (next) void loadConversations()
+  function openConversationHistory() {
+    setShowConversationHistory(true)
+    void loadConversations()
   }
 
   function handleContinueConversation(id: string) {
@@ -423,10 +422,19 @@ export default function Settings() {
         <Row
           label="Conversation History"
           hint="View and continue past command bar conversations"
-          onClick={handleToggleConversationHistory}
+          onClick={openConversationHistory}
         />
-        {showConversationHistory && (
-          <div className="bg-card rounded-xl p-2 space-y-1 animate-slideDown">
+      </div>
+
+      <Dialog
+        open={showConversationHistory}
+        onOpenChange={(open) => { if (!open) setShowConversationHistory(false) }}
+      >
+        <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Conversation History</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
             {conversationsLoading && (
               <p className="text-xs text-muted-foreground px-2 py-2">Loading…</p>
             )}
@@ -457,8 +465,8 @@ export default function Settings() {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Notifications */}
       <SectionHeader><Bell size={10} className="inline mr-1.5 mb-0.5" />Notifications</SectionHeader>
