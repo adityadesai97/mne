@@ -74,6 +74,15 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Stop the whole page rubber-banding past its top/bottom edge on mobile
+   Safari/Chrome — without this, dragging past the last pixel of content
+   reveals blank canvas beneath the fixed BottomNav before springing back.
+   `usePullToRefresh` (src/hooks/usePullToRefresh.ts) already implements its
+   own bounded pull gesture at the top, so this doesn't affect that. */
+html, body {
+  overscroll-behavior-y: none;
+}
+
 ::selection {
   background-color: hsl(var(--primary) / 0.25);
   color: hsl(var(--foreground));
