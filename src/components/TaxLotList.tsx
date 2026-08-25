@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { ChevronDown, Trash2, Pencil } from 'lucide-react'
 import { formatDateMDY } from '@/lib/dates'
+import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 interface EditValues {
   count: string
@@ -28,6 +29,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   onEndGrant?: (id: string) => Promise<void>
   onDeleteGrant?: (grantId: string, transactionIds: string[]) => Promise<void>
 }) {
+  const [hideValues] = useHideValues()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [editValues, setEditValues] = useState<EditValues>({
@@ -152,12 +154,12 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
             <div>
               <p className="text-xs font-medium">{formatDateMDY(t.purchase_date)}</p>
               <p className="text-[11px] text-muted-foreground">
-                {shares.toFixed(shares % 1 === 0 ? 0 : 4)} shares @ {fmt(costPerShare)}
+                {shares.toFixed(shares % 1 === 0 ? 0 : 4)} shares @ <span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span>
                 {soldAtVest > 0 && <span className="text-muted-foreground/70"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-medium tabular-nums ${gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'}`}>
+              <span className={`text-xs font-medium tabular-nums ${gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
                 {gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
               </span>
               <ChevronDown size={14} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -176,18 +178,20 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
             <div className="px-3 pb-3">
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-2.5">
                 <Metric label="Shares held" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
-                <Metric label="Cost / share" value={fmt(costPerShare)} />
-                <Metric label="Amount paid" value={fmt(totalCost)} />
+                <Metric label="Cost / share" value={fmt(costPerShare)} hidden={hideValues} />
+                <Metric label="Amount paid" value={fmt(totalCost)} hidden={hideValues} />
                 <Metric
                   label="Current value"
                   value={currentValue !== null ? fmt(currentValue) : '—'}
                   className={currentValue !== null && gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
+                  hidden={hideValues}
                 />
                 <Metric label="Purchased" value={formatDateMDY(t.purchase_date)} />
                 <Metric
                   label="Gain / loss"
                   value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
                   className={gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
+                  hidden={hideValues}
                 />
                 {soldAtVest > 0 && (
                   <>
@@ -432,11 +436,11 @@ function computeGrantVesting(grant: any, transactions: any[]) {
   return { vestedShares: normalizedVested, unvestedShares }
 }
 
-function Metric({ label, value, className = '' }: { label: string; value: string; className?: string }) {
+function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
   return (
     <div>
       <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={`text-sm font-medium tabular-nums mt-0.5 ${className}`}>{value}</p>
+      <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
     </div>
   )
 }

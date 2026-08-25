@@ -203,7 +203,14 @@ function DonutWithLegend({
           }}
         />
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+      {/*
+        pointer-events-none here too, not just on the chart above: these
+        buttons drive the chart's hover-highlight/dim via a direct
+        dispatchAction call, not through the canvas's own pointer events —
+        so disabling the chart alone wouldn't stop hovering a legend swatch
+        from still revealing which slice is biggest relative to the rest.
+      */}
+      <div className={`flex flex-wrap gap-x-4 gap-y-1 mt-2 ${hideValues ? 'pointer-events-none' : ''}`}>
         {colorData.map((slice) => (
           <button
             type="button"
@@ -522,6 +529,7 @@ export default function Charts() {
   const rsuOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
+      show: !hideValues,
       ...tooltipBase,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -593,7 +601,7 @@ export default function Charts() {
         },
       },
     ],
-  }), [rsuData])
+  }), [rsuData, hideValues])
 
   if (!assetsLoaded) {
     return (
@@ -799,12 +807,14 @@ export default function Charts() {
             <div className="mb-3">
               <CardEyebrow icon={CalendarClock}>RSU Vesting Progress</CardEyebrow>
             </div>
-            <ReactECharts
-              option={rsuOption}
-              style={{ width: '100%', height: Math.max(180, rsuData.length * 52) }}
-              notMerge
-              opts={{ renderer: 'svg' }}
-            />
+            <div className={hiddenValueClass(hideValues)}>
+              <ReactECharts
+                option={rsuOption}
+                style={{ width: '100%', height: Math.max(180, rsuData.length * 52) }}
+                notMerge
+                opts={{ renderer: 'svg' }}
+              />
+            </div>
           </motion.div>
         )}
       </div>
