@@ -47,7 +47,12 @@ export default function BottomNav() {
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-card/75 border-t border-white/5 z-50"
-      style={{ paddingBottom: 'calc(0.5rem + var(--app-safe-bottom, 0px))' }}
+      // translateZ(0) promotes this to its own GPU compositor layer — iOS
+      // Safari can otherwise fail to keep a `position: fixed` element
+      // pinned during an active touch-scroll (see AppLayout.tsx's CmdKFab
+      // for the fuller explanation); backdrop-blur here makes this nav an
+      // especially likely candidate for that same glitch.
+      style={{ paddingBottom: 'calc(0.5rem + var(--app-safe-bottom, 0px))', transform: 'translateZ(0)' }}
     >
       {/*
         The fill MUST be opaque: the goo filter blurs the silhouette and then
