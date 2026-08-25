@@ -269,11 +269,18 @@ export default function Watchlist() {
                     <p className="font-medium">{t.symbol}</p>
                     {t.is_owned && <Badge variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">Owned</Badge>}
                   </div>
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {t.ticker_themes?.map((tt: any) => (
-                      <Badge key={tt.theme.id} variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">{tt.theme.name}</Badge>
-                    ))}
-                  </div>
+                  {/* On mobile this compact preview is hidden — themes only
+                      show once the row is expanded (ThemeManager below
+                      renders the same badges, with add/remove controls).
+                      Desktop keeps this always-visible preview since there's
+                      room for it without crowding the row. */}
+                  {!isMobile && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {t.ticker_themes?.map((tt: any) => (
+                        <Badge key={tt.theme.id} variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">{tt.theme.name}</Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
