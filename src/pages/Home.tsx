@@ -205,6 +205,11 @@ export default function Home() {
   const netWorthOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: {
+      // The chart itself stays visible and unblurred in privacy mode (an
+      // explicit earlier decision — the trend line alone doesn't read as a
+      // dollar figure), but the scrub tooltip prints the exact net worth
+      // for whatever day you're hovering, so that still has to go dark.
+      show: !hideValues,
       backgroundColor: TOOLTIP_BG,
       borderColor: 'rgba(255,255,255,0.08)',
       borderWidth: 1,
@@ -279,7 +284,7 @@ export default function Home() {
         data: netWorthValues,
       },
     ],
-  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues])
+  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues, hideValues])
 
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
@@ -543,7 +548,11 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="relative mb-4 -mx-1">
+          {/* pointer-events-none (not a blur — the line itself stays
+              visible) fully disables the scrub gesture in privacy mode:
+              disabling the tooltip alone still let a drag move the
+              crosshair, which is tied to the same hover interaction. */}
+          <div className={`relative mb-4 -mx-1 ${hideValues ? 'pointer-events-none' : ''}`}>
             <ReactECharts
               option={netWorthOption}
               style={{ width: '100%', height: isMobile ? 130 : 150 }}
