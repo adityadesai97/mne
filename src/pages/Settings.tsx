@@ -9,6 +9,9 @@ import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/push
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
 import { useHideValues } from '@/hooks/useHideValues'
+import { listConversations, deleteConversation, type ConversationSummary } from '@/lib/db/conversations'
+import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
+import { formatDateMDY } from '@/lib/dates'
 import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus } from 'lucide-react'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -113,6 +116,10 @@ export default function Settings() {
   const [allowlistError, setAllowlistError] = useState('')
 
   const [importLoading, setImportLoading] = useState(false)
+  const [showConversationHistory, setShowConversationHistory] = useState(false)
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [conversationsLoading, setConversationsLoading] = useState(false)
+  const [conversationsError, setConversationsError] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importAbortRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
@@ -267,6 +274,38 @@ export default function Settings() {
     setAllowedEmails(prev => prev.filter(e => e.id !== id))
   }
 
+  async function loadConversations() {
+    setConversationsLoading(true)
+    setConversationsError('')
+    try {
+      setConversations(await listConversations())
+    } catch (e: any) {
+      setConversationsError(e.message ?? 'Failed to load conversations')
+    } finally {
+      setConversationsLoading(false)
+    }
+  }
+
+  function handleToggleConversationHistory() {
+    const next = !showConversationHistory
+    setShowConversationHistory(next)
+    if (next) void loadConversations()
+  }
+
+  function handleContinueConversation(id: string) {
+    resumeConversationInCommandBar(id)
+    setShowConversationHistory(false)
+  }
+
+  async function handleDeleteConversation(id: string) {
+    try {
+      await deleteConversation(id)
+      setConversations(prev => prev.filter(c => c.id !== id))
+    } catch (e: any) {
+      setConversationsError(e.message ?? 'Failed to delete conversation')
+    }
+  }
+
   async function handleSignOut() {
     await getSupabaseClient().auth.signOut()
     config.markSignedOut()
@@ -367,6 +406,44 @@ export default function Settings() {
             onDisable={() => { void setAutoThemeAssignmentEnabled(false) }}
           />
         </div>
+        <Row
+          label="Conversation History"
+          hint="View and continue past command bar conversations"
+          onClick={handleToggleConversationHistory}
+        />
+        {showConversationHistory && (
+          <div className="bg-card rounded-xl p-2 space-y-1 animate-slideDown">
+            {conversationsLoading && (
+              <p className="text-xs text-muted-foreground px-2 py-2">Loading…</p>
+            )}
+            {conversationsError && (
+              <p className="text-xs text-destructive px-2 py-1">{conversationsError}</p>
+            )}
+            {!conversationsLoading && !conversationsError && conversations.length === 0 && (
+              <p className="text-xs text-muted-foreground px-2 py-2">No conversations yet.</p>
+            )}
+            {conversations.map(c => (
+              <div key={c.id} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-muted/40 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => handleContinueConversation(c.id)}
+                  className="flex-1 min-w-0 text-left cursor-pointer"
+                >
+                  <p className="text-sm font-medium truncate">{c.title}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{formatDateMDY(c.updated_at)}</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteConversation(c.id)}
+                  className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 p-1"
+                  aria-label="Delete conversation"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Notifications */}
