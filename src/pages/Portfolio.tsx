@@ -312,7 +312,7 @@ export default function Portfolio() {
               <button
                 key={type}
                 onClick={() => setActiveType(type)}
-                className={`relative text-xs px-3 py-1.5 rounded-full shrink-0 transition-colors duration-150 ${
+                className={`relative isolate text-xs px-3 py-1.5 rounded-full shrink-0 transition-colors duration-150 ${
                   isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground border border-border'
                 }`}
               >

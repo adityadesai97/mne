@@ -48,9 +48,12 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
   )
 }
 
-/** Plain muted icon chip for the simplified list layout — no block color,
- *  no async logo-color sampling, matching that layout's lower-chrome intent. */
-function LegacyAssetIcon({ asset }: { asset: any }) {
+/** Compact icon chip for the simplified list layout — same per-asset accent
+ *  identity as the grid tile's icon (src/lib/typeColors.ts / logoColor.ts:
+ *  the ticker's own sampled logo color, or a color hashed from the type/
+ *  symbol), just on a smaller neutral chip instead of a full block-color
+ *  tile — keeping that layout's calmer, lower-chrome row look. */
+function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
   if (asset.asset_type === 'Stock') {
     if (asset.ticker?.logo) {
       return (
@@ -63,7 +66,7 @@ function LegacyAssetIcon({ asset }: { asset: any }) {
     }
     return (
       <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
-        <ChartNoAxesCombined size={16} className="text-muted-foreground" />
+        <ChartNoAxesCombined size={16} style={{ color: accent }} />
       </div>
     )
   }
@@ -78,7 +81,7 @@ function LegacyAssetIcon({ asset }: { asset: any }) {
 
   return (
     <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
-      <IconComponent size={17} className="text-muted-foreground" />
+      <IconComponent size={17} style={{ color: accent }} />
     </div>
   )
 }
@@ -94,9 +97,10 @@ function LegacyAssetIcon({ asset }: { asset: any }) {
  * may recolor a moment later once its logo's sampled color resolves.
  *
  * `'list'` is the simplified/legacy view (Settings → Appearance → Asset
- * view): a plain compact row with no block color and no logo-color
- * sampling, for users who'd rather scan a calm list than a wall of colored
- * tiles.
+ * view): a plain compact row with no block-color tile, for users who'd
+ * rather scan a calm list than a wall of colored tiles — but its icon chip
+ * still carries the same per-asset accent (and logo-color sampling) as the
+ * grid tile, just as a small tint instead of a full-tile background.
  */
 export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
   const isStock = asset.asset_type === 'Stock'
@@ -118,7 +122,6 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
   const [accent, setAccent] = useState(fallbackColor)
 
   useEffect(() => {
-    if (layout !== 'grid') return
     setAccent(fallbackColor)
     if (!isStock || !logoUrl) return
     let cancelled = false
@@ -126,7 +129,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
       if (!cancelled && color) setAccent(color)
     })
     return () => { cancelled = true }
-  }, [layout, isStock, logoUrl, fallbackColor])
+  }, [isStock, logoUrl, fallbackColor])
 
   if (layout === 'list') {
     return (
@@ -144,7 +147,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
           <Card className="hover:bg-muted/40">
             <CardContent className="p-3.5">
               <div className="flex gap-3 items-center">
-                <LegacyAssetIcon asset={asset} />
+                <LegacyAssetIcon asset={asset} accent={accent} />
                 <div className="flex-1 text-left min-w-0">
                   <p className="font-medium truncate">{asset.name}</p>
                   <p className="text-muted-foreground text-xs truncate">
