@@ -68,3 +68,17 @@ export async function getSnapshots() {
   if (error) throw error
   return data ?? []
 }
+
+// Bulk restore for the "All data" import path. Upserts on (user_id, date) —
+// re-importing the same backup overwrites same-day values in place rather
+// than creating duplicate rows.
+export async function upsertSnapshots(userId: string, rows: { date: string; value: number }[]) {
+  if (rows.length === 0) return
+  const { error } = await getSupabaseClient()
+    .from('net_worth_snapshots')
+    .upsert(
+      rows.map((r) => ({ user_id: userId, date: r.date, value: r.value })),
+      { onConflict: 'user_id,date' },
+    )
+  if (error) throw error
+}

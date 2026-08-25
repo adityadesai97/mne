@@ -180,7 +180,15 @@ Pattern: plain Vitest `test()` calls (no `describe` blocks), mock objects typed 
 
 ### Import/Export
 
-`src/lib/importExport.ts` — full portfolio backup/restore. Exports a `mne.export.v2` JSON blob (assets, tickers, themes, locations). Accessible from Settings. `abortActiveImport()` is called in `AppLayout` on unmount to cancel in-flight imports.
+`src/lib/importExport.ts` — full portfolio backup/restore, as an `.xlsx` workbook (one sheet per table: Locations, Tickers, Themes, TickerThemes, ThemeTargets, Assets, StockSubtypes, Transactions, RsuGrants, FixedIncomeLots, plus a Meta sheet). Accessible from Settings, which prompts for an `ExportScope` before exporting:
+- `'assets'` ("Only assets") — the table bundle above.
+- `'all'` ("All data") — the same bundle plus two more sheets: `NetWorthSnapshots` (from `net_worth_snapshots`) and `Conversations` (AI command bar history from `command_conversations`, flattened one row per message since a spreadsheet has no nesting).
+
+Internally, `serializeForExport()` builds a schema-versioned canonical JS object (`mne.export.v2`) exactly as before; `buildExportWorkbook()` is the only new layer, turning each `data.*` array (plus `snapshots`/`conversations` for `'all'`) into a sheet with explicit, stable camelCase headers. Reading is the mirror image: `parseWorkbookImport()` reads the sheets back into that same canonical shape and feeds it through the existing `normalizeCanonicalExport()` row-normalization logic — so a sheet edited by hand in Excel round-trips the same way a hand-edited JSON field would. `importData()` still also accepts a legacy `mne.export.v2` JSON backup (detected by file extension/MIME type) via the original `parseImport()` path; scope-only sheets are simply absent/empty for a JSON import.
+
+Asset dedup on import: before importing, `importData()` reads the signed-in user's existing assets and keys them by a natural key (asset type + name + location + ownership + ticker + fixed income subtype). An imported asset row matching that key is upserted onto the existing asset's id — re-importing the same backup (or one that dropped ids) updates positions in place instead of creating duplicates. Net worth snapshots dedup via the DB's `(user_id, date)` unique constraint; conversations dedup by id when the import row carries one (always true for `mne`'s own exports).
+
+`abortActiveImport()` is called in `AppLayout` on unmount to cancel in-flight imports.
 
 ### Auto Theme Assignment
 

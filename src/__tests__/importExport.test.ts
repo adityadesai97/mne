@@ -1,5 +1,6 @@
 // src/__tests__/importExport.test.ts
-import { serializeForExport, parseImport } from '../lib/importExport'
+import * as XLSX from 'xlsx'
+import { serializeForExport, parseImport, buildExportWorkbook, parseWorkbookImport } from '../lib/importExport'
 
 test('serializes assets to export format', () => {
   const data = {
@@ -422,4 +423,103 @@ test('parses multi-grant RSU bundles from Moola-style exports', () => {
   expect(rsuSubtype!.rsuGrants).toHaveLength(3)
   expect(rsuSubtype!.transactions).toHaveLength(3)
   expect(rsuSubtype!.rsuGrants.map((grant) => grant.id)).toContain('b12d77e0-8fde-4603-af00-10b16fd4f7cc')
+})
+
+function workbookToArrayBuffer(wb: XLSX.WorkBook): ArrayBuffer {
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+}
+
+const rawAssetFixture = {
+  assets: [
+    {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Salesforce, Inc.',
+      asset_type: 'Stock',
+      location: { id: '22222222-2222-4222-8222-222222222222', name: 'E*trade', account_type: 'Investment' },
+      location_id: '22222222-2222-4222-8222-222222222222',
+      ownership: 'Individual',
+      ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'CRM', current_price: 185.02 },
+      ticker_id: '33333333-3333-4333-8333-333333333333',
+      stock_subtypes: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          subtype: 'Market',
+          transactions: [
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              count: 10,
+              cost_price: 200,
+              purchase_date: '2026-02-17',
+              capital_gains_status: 'Short Term',
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  tickers: [{ id: '33333333-3333-4333-8333-333333333333', symbol: 'CRM', current_price: 185.02 }],
+  themes: [],
+}
+
+test('builds one xlsx sheet per table and round-trips "Only assets" scope', () => {
+  const payload = serializeForExport(rawAssetFixture, { scope: 'assets' })
+  const wb = buildExportWorkbook(payload)
+
+  expect(wb.SheetNames).toEqual(expect.arrayContaining([
+    'Meta', 'Locations', 'Tickers', 'Assets', 'StockSubtypes', 'Transactions',
+  ]))
+  // "Only assets" carries no snapshot/conversation history sheets.
+  expect(wb.SheetNames).not.toContain('NetWorthSnapshots')
+  expect(wb.SheetNames).not.toContain('Conversations')
+
+  const roundTripped = parseWorkbookImport(workbookToArrayBuffer(wb))
+  expect(roundTripped.scope).toBe('assets')
+  expect(roundTripped.snapshots).toEqual([])
+  expect(roundTripped.conversations).toEqual([])
+  expect(roundTripped.assets).toHaveLength(1)
+  expect(roundTripped.assets[0].name).toBe('Salesforce, Inc.')
+  expect(roundTripped.assets[0].tickerSymbol).toBe('CRM')
+  expect(roundTripped.assets[0].stockSubtypes[0].transactions[0]).toMatchObject({
+    count: 10,
+    costPrice: 200,
+    purchaseDate: '2026-02-17',
+    capitalGainsStatus: 'Short Term',
+  })
+})
+
+test('"All data" scope round-trips net worth snapshots and conversation history', () => {
+  const payload = serializeForExport(rawAssetFixture, {
+    scope: 'all',
+    snapshots: [{ date: '2026-01-01', value: 10000 }, { date: '2026-02-01', value: 10500 }],
+    conversations: [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        title: 'What is my net worth?',
+        messages: [
+          { role: 'user', content: 'What is my net worth?' },
+          { role: 'assistant', content: 'Your net worth is $10,500.' },
+        ],
+        created_at: '2026-02-01T12:00:00.000Z',
+        updated_at: '2026-02-01T12:00:05.000Z',
+      },
+    ],
+  })
+  const wb = buildExportWorkbook(payload)
+  expect(wb.SheetNames).toContain('NetWorthSnapshots')
+  expect(wb.SheetNames).toContain('Conversations')
+
+  const roundTripped = parseWorkbookImport(workbookToArrayBuffer(wb))
+  expect(roundTripped.scope).toBe('all')
+  expect(roundTripped.snapshots).toEqual([
+    { date: '2026-01-01', value: 10000 },
+    { date: '2026-02-01', value: 10500 },
+  ])
+  expect(roundTripped.conversations).toHaveLength(1)
+  const convo = roundTripped.conversations[0]
+  expect(convo.id).toBe('66666666-6666-4666-8666-666666666666')
+  expect(convo.title).toBe('What is my net worth?')
+  expect(convo.messages).toEqual([
+    { role: 'user', content: 'What is my net worth?' },
+    { role: 'assistant', content: 'Your net worth is $10,500.' },
+  ])
 })

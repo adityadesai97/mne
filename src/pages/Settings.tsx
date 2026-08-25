@@ -4,7 +4,8 @@ import { getSettings, saveSettings } from '@/lib/db/settings'
 import { Input } from '@/components/ui/input'
 import { config } from '@/store/config'
 import type { LLMProvider } from '@/store/config'
-import { exportData, importData, setActiveImportController } from '@/lib/importExport'
+import { exportData, importData, setActiveImportController, type ExportScope } from '@/lib/importExport'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
@@ -116,6 +117,8 @@ export default function Settings() {
   const [allowlistError, setAllowlistError] = useState('')
 
   const [importLoading, setImportLoading] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportingScope, setExportingScope] = useState<ExportScope | null>(null)
   const [showConversationHistory, setShowConversationHistory] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [conversationsLoading, setConversationsLoading] = useState(false)
@@ -347,6 +350,17 @@ export default function Settings() {
     }
   }
 
+  async function handleExport(scope: ExportScope) {
+    if (exportingScope) return
+    setExportingScope(scope)
+    try {
+      await exportData(scope)
+      setExportDialogOpen(false)
+    } finally {
+      if (isMountedRef.current) setExportingScope(null)
+    }
+  }
+
   return (
     <div className="pt-6 pb-8 px-4 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold mb-5">Settings</h1>
@@ -557,10 +571,10 @@ export default function Settings() {
       {/* Data */}
       <SectionHeader><Database size={10} className="inline mr-1.5 mb-0.5" />Data</SectionHeader>
       <div className="space-y-2">
-        <Row label="Export" hint="Download a full JSON backup of your portfolio" onClick={exportData} />
+        <Row label="Export" hint="Download a spreadsheet backup of your portfolio" onClick={() => setExportDialogOpen(true)} />
         <Row
           label={importLoading ? 'Importing…' : 'Import'}
-          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Restore from a JSON backup'}
+          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Restore from a backup (.xlsx or .json)'}
           right={importLoading ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
           disabled={importLoading}
           onClick={() => fileInputRef.current?.click()}
@@ -569,7 +583,7 @@ export default function Settings() {
           id="import-file"
           ref={fileInputRef}
           type="file"
-          accept=".json"
+          accept=".xlsx,.json"
           className="hidden"
           onChange={e => {
             const f = e.target.files?.[0]
@@ -577,6 +591,31 @@ export default function Settings() {
           }}
         />
       </div>
+
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => { if (!exportingScope) setExportDialogOpen(open) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Export data</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">Choose what to include in the spreadsheet.</p>
+          <div className="space-y-2 pt-1">
+            <Row
+              label={exportingScope === 'all' ? 'Exporting…' : 'All data'}
+              hint="Net worth history, AI conversation history, and all asset details"
+              right={exportingScope === 'all' ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
+              disabled={!!exportingScope}
+              onClick={() => void handleExport('all')}
+            />
+            <Row
+              label={exportingScope === 'assets' ? 'Exporting…' : 'Only assets'}
+              hint="Only your asset, account, and transaction details"
+              right={exportingScope === 'assets' ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
+              disabled={!!exportingScope}
+              onClick={() => void handleExport('assets')}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* API Keys */}
       <SectionHeader><Key size={10} className="inline mr-1.5 mb-0.5" />API Keys</SectionHeader>
