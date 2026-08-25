@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { useAppTheme } from '@/hooks/useAppTheme'
 import {
   groupByAssetType,
   groupByLocation,
@@ -34,6 +35,13 @@ const GRID_COLOR = 'hsl(224,13%,16%)'
 const AXIS_COLOR = 'hsl(215,14%,55%)'
 const TEXT_COLOR = 'hsl(215,20%,96%)'
 const TOOLTIP_BG = 'hsl(224,13%,9%)'
+// The donut's center-hole value sits directly on the chart's own
+// (transparent) background — i.e. the card behind it — unlike TEXT_COLOR
+// above, which is always paired with the always-dark TOOLTIP_BG and so
+// stays legible in both themes without changing. This one has to flip:
+// near-white TEXT_COLOR on a light-mode card was invisible. Matches
+// index.css's --foreground light value.
+const TEXT_COLOR_LIGHT = 'hsl(222,22%,10%)'
 // Faint alternating band behind each row of a horizontal bar list, so a
 // long list of positions (P&L, Cost vs Value, RSU vesting) stays easy to
 // scan row-to-row instead of reading as one undifferentiated block.
@@ -74,6 +82,7 @@ function donutOption(
   data: { name: string; value: number; color: string }[],
   centerLabel: { label: string; value: string } | undefined,
   hideValues: boolean,
+  centerTextColor: string,
 ): EChartsOption {
   return {
     backgroundColor: 'transparent',
@@ -101,7 +110,7 @@ function donutOption(
                 text: `{value|${centerLabel.value}}\n{label|${centerLabel.label}}`,
                 align: 'center',
                 rich: {
-                  value: { fontSize: 16, fontWeight: 700, fill: TEXT_COLOR, lineHeight: 20 },
+                  value: { fontSize: 16, fontWeight: 700, fill: centerTextColor, lineHeight: 20 },
                   label: { fontSize: 9, fill: AXIS_COLOR, lineHeight: 14 },
                 },
               },
@@ -223,6 +232,8 @@ export default function Charts() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
   const [hideValues] = useHideValues()
+  const appTheme = useAppTheme()
+  const centerTextColor = appTheme === 'light' ? TEXT_COLOR_LIGHT : TEXT_COLOR
 
   useEffect(() => {
     getAllAssets()
@@ -281,17 +292,17 @@ export default function Charts() {
     color: PALETTE[index % PALETTE.length],
   }))
   const themeDistributionOption = useMemo<EChartsOption>(
-    () => donutOption(themeDistributionColorData, { label: 'Total', value: fmtCompact(themeDistributionTotal) }, hideValues),
-    [themeDistributionColorData, themeDistributionTotal, hideValues],
+    () => donutOption(themeDistributionColorData, { label: 'Total', value: fmtCompact(themeDistributionTotal) }, hideValues, centerTextColor),
+    [themeDistributionColorData, themeDistributionTotal, hideValues, centerTextColor],
   )
   const allocationOption = useMemo<EChartsOption>(
-    () => donutOption(allocationColorData, { label: 'Total', value: fmtCompact(allocationTotal) }, hideValues),
-    [allocationColorData, allocationTotal, hideValues],
+    () => donutOption(allocationColorData, { label: 'Total', value: fmtCompact(allocationTotal) }, hideValues, centerTextColor),
+    [allocationColorData, allocationTotal, hideValues, centerTextColor],
   )
 
   const locationOption = useMemo<EChartsOption>(
-    () => donutOption(locationColorData, { label: 'Total', value: fmtCompact(locationTotal) }, hideValues),
-    [locationColorData, locationTotal, hideValues],
+    () => donutOption(locationColorData, { label: 'Total', value: fmtCompact(locationTotal) }, hideValues, centerTextColor),
+    [locationColorData, locationTotal, hideValues, centerTextColor],
   )
 
   const pnlOption = useMemo<EChartsOption>(() => ({
