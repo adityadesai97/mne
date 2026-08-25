@@ -41,6 +41,22 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   return data ?? []
 }
 
+/** Lists the signed-in user's conversations with their full message lists —
+ *  used by the "All data" export, which bundles conversation history
+ *  alongside the portfolio. Unlike listConversations, this is not paginated;
+ *  fine for a personal command-bar history, but not meant for bulk browsing. */
+export async function getAllConversations(): Promise<Conversation[]> {
+  const { data: { user } } = await getSupabaseClient().auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { data, error } = await getSupabaseClient()
+    .from('command_conversations')
+    .select('id, title, messages, created_at, updated_at')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((row) => ({ ...row, messages: Array.isArray(row.messages) ? row.messages : [] }))
+}
+
 export async function getConversation(id: string): Promise<Conversation | null> {
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')

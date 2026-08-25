@@ -1,4 +1,5 @@
 // src/lib/importExport.ts
+import * as XLSX from 'xlsx'
 import { getAllAssets } from './db/assets'
 import { getAllTickers } from './db/tickers'
 import { getAllThemes } from './db/themes'
@@ -7,10 +8,17 @@ import { autoAssignThemesForTicker, isAutoThemeAssignmentEnabled } from './autoT
 import { showAppAlert } from './appAlerts'
 import { getSupabaseClient } from './supabase'
 import { isTradableFixedIncome } from './portfolio'
+import { getAllConversations, type Conversation } from './db/conversations'
+import { getSnapshots, upsertSnapshots } from './db/snapshots'
 
 const EXPORT_SCHEMA = 'mne.export.v2'
 const EXPORT_VERSION = '2.0'
 let activeImportController: AbortController | null = null
+
+/** 'assets' is the portfolio bundle alone (locations, tickers, themes,
+ *  assets, tax lots, RSU grants, fixed income lots). 'all' adds net worth
+ *  snapshot history and AI command bar conversation history on top. */
+export type ExportScope = 'all' | 'assets'
 
 export function setActiveImportController(controller: AbortController | null) {
   activeImportController = controller
@@ -123,6 +131,33 @@ type ParsedImport = {
   assets: ParsedAsset[]
 }
 
+type ParsedSnapshot = {
+  date: string
+  value: number
+}
+
+type ParsedConversationMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+type ParsedConversation = {
+  id?: string
+  title: string
+  createdAt: string | null
+  updatedAt: string | null
+  messages: ParsedConversationMessage[]
+}
+
+/** parseImport (JSON) only ever returns ParsedImport — old backups predate
+ *  scope/snapshots/conversations. The xlsx path returns this wider shape;
+ *  importData normalizes both into one before running the restore. */
+type ParsedImportBundle = ParsedImport & {
+  scope: ExportScope
+  snapshots: ParsedSnapshot[]
+  conversations: ParsedConversation[]
+}
+
 type CanonicalSubtypeRow = {
   id: string | undefined
   assetId: string
@@ -133,6 +168,9 @@ type CanonicalExportV2 = {
   schema: typeof EXPORT_SCHEMA
   version: typeof EXPORT_VERSION
   exportedAt: string
+  scope: ExportScope
+  snapshots: ParsedSnapshot[]
+  conversations: ParsedConversation[]
   data: {
     locations: ParsedLocation[]
     themes: ParsedTheme[]
@@ -200,7 +238,23 @@ function normalizeUuid(value: unknown): string | undefined {
   return isUuid(raw) ? raw : undefined
 }
 
+// Excel's date epoch (serial day 0 = 1899-12-30). Cells reformatted as
+// dates by Excel round-trip as raw day-count numbers when XLSX.read isn't
+// told to convert them — handle that alongside a real JS Date (which
+// XLSX.read(..., { cellDates: true }) produces for date-formatted cells).
+function excelSerialToIso(serial: number): string | null {
+  const epoch = Date.UTC(1899, 11, 30)
+  const date = new Date(epoch + serial * 86400000)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().split('T')[0]
+}
+
 function toIsoDate(value: unknown): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString().split('T')[0]
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return excelSerialToIso(value)
+  }
   const input = asString(value)
   if (!input) return null
 
@@ -230,6 +284,18 @@ function toIsoDate(value: unknown): string | null {
   const parsed = new Date(input)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toISOString().split('T')[0]
+}
+
+function toIsoDateTime(value: unknown): string | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString()
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const dateOnly = excelSerialToIso(value)
+    return dateOnly ? `${dateOnly}T00:00:00.000Z` : null
+  }
+  const input = asString(value)
+  if (!input) return null
+  const parsed = new Date(input)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
 function normalizeAssetType(value: unknown): string {
@@ -856,7 +922,34 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
   }
 }
 
-export function serializeForExport(data: { assets: any[]; tickers: any[]; themes: any[] }): CanonicalExportV2 {
+function normalizeSnapshotsForExport(rows: any[]): ParsedSnapshot[] {
+  const results: ParsedSnapshot[] = []
+  for (const row of rows ?? []) {
+    if (!isRecord(row)) continue
+    const date = toIsoDate(row.date)
+    const value = asNumber(row.value)
+    if (!date || value == null) continue
+    results.push({ date, value })
+  }
+  return results
+}
+
+function normalizeConversationsForExport(rows: Conversation[]): ParsedConversation[] {
+  return (rows ?? []).map((row) => ({
+    id: normalizeUuid(row.id) ?? row.id,
+    title: asString(row.title) || 'Untitled conversation',
+    createdAt: toIsoDateTime(row.created_at),
+    updatedAt: toIsoDateTime(row.updated_at),
+    messages: (row.messages ?? [])
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content })),
+  }))
+}
+
+export function serializeForExport(
+  data: { assets: any[]; tickers: any[]; themes: any[] },
+  extras: { scope: ExportScope; snapshots?: any[]; conversations?: Conversation[] } = { scope: 'assets' },
+): CanonicalExportV2 {
   const locations: ParsedLocation[] = []
   const themes: ParsedTheme[] = []
   const tickers: ParsedTicker[] = []
@@ -1012,6 +1105,9 @@ export function serializeForExport(data: { assets: any[]; tickers: any[]; themes
     schema: EXPORT_SCHEMA,
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
+    scope: extras.scope,
+    snapshots: extras.scope === 'all' ? normalizeSnapshotsForExport(extras.snapshots ?? []) : [],
+    conversations: extras.scope === 'all' ? normalizeConversationsForExport(extras.conversations ?? []) : [],
     data: {
       locations: dedupeBy(locations, (location) => `${location.name.toLowerCase()}::${location.accountType.toLowerCase()}`),
       themes: dedupeBy(themes, (theme) => theme.name.toLowerCase()),
@@ -1070,6 +1166,229 @@ export function parseImport(raw: string): ParsedImport {
   throw new Error('Invalid format: unsupported assets schema')
 }
 
+// ---------------------------------------------------------------------------
+// xlsx workbook <-> canonical export payload
+//
+// One sheet per table, headers matching the camelCase field names used
+// throughout this file, so a sheet read back with XLSX.utils.sheet_to_json
+// plugs directly into the same normalize* helpers used for JSON imports.
+// ---------------------------------------------------------------------------
+
+const SHEET = {
+  meta: 'Meta',
+  locations: 'Locations',
+  themes: 'Themes',
+  tickers: 'Tickers',
+  tickerThemes: 'TickerThemes',
+  themeTargets: 'ThemeTargets',
+  assets: 'Assets',
+  stockSubtypes: 'StockSubtypes',
+  transactions: 'Transactions',
+  rsuGrants: 'RsuGrants',
+  fixedIncomeLots: 'FixedIncomeLots',
+  snapshots: 'NetWorthSnapshots',
+  conversations: 'Conversations',
+} as const
+
+const ASSET_SHEET_HEADERS = [
+  'id', 'name', 'assetType', 'fixedIncomeSubtype', 'interestRate', 'maturityDate', 'faceValue',
+  'locationId', 'locationName', 'accountType', 'ownership', 'notes', 'price', 'initialPrice',
+  'tickerId', 'tickerSymbol',
+]
+
+function toSheet(rows: Record<string, unknown>[], headers: string[]): XLSX.WorkSheet {
+  // header option keeps column order (and the header row itself) stable even
+  // when rows is empty, so a backup with no data of a given kind still
+  // produces a readable, importable table shape.
+  return XLSX.utils.json_to_sheet(rows, { header: headers })
+}
+
+export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new()
+
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    [
+      { field: 'schema', value: payload.schema },
+      { field: 'version', value: payload.version },
+      { field: 'exportedAt', value: payload.exportedAt },
+      { field: 'scope', value: payload.scope },
+    ],
+    ['field', 'value'],
+  ), SHEET.meta)
+
+  XLSX.utils.book_append_sheet(wb, toSheet(payload.data.locations, ['id', 'name', 'accountType']), SHEET.locations)
+  XLSX.utils.book_append_sheet(wb, toSheet(payload.data.themes, ['id', 'name']), SHEET.themes)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.tickers,
+    ['id', 'symbol', 'currentPrice', 'lastUpdated', 'logo', 'watchlistOnly'],
+  ), SHEET.tickers)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.tickerThemes,
+    ['tickerId', 'tickerSymbol', 'themeId', 'themeName'],
+  ), SHEET.tickerThemes)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.themeTargets,
+    ['id', 'themeId', 'themeName', 'targetPercentage', 'isActive'],
+  ), SHEET.themeTargets)
+  XLSX.utils.book_append_sheet(wb, toSheet(payload.data.assets, ASSET_SHEET_HEADERS), SHEET.assets)
+  XLSX.utils.book_append_sheet(wb, toSheet(payload.data.stockSubtypes, ['id', 'assetId', 'subtype']), SHEET.stockSubtypes)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.transactions,
+    ['id', 'subtypeId', 'count', 'costPrice', 'purchaseDate', 'capitalGainsStatus'],
+  ), SHEET.transactions)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.rsuGrants,
+    ['id', 'subtypeId', 'grantDate', 'totalShares', 'vestStart', 'vestEnd', 'cliffDate', 'endedAt'],
+  ), SHEET.rsuGrants)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.fixedIncomeLots,
+    ['id', 'assetId', 'count', 'costPrice', 'purchaseDate'],
+  ), SHEET.fixedIncomeLots)
+
+  if (payload.scope === 'all') {
+    XLSX.utils.book_append_sheet(wb, toSheet(payload.snapshots, ['date', 'value']), SHEET.snapshots)
+
+    // Conversations flatten to one row per message — a spreadsheet has no
+    // native nesting, so this is the same normalized shape a "messages"
+    // child table would take in a relational export.
+    type ConversationRow = {
+      conversationId: string
+      title: string
+      createdAt: string | null
+      updatedAt: string | null
+      messageIndex: number | null
+      role: string
+      content: string
+    }
+    const conversationRows: ConversationRow[] = payload.conversations.flatMap((conversation): ConversationRow[] => {
+      if (conversation.messages.length === 0) {
+        return [{
+          conversationId: conversation.id ?? '',
+          title: conversation.title,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          messageIndex: null,
+          role: '',
+          content: '',
+        }]
+      }
+      return conversation.messages.map((message, messageIndex): ConversationRow => ({
+        conversationId: conversation.id ?? '',
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        messageIndex,
+        role: message.role,
+        content: message.content,
+      }))
+    })
+    XLSX.utils.book_append_sheet(wb, toSheet(
+      conversationRows,
+      ['conversationId', 'title', 'createdAt', 'updatedAt', 'messageIndex', 'role', 'content'],
+    ), SHEET.conversations)
+  }
+
+  return wb
+}
+
+function readSheet(wb: XLSX.WorkBook, name: string): Record<string, unknown>[] {
+  const sheet = wb.Sheets[name]
+  if (!sheet) return []
+  return XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[]
+}
+
+function readMeta(wb: XLSX.WorkBook): { version: string; exportedAt: string | null; scope: ExportScope } {
+  const rows = readSheet(wb, SHEET.meta)
+  const map = new Map(rows.map((row) => [asString(row.field).toLowerCase(), row.value]))
+  return {
+    version: asString(map.get('version')) || EXPORT_VERSION,
+    exportedAt: toIsoDateTime(map.get('exportedat')),
+    scope: asString(map.get('scope')).toLowerCase() === 'all' ? 'all' : 'assets',
+  }
+}
+
+function normalizeSnapshotRows(rows: Record<string, unknown>[]): ParsedSnapshot[] {
+  const results: ParsedSnapshot[] = []
+  for (const row of rows) {
+    const date = toIsoDate(row.date)
+    const value = asNumber(row.value)
+    if (!date || value == null) continue
+    results.push({ date, value })
+  }
+  return results
+}
+
+function normalizeConversationRows(rows: Record<string, unknown>[]): ParsedConversation[] {
+  const byId = new Map<string, { title: string; createdAt: string | null; updatedAt: string | null; messages: (ParsedConversationMessage & { index: number })[] }>()
+  let fallbackIndex = 0
+  for (const row of rows) {
+    const id = asString(row.conversationId ?? row.conversation_id) || `row-${fallbackIndex++}`
+    const entry = byId.get(id) ?? {
+      title: asString(row.title) || 'Untitled conversation',
+      createdAt: toIsoDateTime(row.createdAt ?? row.created_at),
+      updatedAt: toIsoDateTime(row.updatedAt ?? row.updated_at),
+      messages: [],
+    }
+    const role = asString(row.role).toLowerCase()
+    const content = asString(row.content)
+    if ((role === 'user' || role === 'assistant') && content) {
+      const index = asNumber(row.messageIndex ?? row.message_index) ?? entry.messages.length
+      entry.messages.push({ role, content, index })
+    }
+    byId.set(id, entry)
+  }
+  return [...byId.entries()].map(([id, entry]) => ({
+    id: normalizeUuid(id),
+    title: entry.title,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    messages: entry.messages
+      .sort((a, b) => a.index - b.index)
+      .map((m) => ({ role: m.role, content: m.content })),
+  }))
+}
+
+function workbookToRoot(wb: XLSX.WorkBook): Record<string, unknown> {
+  const meta = readMeta(wb)
+  return {
+    schema: EXPORT_SCHEMA,
+    version: meta.version,
+    exportedAt: meta.exportedAt,
+    data: {
+      locations: readSheet(wb, SHEET.locations),
+      themes: readSheet(wb, SHEET.themes),
+      tickers: readSheet(wb, SHEET.tickers),
+      tickerThemes: readSheet(wb, SHEET.tickerThemes),
+      themeTargets: readSheet(wb, SHEET.themeTargets),
+      assets: readSheet(wb, SHEET.assets),
+      stockSubtypes: readSheet(wb, SHEET.stockSubtypes),
+      transactions: readSheet(wb, SHEET.transactions),
+      rsuGrants: readSheet(wb, SHEET.rsuGrants),
+      fixedIncomeLots: readSheet(wb, SHEET.fixedIncomeLots),
+    },
+  }
+}
+
+/** Parses an .xlsx backup (from exportData) into the same shape parseImport
+ *  produces for JSON backups, plus whatever snapshots/conversations the
+ *  workbook carries (empty arrays for an "Only assets" export). */
+export function parseWorkbookImport(buffer: ArrayBuffer): ParsedImportBundle {
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: true })
+  const meta = readMeta(wb)
+  const base = normalizeCanonicalExport(workbookToRoot(wb))
+  return {
+    ...base,
+    scope: meta.scope,
+    snapshots: normalizeSnapshotRows(readSheet(wb, SHEET.snapshots)),
+    conversations: normalizeConversationRows(readSheet(wb, SHEET.conversations)),
+  }
+}
+
+function isXlsxFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith('.xlsx')
+    || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+}
+
 class ImportAbortedError extends Error {
   constructor() {
     super('Import aborted')
@@ -1087,14 +1406,19 @@ function isImportAbortedError(error: unknown): boolean {
   return name === 'ImportAbortedError' || name === 'AbortError'
 }
 
-export async function exportData() {
+export async function exportData(scope: ExportScope = 'assets') {
   const [assets, tickers, themes] = await Promise.all([getAllAssets(), getAllTickers(), getAllThemes()])
-  const payload = serializeForExport({ assets, tickers, themes })
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const [snapshots, conversations] = scope === 'all'
+    ? await Promise.all([getSnapshots(), getAllConversations()])
+    : [[], []]
+  const payload = serializeForExport({ assets, tickers, themes }, { scope, snapshots, conversations })
+  const wb = buildExportWorkbook(payload)
+  const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  const blob = new Blob([wbArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `mne-export-${new Date().toISOString().split('T')[0]}.json`
+  a.download = `mne-export-${scope}-${new Date().toISOString().split('T')[0]}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -1195,9 +1519,9 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
   const { signal } = options
   try {
     throwIfImportAborted(signal)
-    const raw = await file.text()
-    throwIfImportAborted(signal)
-    const data = parseImport(raw)
+    const data: ParsedImportBundle = isXlsxFile(file)
+      ? parseWorkbookImport(await file.arrayBuffer())
+      : { ...parseImport(await file.text()), scope: 'assets', snapshots: [], conversations: [] }
     throwIfImportAborted(signal)
     const supabase = getSupabaseClient()
 
@@ -1221,11 +1545,56 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     let importedTickers = 0
     let importedTickerThemes = 0
     let importedAssets = 0
+    let matchedExistingAssets = 0
     let importedSubtypes = 0
     let importedTransactions = 0
     let importedRsuGrants = 0
     let importedFixedIncomeLots = 0
+    let importedSnapshots = 0
+    let importedConversations = 0
     let autoAssignedTickerThemes = 0
+
+    // Existing assets, keyed by a natural key (type + name + location +
+    // ownership + ticker + fixed-income subtype) so re-importing the same
+    // backup — or one exported without stable ids — updates the matching
+    // asset in place instead of creating a duplicate. Seeded from the DB
+    // and then kept current as this import creates/matches assets below.
+    function assetNaturalKey(params: {
+      assetType: string
+      name: string
+      locationId: string | null | undefined
+      ownership: string
+      tickerId: string | null | undefined
+      fixedIncomeSubtype: string | null | undefined
+    }): string {
+      return [
+        params.assetType.trim().toLowerCase(),
+        params.name.trim().toLowerCase(),
+        params.locationId ?? '',
+        params.ownership.trim().toLowerCase(),
+        params.tickerId ?? '',
+        (params.fixedIncomeSubtype ?? '').toLowerCase(),
+      ].join('::')
+    }
+
+    throwIfImportAborted(signal)
+    const { data: existingAssetRows, error: existingAssetsError } = await supabase
+      .from('assets')
+      .select('id, name, asset_type, location_id, ownership, ticker_id, fixed_income_subtype')
+      .eq('user_id', userId)
+    throwIfImportAborted(signal)
+    if (existingAssetsError) throw new Error(`Failed to read existing assets: ${existingAssetsError.message}`)
+    const existingAssetIdByKey = new Map<string, string>()
+    for (const row of existingAssetRows ?? []) {
+      existingAssetIdByKey.set(assetNaturalKey({
+        assetType: row.asset_type,
+        name: row.name,
+        locationId: row.location_id,
+        ownership: row.ownership,
+        tickerId: row.ticker_id,
+        fixedIncomeSubtype: row.fixed_income_subtype,
+      }), row.id)
+    }
 
     const locationKey = (name: string, accountType: string) => `${name.toLowerCase()}::${accountType.toLowerCase()}`
 
@@ -1363,6 +1732,17 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         }
       }
 
+      const naturalKey = assetNaturalKey({
+        assetType: asset.assetType,
+        name: asset.name,
+        locationId,
+        ownership: asset.ownership,
+        tickerId,
+        fixedIncomeSubtype: asset.fixedIncomeSubtype,
+      })
+      const matchedAssetId = existingAssetIdByKey.get(naturalKey)
+      if (matchedAssetId) matchedExistingAssets += 1
+
       const assetPayload: Record<string, unknown> = {
         user_id: userId,
         name: asset.name,
@@ -1378,7 +1758,11 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         maturity_date: asset.maturityDate,
         face_value: asset.faceValue,
       }
-      if (asset.id) assetPayload.id = asset.id
+      // A natural-key match to an existing asset always wins over whatever
+      // id the import row carries — that's what prevents the same asset
+      // from being re-created every time the same backup is re-imported.
+      if (matchedAssetId) assetPayload.id = matchedAssetId
+      else if (asset.id) assetPayload.id = asset.id
 
       const { data: assetRow, error: assetError } = await supabase
         .from('assets')
@@ -1388,6 +1772,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       throwIfImportAborted(signal)
       if (assetError) throw new Error(`Failed to upsert asset "${asset.name}": ${assetError.message}`)
       importedAssets += 1
+      existingAssetIdByKey.set(naturalKey, assetRow.id)
 
       for (const lot of asset.fixedIncomeLots) {
         throwIfImportAborted(signal)
@@ -1525,6 +1910,34 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       importedThemeTargets += 1
     }
 
+    if (data.snapshots.length > 0) {
+      throwIfImportAborted(signal)
+      await upsertSnapshots(userId, data.snapshots)
+      throwIfImportAborted(signal)
+      importedSnapshots = data.snapshots.length
+    }
+
+    for (const conversation of data.conversations) {
+      throwIfImportAborted(signal)
+      const payload: Record<string, unknown> = {
+        user_id: userId,
+        title: conversation.title,
+        messages: conversation.messages,
+      }
+      if (conversation.createdAt) payload.created_at = conversation.createdAt
+      if (conversation.updatedAt) payload.updated_at = conversation.updatedAt
+      // Upserting by id (present for every conversation this app itself
+      // exported) is what makes re-importing the same backup update the
+      // conversation in place instead of appending a duplicate.
+      if (conversation.id) payload.id = conversation.id
+      const result = conversation.id
+        ? await supabase.from('command_conversations').upsert(payload)
+        : await supabase.from('command_conversations').insert(payload)
+      throwIfImportAborted(signal)
+      if (result.error) throw new Error(`Failed to import conversation "${conversation.title}": ${result.error.message}`)
+      importedConversations += 1
+    }
+
     const autoThemeAssignmentEnabled = await isAutoThemeAssignmentEnabled(userId)
     throwIfImportAborted(signal)
     if (autoThemeAssignmentEnabled) {
@@ -1545,8 +1958,14 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       }
     }
 
+    const newAssets = importedAssets - matchedExistingAssets
+    const extras = [
+      importedSnapshots > 0 ? `${importedSnapshots} net worth snapshots` : null,
+      importedConversations > 0 ? `${importedConversations} conversations` : null,
+    ].filter(Boolean).join(', ')
+
     showAppAlert(
-      `Imported ${importedLocations} locations, ${importedAssets} assets, ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.`,
+      `Imported ${importedLocations} locations, ${importedAssets} assets (${newAssets} new, ${matchedExistingAssets} matched existing), ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.${extras ? ` Also restored ${extras}.` : ''}`,
       { variant: 'success', durationMs: 6000 },
     )
   } catch (error: any) {
