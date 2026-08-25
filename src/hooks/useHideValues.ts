@@ -4,7 +4,7 @@ import { config } from '@/store/config'
 const HIDE_VALUES_EVENT = 'mne:hide-values-changed'
 
 /**
- * Reads/writes the "hide values" privacy preference (Settings → Appearance).
+ * Reads/writes the "Privacy mode" preference (Settings → Appearance).
  * Backed by localStorage via `config.hideValues`, kept in sync across every
  * mounted consumer (Home, Portfolio, Charts, Settings) with a same-tab
  * custom event — there's no shared React context wrapping these pages, so a
@@ -28,7 +28,15 @@ export function useHideValues(): [boolean, (v: boolean) => void] {
   return [hidden, setHideValues]
 }
 
-/** Shared Tailwind classes for blurring a dollar value when hidden is true. */
-export function hiddenValueClass(hidden: boolean, extra = ''): string {
-  return hidden ? `blur-sm select-none ${extra}`.trim() : extra
+/**
+ * Shared Tailwind classes for blurring a dollar value when hidden is true.
+ * `strength` defaults to 'md' (12px) — 'sm' (4px) reads as basically legible
+ * on bold tabular-nums digits, which is what let the Home hero number
+ * (text-[3.1rem] font-bold) show through. Pass 'lg' (16px) for that kind of
+ * large hero/headline figure, where even 12px leaves shapes guessable.
+ */
+export function hiddenValueClass(hidden: boolean, extra = '', strength: 'sm' | 'md' | 'lg' = 'md'): string {
+  if (!hidden) return extra
+  const blur = strength === 'sm' ? 'blur-sm' : strength === 'lg' ? 'blur-lg' : 'blur-md'
+  return `${blur} select-none ${extra}`.trim()
 }

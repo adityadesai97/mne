@@ -321,7 +321,7 @@ export default function Settings() {
         </div>
         <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Hide values</p>
+            <p className="text-sm font-medium">Privacy mode</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
               Blur dollar amounts on Home, Portfolio, and Charts
             </p>
