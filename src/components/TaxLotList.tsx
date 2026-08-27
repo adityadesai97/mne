@@ -297,6 +297,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                   <div className="space-y-2">
                     {rsuGrantGroups.grants.map(group => {
                       const vesting = computeGrantVesting(group.grant, group.transactions)
+                      const summary = computeGrantSummary(group.transactions, ticker)
                       const isGrantOpen = expandedGrantIds.has(group.grant.id)
                       return (
                         <div key={group.grant.id} className="rounded-lg border border-border/50 bg-muted/20">
@@ -310,9 +311,12 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                               <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 flex-shrink-0 ${isGrantOpen ? 'rotate-180' : ''}`} />
                               <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
                             </div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                              {group.transactions.length} tx
-                            </p>
+                            <div className="text-right">
+                              <p className="text-[11px] font-medium tabular-nums">{fmtShares(summary.shares)} sh</p>
+                              <p className={`text-[10px] tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
+                                {summary.gain !== null ? `${summary.gain >= 0 ? '+' : ''}${fmt(summary.gain)}` : '—'}
+                              </p>
+                            </div>
                           </button>
 
                           <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isGrantOpen ? '1fr' : '0fr' }}>
@@ -485,6 +489,22 @@ function computeGrantVesting(grant: any, transactions: any[]) {
   const unvestedShares = grant.ended_at ? 0 : Math.max(0, totalShares - normalizedVested)
 
   return { vestedShares: normalizedVested, unvestedShares }
+}
+
+function computeGrantSummary(transactions: any[], ticker: any) {
+  const currentPrice = ticker?.current_price ?? null
+  let shares = 0
+  let costBasis = 0
+  for (const t of transactions) {
+    const totalVested = Number(t.count ?? 0)
+    const soldAtVest = Number(t.sold_at_vest ?? 0)
+    const heldShares = Math.max(0, totalVested - soldAtVest)
+    shares += heldShares
+    costBasis += heldShares * Number(t.cost_price ?? 0)
+  }
+  const currentValue = currentPrice !== null ? shares * currentPrice : null
+  const gain = currentValue !== null ? currentValue - costBasis : null
+  return { shares, currentValue, gain }
 }
 
 function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
