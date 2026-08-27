@@ -305,18 +305,18 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                             type="button"
                             onClick={() => toggleGrantExpanded(group.grant.id)}
                             aria-expanded={isGrantOpen}
-                            className="w-full flex items-center justify-between gap-2 p-3"
+                            className="w-full flex items-center justify-between gap-3 p-3"
                           >
                             <div className="flex items-center gap-1.5">
                               <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 flex-shrink-0 ${isGrantOpen ? 'rotate-180' : ''}`} />
-                              <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
+                              <div>
+                                <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
+                                <p className="text-[11px] text-muted-foreground tabular-nums">{fmtShares(summary.shares)} shares</p>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-[11px] font-medium tabular-nums">{fmtShares(summary.shares)} sh</p>
-                              <p className={`text-[10px] tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
-                                {summary.gain !== null ? `${summary.gain >= 0 ? '+' : ''}${fmt(summary.gain)}` : '—'}
-                              </p>
-                            </div>
+                            <span className={`text-xs font-medium tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
+                              {summary.gain !== null ? `${summary.gain >= 0 ? '+' : ''}${fmt(summary.gain)}` : '—'}
+                            </span>
                           </button>
 
                           <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isGrantOpen ? '1fr' : '0fr' }}>
