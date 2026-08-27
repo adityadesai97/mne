@@ -261,6 +261,9 @@ export default function Watchlist() {
             : currentPrice < previousClose
               ? 'text-loss'
               : ''
+        const percentChange = previousClose != null && previousClose !== 0
+          ? ((currentPrice - previousClose) / previousClose) * 100
+          : null
         return (
         <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} whileTap={{ scale: 0.99 }} className="mx-4 mb-2">
           <Card>
@@ -295,7 +298,14 @@ export default function Watchlist() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <p className={`font-medium tabular-nums ${priceChangeClass}`}>${currentPrice.toFixed(2)}</p>
+                <div className="flex flex-col items-end leading-tight">
+                  <p className={`font-medium tabular-nums ${priceChangeClass}`}>${currentPrice.toFixed(2)}</p>
+                  {percentChange != null && (
+                    <p className={`text-[10px] tabular-nums ${priceChangeClass || 'text-muted-foreground'}`}>
+                      {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
+                    </p>
+                  )}
+                </div>
                 <ChevronDown
                   size={14}
                   className={`text-muted-foreground/60 transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
