@@ -1,7 +1,7 @@
 // src/pages/Watchlist.tsx
 import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { deleteTicker, getAllTickers, refreshAllPrices, upsertTicker } from '@/lib/db/tickers'
+import { deleteTicker, getAllTickers, refreshAllPrices, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
@@ -107,6 +107,17 @@ export default function Watchlist() {
           const profile = await res.json()
           if (!profile.logo) return
           await getSupabaseClient().from('tickers').update({ logo: profile.logo }).eq('id', newTicker.id)
+        })(),
+        (async () => {
+          // New tickers are inserted with current_price null (shown as $0.00)
+          // until the next once-per-load refresh; fetch a quote immediately
+          // so the price is right as soon as the ticker is added.
+          if (!config.finnhubApiKey) return
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${trimmed}&token=${config.finnhubApiKey}`)
+          const quote = await res.json()
+          if (!quote.c || !Number.isFinite(Number(quote.c))) return
+          const previousClose = Number.isFinite(Number(quote.pc)) ? Number(quote.pc) : null
+          await updateTickerPrice(trimmed, Number(quote.c), previousClose)
         })(),
       ])
       setSymbol('')
