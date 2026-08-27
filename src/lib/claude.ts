@@ -3274,14 +3274,14 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   // practice tool-only rounds emit little or no visible text before calling
   // a tool, so this mostly matters for the final round; onStreamStart lets
   // the caller reset its buffer between rounds regardless.
-  const runLLM = async (systemPrompt: string, inputMessages: any[]): Promise<NormalizedResponse> => client.chat.completions.create({
+  const runLLM = async (systemPrompt: string, inputMessages: any[], toolsOverride: typeof tools = tools): Promise<NormalizedResponse> => client.chat.completions.create({
     model: MODEL_FOR_PROVIDER[config.llmProvider],
     max_tokens: 8192,
     // Use temperature=0 when processing a file attachment for deterministic extraction.
     // For regular conversational queries no temperature is set (API default).
     ...(attachment ? { temperature: 0 } : {}),
     messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
-    tools,
+    tools: toolsOverride,
   }, streamCallbacks)
 
   const shouldAttachComputedContext = isAnalyticalQuestion(lastUserContent) || mentionsNetWorth(lastUserContent)
@@ -3380,6 +3380,14 @@ ${JSON.stringify(analysisContext, null, 2)}`
   }
 
   const maxReadToolRounds = 3
+  // Tracks whether the loop below exited because the model settled on a
+  // final answer / non-read tool (the two `break`s), vs. simply running out
+  // of rounds while the model still wanted another read-tool lookup. Only
+  // the latter case needs cleanup below — otherwise the model's last
+  // in-flight read-tool request is silently dropped and the fallthrough
+  // "Could not understand command" fires even though the model was still
+  // actively working the question, not confused by it.
+  let ranOutOfReadRounds = true
   for (let round = 0; round < maxReadToolRounds; round += 1) {
     const rawToolCallsInRound = response.choices[0]?.message?.tool_calls ?? []
     const toolUsesInRound = rawToolCallsInRound.map(tc => ({
@@ -3387,11 +3395,11 @@ ${JSON.stringify(analysisContext, null, 2)}`
       name: tc.function.name,
       input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
     }))
-    if (toolUsesInRound.length === 0) break
+    if (toolUsesInRound.length === 0) { ranOutOfReadRounds = false; break }
 
     const readToolUses = toolUsesInRound.filter((tool) => READ_TOOL_NAMES.has(tool.name))
     const hasNonReadToolUse = toolUsesInRound.some((tool) => !READ_TOOL_NAMES.has(tool.name))
-    if (readToolUses.length === 0 || hasNonReadToolUse) break
+    if (readToolUses.length === 0 || hasNonReadToolUse) { ranOutOfReadRounds = false; break }
 
     const toolResultMessages = await Promise.all(readToolUses.map(async (tool) => {
       try {
@@ -3413,6 +3421,46 @@ ${JSON.stringify(analysisContext, null, 2)}`
       ...toolResultMessages,
     ]
     response = await runLLM(systemPrompt, claudeMessages)
+  }
+
+  if (ranOutOfReadRounds) {
+    // The loop above exited only because it hit maxReadToolRounds — `response`
+    // still carries the model's next requested tool call(s), never executed
+    // or even inspected. If those are all read tools, run them one last time
+    // and force a text-only final answer (no `tools`) so the model reports
+    // back using everything it gathered instead of requesting yet another
+    // lookup that would otherwise be silently discarded downstream.
+    const pendingRawCalls = response.choices[0]?.message?.tool_calls ?? []
+    const pendingToolUses = pendingRawCalls.map(tc => ({
+      id: tc.id,
+      name: tc.function.name,
+      input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
+    }))
+    const allPendingAreReadTools = pendingToolUses.length > 0 && pendingToolUses.every((tool) => READ_TOOL_NAMES.has(tool.name))
+
+    if (allPendingAreReadTools) {
+      const toolResultMessages = await Promise.all(pendingToolUses.map(async (tool) => {
+        try {
+          const result = await executeReadTool(tool.name, tool.input, {
+            assets,
+            getSnapshotsCached,
+          })
+          addTrace(friendlyReadToolLabel(tool.name), summarizeReadToolResult(tool.name, result))
+          return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: true, result }) }
+        } catch (error: any) {
+          addTrace(`Couldn't complete: ${friendlyReadToolLabel(tool.name)}`, String(error?.message ?? 'Read tool failed'))
+          return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: false, error: String(error?.message ?? 'Read tool failed') }) }
+        }
+      }))
+
+      claudeMessages = [
+        ...claudeMessages,
+        { role: 'assistant' as const, content: response.choices[0].message.content ?? null, tool_calls: response.choices[0].message.tool_calls },
+        ...toolResultMessages,
+        { role: 'user' as const, content: "You've reached the lookup limit for this question. Answer now using the information already gathered — do not request any more tool calls." },
+      ]
+      response = await runLLM(systemPrompt, claudeMessages, [])
+    }
   }
 
   const maxReasoningSteps = 2
