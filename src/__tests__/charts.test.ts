@@ -6,6 +6,8 @@ import {
   computeCapitalGainsExposure,
   computeCostVsValue,
   computeRsuVesting,
+  computeRsuVestEvents,
+  rsuVestedSharesAsOf,
   computeThemeDistribution,
 } from '../lib/charts'
 
@@ -142,14 +144,17 @@ describe('computeCostVsValue', () => {
 
 // ── computeRsuVesting ─────────────────────────────────────────
 describe('computeRsuVesting', () => {
-  test('computes vested shares linearly', () => {
-    // Grant: 100 shares, vest_start 2023-01-01, vest_end 2027-01-01 (4 years)
-    // today = 2025-01-01 → 2 years elapsed of 4 → 50 shares vested
+  test('computes vested shares via quarterly installments (default frequency)', () => {
+    // Grant: 100 shares, grant_date/vest_start 2023-01-01, vest_end 2027-01-01,
+    // no vesting_frequency set -> defaults to quarterly. 16 quarters total
+    // (4 years / 3 months), 6 shares/quarter, cliff (period 0, no separate
+    // cliff_date here) absorbs the remainder: 100 - 6*16 = 4.
+    // today = 2025-01-01 is exactly the 8th quarterly mark -> 4 + 8*6 = 52.
     const today = new Date('2025-01-01')
     const result = computeRsuVesting([stockAsset], today)
     expect(result).toHaveLength(1)
-    expect(result[0].vestedShares).toBe(50)
-    expect(result[0].unvestedShares).toBe(50)
+    expect(result[0].vestedShares).toBe(52)
+    expect(result[0].unvestedShares).toBe(48)
   })
 
   test('returns 0 vested if before cliff', () => {
@@ -210,6 +215,74 @@ describe('computeRsuVesting', () => {
     expect(result).toHaveLength(2)
     expect(result[0].label).toContain('01/01/2023')
     expect(result[1].label).toContain('06/01/2024')
+  })
+})
+
+// ── computeRsuVestEvents / rsuVestedSharesAsOf ────────────────
+// Regression coverage for the "app said 19 shares vest next month, real
+// brokerage statement said 25" bug: vesting isn't a smooth curve, it's
+// discrete installments, and these two real grants (reproduced from the
+// reporting user's actual CRM RSUs) must reproduce their actual vest
+// amounts exactly.
+describe('computeRsuVestEvents / rsuVestedSharesAsOf', () => {
+  const grant250 = { grant_date: '2024-03-22', total_shares: 250, vest_start: '2025-03-22', vest_end: '2028-03-22', cliff_date: '2025-03-22', vesting_frequency: 'quarterly' }
+  const grant147 = { grant_date: '2025-03-22', total_shares: 147, vest_start: '2026-03-22', vest_end: '2029-03-22', cliff_date: null, vesting_frequency: 'quarterly' }
+
+  test('reproduces the real quarterly vest amounts for September 2026', () => {
+    expect(rsuVestedSharesAsOf(grant250, new Date('2026-09-30')) - rsuVestedSharesAsOf(grant250, new Date('2026-09-01'))).toBe(16)
+    expect(rsuVestedSharesAsOf(grant147, new Date('2026-09-30')) - rsuVestedSharesAsOf(grant147, new Date('2026-09-01'))).toBe(9)
+  })
+
+  test('all quarterly events sum to exactly total_shares', () => {
+    const events = computeRsuVestEvents(grant250)
+    expect(events.reduce((sum, e) => sum + e.shares, 0)).toBe(250)
+  })
+
+  test('cliff absorbs the rounding remainder, later periods are uniform', () => {
+    const events = computeRsuVestEvents(grant250)
+    // 250 shares / 16 quarters = 15.625 -> 16 per non-cliff quarter, cliff
+    // gets whatever's left (250 - 16*12 = 58), not a naive 1/16th.
+    expect(events[0].shares).toBe(58)
+    expect(events.slice(1).every((e) => e.shares === 16)).toBe(true)
+  })
+
+  test('monthly frequency vests every month instead of every quarter', () => {
+    // No separate cliff_date -> vest_start is the schedule's day zero, so
+    // the "cliff" event itself covers 0 elapsed periods (0 shares) and the
+    // 12 real monthly installments follow it.
+    const monthly = { grant_date: '2024-01-01', total_shares: 48, vest_start: '2024-01-01', vest_end: '2025-01-01', cliff_date: null, vesting_frequency: 'monthly' }
+    const events = computeRsuVestEvents(monthly)
+    const nonZero = events.filter((e) => e.shares > 0)
+    expect(nonZero).toHaveLength(12)
+    expect(nonZero.every((e) => e.shares === 4)).toBe(true)
+    expect(events.reduce((sum, e) => sum + e.shares, 0)).toBe(48)
+  })
+
+  test('annually frequency vests once a year', () => {
+    const annual = { grant_date: '2020-01-01', total_shares: 400, vest_start: '2021-01-01', vest_end: '2024-01-01', cliff_date: '2021-01-01', vesting_frequency: 'annually' }
+    const events = computeRsuVestEvents(annual)
+    expect(events).toHaveLength(4)
+    expect(events.every((e) => e.shares === 100)).toBe(true)
+  })
+
+  test('continuous frequency falls back to smooth linear interpolation', () => {
+    const continuous = { grant_date: '2023-01-01', total_shares: 100, vest_start: '2023-01-01', vest_end: '2027-01-01', cliff_date: null, vesting_frequency: 'continuous' }
+    expect(computeRsuVestEvents(continuous)).toHaveLength(0)
+    // 2 of 4 years elapsed -> 50 vested, matching the pre-discrete-model math
+    expect(rsuVestedSharesAsOf(continuous, new Date('2025-01-01'))).toBe(50)
+  })
+
+  test('defaults to quarterly when vesting_frequency is unset', () => {
+    const noFrequency = { grant_date: '2024-03-22', total_shares: 250, vest_start: '2025-03-22', vest_end: '2028-03-22', cliff_date: '2025-03-22' }
+    expect(rsuVestedSharesAsOf(noFrequency, new Date('2026-09-30'))).toBe(rsuVestedSharesAsOf(grant250, new Date('2026-09-30')))
+  })
+
+  test('nothing vests before the cliff/first vest date', () => {
+    expect(rsuVestedSharesAsOf(grant147, new Date('2026-01-01'))).toBe(0)
+  })
+
+  test('everything is vested past vest_end', () => {
+    expect(rsuVestedSharesAsOf(grant250, new Date('2030-01-01'))).toBe(250)
   })
 })
 

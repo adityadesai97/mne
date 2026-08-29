@@ -7,7 +7,8 @@ import { getSnapshots } from './db/snapshots'
 import { getAllTickers } from './db/tickers'
 import { findOrCreateLocation } from './db/locations'
 import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
-import { computeThemeDistribution } from './charts'
+import { computeThemeDistribution, computeRsuVestEvents, rsuVestedSharesAsOf } from './charts'
+import type { RsuVestingFrequency } from './charts'
 import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
@@ -1051,31 +1052,11 @@ function recommendActionsForGoal(assets: any[], input: any) {
   }
 }
 
-// Shares vested as of a given date, using the same linear vest_start ->
-// vest_end interpolation as the RSU vesting progress chart
-// (computeRsuVesting in charts.ts) and the vest-alert edge function — the
-// app's one model of "how vesting works" for a grant, since no discrete
-// per-event schedule is stored.
-function rsuSharesVestedAsOf(grant: any, asOf: Date): number {
-  const vestStart = new Date(grant.vest_start)
-  const vestEnd = new Date(grant.vest_end)
-  const cliffDate = grant.cliff_date ? new Date(grant.cliff_date) : null
-  const total = toNumber(grant.total_shares, 0)
-  const endedAt = grant.ended_at ? new Date(grant.ended_at) : null
-  const effective = endedAt && endedAt < asOf ? endedAt : asOf
-  if (effective >= vestEnd) return total
-  if (effective >= vestStart && (!cliffDate || effective >= cliffDate)) {
-    const elapsed = effective.getTime() - vestStart.getTime()
-    const duration = vestEnd.getTime() - vestStart.getTime()
-    return duration > 0 ? Math.floor((elapsed / duration) * total) : total
-  }
-  return 0
-}
-
 // Computes how many RSU shares vest between two dates, per grant — for
 // answering questions like "how many shares vest next month" that can't be
 // read off the raw grant_date/vest_start/vest_end/total_shares fields
-// without doing this same linear-interpolation math.
+// without doing the same discrete-installment math as the vesting progress
+// chart (rsuVestedSharesAsOf / computeRsuVestEvents in charts.ts).
 export function computeRsuVestingSchedule(assets: any[], input: any) {
   const symbolsFilter = new Set(asStringArray(input?.symbols).map((symbol) => normalizeSymbol(symbol)))
   const fromDateRaw = String(input?.from_date ?? '').trim()
@@ -1093,18 +1074,27 @@ export function computeRsuVestingSchedule(assets: any[], input: any) {
     for (const st of asset?.stock_subtypes ?? []) {
       if (st?.subtype !== 'RSU') continue
       for (const grant of st?.rsu_grants ?? []) {
-        const vestedAsOfFromDate = rsuSharesVestedAsOf(grant, fromDate)
-        const vestedAsOfToDate = rsuSharesVestedAsOf(grant, toDate)
+        const vestedAsOfFromDate = rsuVestedSharesAsOf(grant, fromDate)
+        const vestedAsOfToDate = rsuVestedSharesAsOf(grant, toDate)
+        // Exclusive of fromDate, inclusive of toDate — matches sharesVestingInWindow
+        // (vestedAsOfToDate - vestedAsOfFromDate), which already counts anything
+        // vested exactly as of fromDate as part of the "before" baseline, not
+        // newly vested "in" the window.
+        const vestEventsInWindow = computeRsuVestEvents(grant)
+          .filter((event) => event.date > fromDate && event.date <= toDate && event.shares > 0)
+          .map((event) => ({ date: event.date.toISOString().slice(0, 10), shares: event.shares }))
         grants.push({
           symbol,
           grantDate: grant.grant_date,
           vestStart: grant.vest_start,
           vestEnd: grant.vest_end,
           cliffDate: grant.cliff_date,
+          vestingFrequency: grant.vesting_frequency ?? 'quarterly',
           totalShares: toNumber(grant.total_shares, 0),
           vestedAsOfFromDate,
           vestedAsOfToDate,
           sharesVestingInWindow: Math.max(0, vestedAsOfToDate - vestedAsOfFromDate),
+          vestEventsInWindow,
         })
       }
     }
@@ -1427,7 +1417,7 @@ ${JSON.stringify(buildCompactAssetContext(assets))}
 For read-only questions and analysis, respond directly in plain text.
 For read-only questions involving exact numbers, trends, simulations, or recommendations, call read tools first and base your answer on tool outputs.
 Never estimate portfolio totals, allocations, or tax-lot values without using a read tool.
-Any question about how many RSU shares vest, or are vested/unvested, in or by a given period ("next month", "this quarter", "by year end", "in the next 90 days", etc.) — always call get_rsu_vesting_schedule with computed from_date/to_date rather than reading vest_start/vest_end/total_shares from the portfolio context above and estimating yourself; those fields alone don't tell you how many shares fall inside an arbitrary window, since each grant vests continuously across possibly several years.
+Any question about how many RSU shares vest, or are vested/unvested, in or by a given period ("next month", "this quarter", "by year end", "in the next 90 days", etc.) — always call get_rsu_vesting_schedule with computed from_date/to_date rather than reading vest_start/vest_end/total_shares from the portfolio context above and estimating yourself; a grant vests in discrete installments (cliff + monthly/quarterly/annual chunks, per its vesting_frequency) spread across possibly several years, not evenly by day, so only that tool's math gets the per-period amounts right.
 Formatting: replies are rendered as markdown — GitHub-flavored pipe tables, ## / ### headers, bulleted/numbered lists, **bold**, *italics*, \`inline code\`, and --- rules are all supported. Prefer a markdown table over prose whenever you're presenting two or more rows of comparable structured data — multiple positions, tax lots, transactions, a side-by-side comparison, an allocation breakdown, etc. A table with a header row scans far faster than a wall of bullets or a run-on sentence of numbers. Right-align numeric columns using a \`---:\` divider cell (e.g. a header divider row of \`|---|---:|\`), and prefix gains with + and losses with - (e.g. "+$500", "-2.3%") so they render in the app's gain/loss colors. For a single fact or a short conversational answer, just write a sentence or two — don't wrap one number in a table. Use bullet or numbered lists for recommendations, steps, or anything that isn't naturally rows and columns.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
   Never infer location_name from existing portfolio data unless the user or attached document clearly identifies it.
@@ -1457,6 +1447,7 @@ RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. In
      - vest_end: the date of the last scheduled vest. Extrapolation is only valid when ALL THREE of the following are known from the document: (a) the cliff date and cliff share amount, (b) the post-cliff vesting cadence (requires 2+ post-cliff events to confirm the interval), and (c) the total number of scheduled vest events or an explicit grant end date. If any of these three is unknown, ask the user for vest_end rather than guessing.
      - cliff_date: set to the date of the first vest when that date is >= 9 months after grant_date (standard 1-year cliff); leave null otherwise
      - total_shares: use the stated grant total when explicitly shown in the document. If absent, you may calculate it only when ALL THREE are known: (a) cliff share amount, (b) post-cliff cadence and per-event share amount (requires 2+ post-cliff events), and (c) total vest count or vest_end. Missing any one of these means you must ask the user rather than guess.
+     - vesting_frequency: how the grant vests after its cliff — monthly, quarterly, or annually equal installments, or continuous for smooth day-by-day accrual (rare). Infer it from the document if 2+ post-cliff vest events reveal the cadence (e.g. events 3 months apart -> quarterly). If the user states it in words ("vests quarterly", "monthly after the cliff"), use that. Otherwise omit the field — it defaults to quarterly, the most common schedule. Never ask the user for this alone; only include it when it's already evident from what they gave you.
   Transaction fields: purchase_date = vest date, cost_price = FMV at vest, count = TOTAL shares vested (before any sell-to-cover), sold_at_vest = shares immediately sold at vest to cover taxes (omit or set 0 if none). Net shares held = count - sold_at_vest. total_shares in the grant always reflects the full grant regardless of sold_at_vest.
   If vest_end or total_shares cannot be determined from the document without guessing, ask the user for those values before calling any write tool for that grant. Never state an assumption and proceed anyway.
 Any message describing shares that "vested"/"just vested"/"vesting" — even if the word "grant" or "RSU" is never used — is an RSU vest into an EXISTING grant. Do NOT treat it as a Market purchase. This always requires THREE pieces of information before you may call add_stock_transaction/add_stock_transactions: cost_price (FMV at vest), purchase_date (the vest date), AND grant_date (the award/grant date of the existing grant this vest belongs to — NOT the vest date). Always set subtype: 'RSU'. When asking the user for missing details, ask for all three together (FMV, vest date, and which grant/grant date) rather than asking for FMV and vest date first and grant_date later. Never guess or infer grant_date from the vest date or from context — if the user does not explicitly state which grant (by its award date) a vest belongs to, call get_positions first to see the recorded grant dates for that symbol, then ask the user to confirm.
@@ -1854,6 +1845,7 @@ const tools = [
                 vest_start: { type: 'string', description: 'ISO date when vesting begins' },
                 vest_end: { type: 'string', description: 'ISO date when vesting ends' },
                 cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+                vesting_frequency: { type: 'string', enum: ['monthly', 'quarterly', 'annually', 'continuous'], description: 'How the grant vests after its cliff: equal monthly/quarterly/annual installments, or "continuous" for smooth day-by-day accrual. Ask the user or infer from a vesting document when possible; defaults to quarterly (the most common schedule) if not stated.' },
                 asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
                 location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
                 account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
@@ -1895,6 +1887,7 @@ const tools = [
           vest_start: { type: 'string', description: 'ISO date when vesting begins' },
           vest_end: { type: 'string', description: 'ISO date when vesting ends' },
           cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+          vesting_frequency: { type: 'string', enum: ['monthly', 'quarterly', 'annually', 'continuous'], description: 'How the grant vests after its cliff: equal monthly/quarterly/annual installments, or "continuous" for smooth day-by-day accrual. Ask the user or infer from a vesting document when possible; defaults to quarterly (the most common schedule) if not stated.' },
           asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
           location_name: { type: 'string', description: 'Brokerage or account e.g. Fidelity, Schwab' },
           account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
@@ -2188,7 +2181,7 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       sections.push({
         title: 'RSU Grant',
         groupKey: symbol,
-        columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Location', 'Account'],
+        columns: ['Symbol', 'Shares', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Frequency', 'Location', 'Account'],
         rows: [[
           symbol,
           numberToText(grant?.total_shares),
@@ -2196,6 +2189,7 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
           dateToText(grant?.vest_start),
           dateToText(grant?.vest_end),
           dateToText(grant?.cliff_date),
+          String(grant?.vesting_frequency ?? 'quarterly'),
           String(grant?.location_name ?? '').trim() || '-',
           String(grant?.account_type ?? '').trim() || '-',
         ]],
@@ -2360,6 +2354,9 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
     if (!isValidIsoDate(input.vest_start)) return `Invalid vest start: "${input.vest_start}". Use YYYY-MM-DD format`
     if (!isValidIsoDate(input.vest_end)) return `Invalid vest end: "${input.vest_end}". Use YYYY-MM-DD format`
     if (new Date(input.vest_start) >= new Date(input.vest_end)) return 'Vest start must be before vest end'
+    if (input.vesting_frequency && !['monthly', 'quarterly', 'annually', 'continuous'].includes(input.vesting_frequency)) {
+      return `Invalid vesting frequency: "${input.vesting_frequency}". Use monthly, quarterly, annually, or continuous`
+    }
   }
 
   if (toolName === 'update_asset_value') {
@@ -2414,8 +2411,10 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const grants = Array.isArray(input.grants) ? input.grants : []
       return `Record ${grants.length} RSU grant${grants.length === 1 ? '' : 's'}`
     }
-    case 'add_rsu_grant':
-      return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${formatDateMDY(input.grant_date)} (vests ${formatDateMDY(input.vest_start)} → ${formatDateMDY(input.vest_end)})`
+    case 'add_rsu_grant': {
+      const frequency: RsuVestingFrequency = input.vesting_frequency ?? 'quarterly'
+      return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${formatDateMDY(input.grant_date)} (vests ${formatDateMDY(input.vest_start)} → ${formatDateMDY(input.vest_end)}, ${frequency})`
+    }
     case 'sell_shares': {
       const multiLots = Array.isArray(input.lots) ? input.lots : []
       const normalizedLots = multiLots.length > 0
@@ -2787,6 +2786,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       vest_start: input.vest_start,
       vest_end: input.vest_end,
       cliff_date: input.cliff_date ?? null,
+      vesting_frequency: input.vesting_frequency ?? 'quarterly',
     }).select('id').single()
     if (error) throw new Error(`Failed to create RSU grant: ${error.message}`)
 
@@ -3288,18 +3288,24 @@ async function executeMockNotification(type: string, userId: string): Promise<vo
       .insert({ asset_id: asset.id, subtype: 'RSU' }).select('id').single()
     if (sErr) throw new Error(`Failed to create subtype: ${sErr.message}`)
 
+    // 'continuous' here (rather than the app default of 'quarterly') keeps
+    // this demo grant's window — deliberately short, to land inside the
+    // alert threshold — simple and deterministic: the whole 100 shares
+    // vest smoothly by vestEndStr, matching the push text below, instead
+    // of a short window landing awkwardly between quarterly installments.
     await supabase.from('rsu_grants').insert({
       subtype_id: subtype.id,
       grant_date: today,
       total_shares: 100,
       vest_start: today,
       vest_end: vestEndStr,
+      vesting_frequency: 'continuous',
     })
 
     await supabase.functions.invoke('send-push', {
       body: {
         user_id: userId,
-        title: 'RSU Grant Vesting Soon',
+        title: 'RSU Vesting Soon',
         body: `Demo RSU Grant: 100 shares vest on ${vestEndStr}`,
       },
     })

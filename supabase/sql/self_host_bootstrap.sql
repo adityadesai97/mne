@@ -201,6 +201,17 @@ alter table public.rsu_grants add column if not exists vest_end date;
 alter table public.rsu_grants add column if not exists cliff_date date;
 alter table public.rsu_grants add column if not exists ended_at date;
 
+-- How a grant actually vests (cliff + equal installments at this cadence
+-- through vest_end), instead of every caller guessing a smooth continuous
+-- curve between vest_start and vest_end. Existing rows are backfilled to
+-- 'quarterly' by the NOT NULL DEFAULT — the most common real-world
+-- schedule, confirmed against an actual user's brokerage statement.
+alter table public.rsu_grants add column if not exists vesting_frequency text not null default 'quarterly';
+alter table public.rsu_grants drop constraint if exists rsu_grants_vesting_frequency_check;
+alter table public.rsu_grants
+  add constraint rsu_grants_vesting_frequency_check
+  check (vesting_frequency in ('monthly', 'quarterly', 'annually', 'continuous'));
+
 -- Link transactions to their specific RSU grant for accurate grouping
 alter table public.transactions add column if not exists rsu_grant_id uuid references public.rsu_grants(id) on delete set null;
 -- Shares sold at vest to cover taxes (net held = count - sold_at_vest)

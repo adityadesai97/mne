@@ -82,6 +82,7 @@ type ParsedRsuGrant = {
   vestStart: string
   vestEnd: string
   cliffDate: string | null
+  vestingFrequency: string
   endedAt: string | null
 }
 
@@ -488,6 +489,14 @@ function normalizeFixedIncomeLots(rawLots: unknown[]): ParsedFixedIncomeLot[] {
   return results
 }
 
+function normalizeRsuVestingFrequency(value: unknown): 'monthly' | 'quarterly' | 'annually' | 'continuous' {
+  const normalized = asString(value).toLowerCase().trim()
+  if (normalized === 'monthly' || normalized === 'quarterly' || normalized === 'annually' || normalized === 'continuous') {
+    return normalized
+  }
+  return 'quarterly'
+}
+
 function normalizeRsuGrants(rawGrants: unknown[]): ParsedRsuGrant[] {
   const results: ParsedRsuGrant[] = []
   for (const entry of rawGrants) {
@@ -531,6 +540,7 @@ function normalizeRsuGrants(rawGrants: unknown[]): ParsedRsuGrant[] {
       vestStart,
       vestEnd,
       cliffDate: toIsoDate(entry.cliffDate ?? entry.cliff_date ?? entry.firstVestingDate ?? entry.first_vest_date),
+      vestingFrequency: normalizeRsuVestingFrequency(entry.vestingFrequency ?? entry.vesting_frequency),
       endedAt: toIsoDate(entry.endedAt ?? entry.ended_at),
     })
   }
@@ -567,6 +577,7 @@ function normalizeSubtypes(rawSubtypes: unknown[]): ParsedSubtype[] {
         vestEnd: end,
         totalShares: mergedTransactions.reduce((sum, tx) => sum + tx.count, 0),
         cliffDate: null,
+        vestingFrequency: 'quarterly',
         endedAt: null,
       })
     }
@@ -974,6 +985,7 @@ export function serializeForExport(
     vestStart: string
     vestEnd: string
     cliffDate: string | null
+    vestingFrequency: string
     endedAt: string | null
   }> = []
 
@@ -1095,6 +1107,7 @@ export function serializeForExport(
           vestStart: grant.vestStart,
           vestEnd: grant.vestEnd,
           cliffDate: grant.cliffDate,
+          vestingFrequency: grant.vestingFrequency,
           endedAt: grant.endedAt,
         })
       }
@@ -1238,7 +1251,7 @@ export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
   ), SHEET.transactions)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.rsuGrants,
-    ['id', 'subtypeId', 'grantDate', 'totalShares', 'vestStart', 'vestEnd', 'cliffDate', 'endedAt'],
+    ['id', 'subtypeId', 'grantDate', 'totalShares', 'vestStart', 'vestEnd', 'cliffDate', 'vestingFrequency', 'endedAt'],
   ), SHEET.rsuGrants)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.fixedIncomeLots,
@@ -1841,6 +1854,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
             vest_start: grant.vestStart,
             vest_end: grant.vestEnd,
             cliff_date: grant.cliffDate,
+            vesting_frequency: grant.vestingFrequency,
             ended_at: grant.endedAt,
           }
           if (grant.id) grantPayload.id = grant.id

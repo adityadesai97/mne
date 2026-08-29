@@ -78,13 +78,15 @@ test('system prompt encourages markdown tables for structured data', () => {
 test('system prompt directs vesting-period questions to get_rsu_vesting_schedule instead of estimating from grant dates', () => {
   const prompt = buildSystemPrompt([])
   expect(prompt).toContain('always call get_rsu_vesting_schedule')
-  expect(prompt).toContain('vests continuously across possibly several years')
+  expect(prompt).toContain('a grant vests in discrete installments')
 })
 
 // ── computeRsuVestingSchedule ───────────────────────────────────
-// Regression coverage for the "How many CRM shares vest next month?" bug:
-// a multi-year grant has no discrete per-event schedule, so the tool must
-// interpolate linearly between two dates rather than the model guessing.
+// Regression coverage for two bugs surfaced by real feedback: (1) "How many
+// CRM shares vest next month?" -> "Could not understand command" because no
+// tool could answer it, and (2) once fixed, the answer was wrong because
+// the app modeled vesting as a smooth curve instead of the discrete
+// quarterly installments real equity plans use.
 const rsuStockAsset = {
   asset_type: 'Stock',
   ticker: { symbol: 'CRM' },
@@ -92,23 +94,29 @@ const rsuStockAsset = {
     {
       subtype: 'RSU',
       rsu_grants: [
-        // 400 shares over 4 years -> 100/year -> ~8.33/month
+        // 400 shares over 4 years, no vesting_frequency set -> defaults to
+        // quarterly: 16 quarters, 25 shares each (400/16 divides evenly).
         { grant_date: '2024-01-01', total_shares: 400, vest_start: '2024-01-01', vest_end: '2028-01-01', cliff_date: null },
       ],
     },
   ],
 }
 
-test('computes shares vesting within a date window via linear interpolation', () => {
-  const result = computeRsuVestingSchedule([rsuStockAsset], { from_date: '2026-01-01', to_date: '2026-02-01' })
+test('computes shares vesting within a date window spanning a quarterly vest event', () => {
+  const result = computeRsuVestingSchedule([rsuStockAsset], { from_date: '2025-12-01', to_date: '2026-01-15' })
   expect(result.grants).toHaveLength(1)
   expect(result.grants[0].symbol).toBe('CRM')
-  // 2 years elapsed (800 days) by 2026-01-01 of 1461 total -> 200 vested;
-  // one month later a few more vest. The window delta should be small but
-  // nonzero, not the whole grant and not zero.
-  expect(result.grants[0].sharesVestingInWindow).toBeGreaterThan(0)
-  expect(result.grants[0].sharesVestingInWindow).toBeLessThan(20)
-  expect(result.totalSharesVestingInWindow).toBe(result.grants[0].sharesVestingInWindow)
+  expect(result.grants[0].vestingFrequency).toBe('quarterly')
+  // The 2026-01-01 quarterly installment (400/16 = 25 shares) falls inside this window.
+  expect(result.grants[0].sharesVestingInWindow).toBe(25)
+  expect(result.grants[0].vestEventsInWindow).toEqual([{ date: '2026-01-01', shares: 25 }])
+  expect(result.totalSharesVestingInWindow).toBe(25)
+})
+
+test('reports no vest events for a window that falls between quarterly installments', () => {
+  const result = computeRsuVestingSchedule([rsuStockAsset], { from_date: '2026-01-01', to_date: '2026-02-01' })
+  expect(result.grants[0].sharesVestingInWindow).toBe(0)
+  expect(result.grants[0].vestEventsInWindow).toEqual([])
 })
 
 test('reports zero shares vesting for a window entirely before vest_start', () => {
