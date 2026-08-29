@@ -1051,6 +1051,73 @@ function recommendActionsForGoal(assets: any[], input: any) {
   }
 }
 
+// Shares vested as of a given date, using the same linear vest_start ->
+// vest_end interpolation as the RSU vesting progress chart
+// (computeRsuVesting in charts.ts) and the vest-alert edge function — the
+// app's one model of "how vesting works" for a grant, since no discrete
+// per-event schedule is stored.
+function rsuSharesVestedAsOf(grant: any, asOf: Date): number {
+  const vestStart = new Date(grant.vest_start)
+  const vestEnd = new Date(grant.vest_end)
+  const cliffDate = grant.cliff_date ? new Date(grant.cliff_date) : null
+  const total = toNumber(grant.total_shares, 0)
+  const endedAt = grant.ended_at ? new Date(grant.ended_at) : null
+  const effective = endedAt && endedAt < asOf ? endedAt : asOf
+  if (effective >= vestEnd) return total
+  if (effective >= vestStart && (!cliffDate || effective >= cliffDate)) {
+    const elapsed = effective.getTime() - vestStart.getTime()
+    const duration = vestEnd.getTime() - vestStart.getTime()
+    return duration > 0 ? Math.floor((elapsed / duration) * total) : total
+  }
+  return 0
+}
+
+// Computes how many RSU shares vest between two dates, per grant — for
+// answering questions like "how many shares vest next month" that can't be
+// read off the raw grant_date/vest_start/vest_end/total_shares fields
+// without doing this same linear-interpolation math.
+export function computeRsuVestingSchedule(assets: any[], input: any) {
+  const symbolsFilter = new Set(asStringArray(input?.symbols).map((symbol) => normalizeSymbol(symbol)))
+  const fromDateRaw = String(input?.from_date ?? '').trim()
+  const toDateRaw = String(input?.to_date ?? '').trim()
+  const fromDate = isValidIsoDate(fromDateRaw) ? new Date(`${fromDateRaw}T00:00:00`) : new Date()
+  const toDate = isValidIsoDate(toDateRaw)
+    ? new Date(`${toDateRaw}T00:00:00`)
+    : new Date(fromDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+
+  const grants: any[] = []
+  for (const asset of assets ?? []) {
+    if (String(asset?.asset_type ?? '') !== 'Stock') continue
+    const symbol = normalizeSymbol(asset?.ticker?.symbol)
+    if (symbolsFilter.size > 0 && (!symbol || !symbolsFilter.has(symbol))) continue
+    for (const st of asset?.stock_subtypes ?? []) {
+      if (st?.subtype !== 'RSU') continue
+      for (const grant of st?.rsu_grants ?? []) {
+        const vestedAsOfFromDate = rsuSharesVestedAsOf(grant, fromDate)
+        const vestedAsOfToDate = rsuSharesVestedAsOf(grant, toDate)
+        grants.push({
+          symbol,
+          grantDate: grant.grant_date,
+          vestStart: grant.vest_start,
+          vestEnd: grant.vest_end,
+          cliffDate: grant.cliff_date,
+          totalShares: toNumber(grant.total_shares, 0),
+          vestedAsOfFromDate,
+          vestedAsOfToDate,
+          sharesVestingInWindow: Math.max(0, vestedAsOfToDate - vestedAsOfFromDate),
+        })
+      }
+    }
+  }
+
+  return {
+    fromDate: fromDate.toISOString().slice(0, 10),
+    toDate: toDate.toISOString().slice(0, 10),
+    grants,
+    totalSharesVestingInWindow: grants.reduce((sum, g) => sum + g.sharesVestingInWindow, 0),
+  }
+}
+
 async function executeReadTool(
   toolName: string,
   input: any,
@@ -1200,6 +1267,10 @@ async function executeReadTool(
     return recommendActionsForGoal(context.assets, input)
   }
 
+  if (toolName === 'get_rsu_vesting_schedule') {
+    return computeRsuVestingSchedule(context.assets, input)
+  }
+
   throw new Error(`Unsupported read tool: ${toolName}`)
 }
 
@@ -1216,6 +1287,7 @@ const READ_TOOL_FRIENDLY_LABEL: Record<string, string> = {
   analyze_tax_lots: 'Analyzed your capital gains tax lots',
   simulate_portfolio_actions: 'Simulated the scenario you asked about',
   recommend_actions_for_goal: 'Worked out recommendations for your goal',
+  get_rsu_vesting_schedule: 'Worked out your RSU vesting schedule',
 }
 
 function friendlyReadToolLabel(toolName: string): string {
@@ -1259,6 +1331,11 @@ function summarizeReadToolResult(toolName: string, result: any): string {
     const goal = String(result?.goal ?? '')
     const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.length : 0
     return `${goal || 'goal'} with ${recommendations} recommendation(s)`
+  }
+  if (toolName === 'get_rsu_vesting_schedule') {
+    const grants = Array.isArray(result?.grants) ? result.grants.length : 0
+    const total = toNumber(result?.totalSharesVestingInWindow, 0)
+    return `${grants} grant(s), ${total} share(s) vesting ${result?.fromDate ?? ''} → ${result?.toDate ?? ''}`
   }
   return clipText(result, 160)
 }
@@ -1350,6 +1427,7 @@ ${JSON.stringify(buildCompactAssetContext(assets))}
 For read-only questions and analysis, respond directly in plain text.
 For read-only questions involving exact numbers, trends, simulations, or recommendations, call read tools first and base your answer on tool outputs.
 Never estimate portfolio totals, allocations, or tax-lot values without using a read tool.
+Any question about how many RSU shares vest, or are vested/unvested, in or by a given period ("next month", "this quarter", "by year end", "in the next 90 days", etc.) — always call get_rsu_vesting_schedule with computed from_date/to_date rather than reading vest_start/vest_end/total_shares from the portfolio context above and estimating yourself; those fields alone don't tell you how many shares fall inside an arbitrary window, since each grant vests continuously across possibly several years.
 Formatting: replies are rendered as markdown — GitHub-flavored pipe tables, ## / ### headers, bulleted/numbered lists, **bold**, *italics*, \`inline code\`, and --- rules are all supported. Prefer a markdown table over prose whenever you're presenting two or more rows of comparable structured data — multiple positions, tax lots, transactions, a side-by-side comparison, an allocation breakdown, etc. A table with a header row scans far faster than a wall of bullets or a run-on sentence of numbers. Right-align numeric columns using a \`---:\` divider cell (e.g. a header divider row of \`|---|---:|\`), and prefix gains with + and losses with - (e.g. "+$500", "-2.3%") so they render in the app's gain/loss colors. For a single fact or a short conversational answer, just write a sentence or two — don't wrap one number in a table. Use bullet or numbered lists for recommendations, steps, or anything that isn't naturally rows and columns.
 For navigation/view requests use navigate_to. For data changes use the appropriate write tool.
   Never infer location_name from existing portfolio data unless the user or attached document clearly identifies it.
@@ -1542,6 +1620,21 @@ const tools = [
           upcoming_long_term_days: { type: 'number' },
         },
         required: ['goal'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_rsu_vesting_schedule',
+      description: "Compute RSU shares vesting between two dates, per grant. Grants vest continuously and linearly from vest_start to vest_end (the same model the RSU vesting progress chart and vest-reminder notifications use) — there is no discrete per-event schedule stored, so ALWAYS call this tool for any question about shares vesting in a period ('next month', 'this quarter', 'by year end', etc.) instead of estimating from the raw grant_date/vest_start/vest_end/total_shares fields yourself.",
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbols: { type: 'array', items: { type: 'string' }, description: 'Optional ticker filter, e.g. ["CRM"]. Omit for all RSU grants.' },
+          from_date: { type: 'string', description: "ISO date YYYY-MM-DD, window start. Defaults to today." },
+          to_date: { type: 'string', description: 'ISO date YYYY-MM-DD, window end. Defaults to 30 days after from_date.' },
+        },
       },
     },
   },
@@ -1883,6 +1976,7 @@ const READ_TOOL_NAMES = new Set([
   'analyze_tax_lots',
   'simulate_portfolio_actions',
   'recommend_actions_for_goal',
+  'get_rsu_vesting_schedule',
 ])
 
 const WRITE_TOOL_NAMES = new Set([
