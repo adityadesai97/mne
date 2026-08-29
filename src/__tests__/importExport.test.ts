@@ -113,6 +113,54 @@ test('parses canonical v2 schema', () => {
   expect(result.assets).toHaveLength(1)
   expect(result.assets[0].stockSubtypes[0].subtype).toBe('RSU')
   expect(result.assets[0].stockSubtypes[0].rsuGrants).toHaveLength(1)
+  // A legacy export with no vestingFrequency field at all normalizes to
+  // 'quarterly' rather than leaving it unset.
+  expect(result.assets[0].stockSubtypes[0].rsuGrants[0].vestingFrequency).toBe('quarterly')
+})
+
+test('round-trips an explicit vestingFrequency', () => {
+  const raw = JSON.stringify({
+    schema: 'mne.export.v2',
+    version: '2.0',
+    exportedAt: '2026-02-17T00:00:00.000Z',
+    data: {
+      locations: [],
+      themes: [],
+      tickers: [],
+      tickerThemes: [],
+      themeTargets: [],
+      assets: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          name: 'Salesforce, Inc.',
+          assetType: 'Stock',
+          locationId: null,
+          ownership: 'Individual',
+          tickerId: null,
+        },
+      ],
+      stockSubtypes: [
+        { id: '77777777-7777-4777-8777-777777777777', assetId: '66666666-6666-4666-8666-666666666666', subtype: 'RSU' },
+      ],
+      transactions: [],
+      rsuGrants: [
+        {
+          id: '99999999-9999-4999-8999-999999999999',
+          subtypeId: '77777777-7777-4777-8777-777777777777',
+          grantDate: '2025-03-01',
+          totalShares: 100,
+          vestStart: '2025-03-01',
+          vestEnd: '2027-03-01',
+          cliffDate: '2025-09-01',
+          vestingFrequency: 'monthly',
+          endedAt: null,
+        },
+      ],
+    },
+  })
+
+  const result = parseImport(raw)
+  expect(result.assets[0].stockSubtypes[0].rsuGrants[0].vestingFrequency).toBe('monthly')
 })
 
 test('parses Moola schema and normalizes fields', () => {

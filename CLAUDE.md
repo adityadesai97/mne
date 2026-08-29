@@ -48,7 +48,7 @@ assets ──→ locations      (account lives at a brokerage/bank)
 assets ──→ tickers        (stocks only; null for 401k/cash/etc.)
 assets ──→ stock_subtypes (Market | ESPP | RSU — one per subtype per asset)
 stock_subtypes ──→ transactions  (individual tax lots with cost_price + purchase_date)
-stock_subtypes ──→ rsu_grants    (vest_start, vest_end, cliff_date, ended_at)
+stock_subtypes ──→ rsu_grants    (vest_start, vest_end, cliff_date, vesting_frequency, ended_at)
 assets ──→ fixed_income_lots     (Bond/T-Bill only — units + cost/unit + purchase_date, like stock tax lots)
 tickers ──→ ticker_themes ──→ themes
 themes ──→ theme_targets  (optional allocation target %)
@@ -57,6 +57,8 @@ themes ──→ theme_targets  (optional allocation target %)
 `assets.asset_type` is free text (no DB enum) but the app only creates: `Stock`, `401k`, `Cash`, `HSA`, and `Fixed Income`. `Fixed Income` is a super type covering CD, Deposit, Bond, and T-Bill accounts — `assets.fixed_income_subtype` ('CD' | 'Deposit' | 'Bond' | 'T-Bill', DB-constrained) records which, alongside `assets.interest_rate` (annual %, Bond coupon) and `assets.maturity_date`, both nullable and only meaningful when `asset_type = 'Fixed Income'`. Migration `20260811000000_add_fixed_income_asset_type.sql` folded the former standalone `CD` and `Deposit` asset types into this super type in place. T-Bills (and any Bond bought below par) sell at a discount and pay face value at maturity rather than accruing periodic interest — `assets.face_value` (nullable, added in `20260811000001_add_face_value_to_assets.sql`) holds the per-unit maturity payout.
 
 **Bond and T-Bill are tradable** (migration `20260811000002_add_fixed_income_lots.sql`): bought in `fixed_income_lots` rows (`count` units × `cost_price` per unit × `purchase_date`), the same "buy over time in lots" shape as a stock's `transactions`, linked directly to `assets.id` (no intermediate subtype table — a Fixed Income asset only ever has one subtype). `assets.price`/`initial_price` are left `null` for these two subtypes; value is derived from lots instead (see Portfolio Math). CD and Deposit remain flat-balance accounts on `assets.price`, same as 401k/Cash/HSA.
+
+**RSU vesting is discrete, not continuous** (migration `20260829000000_add_rsu_vesting_frequency.sql`): `rsu_grants.vesting_frequency` ('monthly' | 'quarterly' | 'annually' | 'continuous', DB-constrained, `NOT NULL DEFAULT 'quarterly'`) records how a grant vests after its cliff — a lump at `cliff_date` (or `vest_start` if no cliff was recorded) covering however many periods elapsed since `grant_date`, then one equal installment every period through `vest_end`, with the cliff absorbing the rounding remainder so installments sum to exactly `total_shares`. `continuous` falls back to the old smooth linear interpolation across `[vest_start, vest_end]`, for a grant nobody's told the app the real cadence of. `rsuVestedSharesAsOf` / `computeRsuVestEvents` in `src/lib/charts.ts` are the one implementation of this math — the RSU vesting progress chart, `computeRsuVestingSchedule` in `src/lib/claude.ts` (the command bar's `get_rsu_vesting_schedule` tool), and `supabase/functions/check-vests` (a self-contained Deno port, since edge functions can't import from `src/`) all key off it. Existing grants were backfilled to `'quarterly'` — the most common real-world schedule — confirmed against an actual user's brokerage statement.
 
 Every table has RLS enabled — users see only their own rows.
 
@@ -127,6 +129,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `analyze_tax_lots` — short/long-term capital gains analysis
 - `simulate_portfolio_actions` — hypothetical what-if scenarios
 - `recommend_actions_for_goal` — goal-based recommendations
+- `get_rsu_vesting_schedule` — shares vesting between two dates, per grant (discrete installment math, not a smooth-curve estimate)
 
 **Navigation tool** (no confirmation):
 - `navigate_to` — routes to a page
@@ -137,7 +140,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `add_fixed_income_lot` / `add_fixed_income_lots` — buy more units of an *existing* Bond/T-Bill position
 - `add_ticker_to_watchlist`
 - `add_ticker_themes`
-- `add_rsu_grant` / `add_rsu_grants`
+- `add_rsu_grant` / `add_rsu_grants` — optional `vesting_frequency` (monthly/quarterly/annually/continuous), defaults to quarterly
 - `sell_shares`
 - `update_asset_value` — rejects Bond/T-Bill assets; their value is derived from lots, use `add_fixed_income_lot` instead
 
@@ -156,7 +159,7 @@ The command bar requires the user to be signed in; if not, it prompts re-authent
 Four Deno functions in `supabase/functions/`:
 - `send-push` — sends Web Push notifications via `npm:web-push`; requires `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` secrets
 - `check-prices` — fetches Finnhub quotes, fires push if price moved ≥ user threshold
-- `check-vests` — alerts when RSU `vest_end` is within `rsu_alert_days_before` days
+- `check-vests` — alerts on each discrete vest event (per grant's `vesting_frequency`) landing within `rsu_alert_days_before` days, not just the grant's final `vest_end`
 - `check-capital-gains` — promotes Short Term lots older than 1 year to Long Term, sends push
 
 `check-*` functions are scheduled hourly (prices/vests) or daily at 9am (capital gains) via pg_cron. They call `send-push` using `SUPABASE_ANON_KEY` (functions are deployed with `verify_jwt: false`).
