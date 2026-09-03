@@ -29,7 +29,7 @@ npx vitest --run charts.test      # single file
 - `mne_finnhub_api_key` — Finnhub API key for stock quotes
 - `mne_needs_signin` — flag set when the user is signed out
 - `mne_theme` — appearance preference (`light` | `dark` | `system`)
-- `mne_asset_view` — Portfolio layout preference (`grid` | `list`; defaults to `grid`)
+- `mne_asset_view` — Portfolio layout preference (`grid` | `list`; unset until the user picks one, in which case Portfolio defaults to `list` on mobile and `grid` on desktop)
 
 `config.isConfigured` is true only when `config.activeApiKey` (key for the chosen provider), `config.finnhubApiKey`, and `!config.needsSignIn` are all satisfied.
 

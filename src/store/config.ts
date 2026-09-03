@@ -60,8 +60,11 @@ export const config = {
     return (localStorage.getItem(KEYS.theme) ?? 'dark') as 'light' | 'dark' | 'system'
   },
   setTheme(v: 'light' | 'dark' | 'system') { localStorage.setItem(KEYS.theme, v) },
-  get assetView(): 'grid' | 'list' {
-    return (localStorage.getItem(KEYS.assetView) ?? 'grid') as 'grid' | 'list'
+  // null means the user has never explicitly chosen a view — callers should
+  // fall back to a device-appropriate default (list on mobile, grid on desktop).
+  get assetView(): 'grid' | 'list' | null {
+    const v = localStorage.getItem(KEYS.assetView)
+    return v === 'grid' || v === 'list' ? v : null
   },
   setAssetView(v: 'grid' | 'list') { localStorage.setItem(KEYS.assetView, v) },
   get hideValues(): boolean {

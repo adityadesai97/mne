@@ -161,7 +161,11 @@ export default function Portfolio() {
   // Read once at mount for the initial render (Portfolio remounts on route
   // navigation, so this always reflects the last persisted choice); changes
   // via the dropdown below both update this state and persist to localStorage.
-  const [assetView, setAssetView] = useState<AssetView>(() => config.assetView)
+  // Until the user explicitly picks a view, default to list on mobile and
+  // grid on desktop.
+  const [assetView, setAssetView] = useState<AssetView>(
+    () => config.assetView ?? (window.innerWidth < 768 ? 'list' : 'grid')
+  )
   const isListView = assetView === 'list'
 
   const handleAssetViewChange = useCallback((v: AssetView) => {
