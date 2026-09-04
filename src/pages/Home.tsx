@@ -1,5 +1,6 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, animate } from 'framer-motion'
 import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, Lightbulb, RefreshCw, Wallet, PieChart, Activity, Crown } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
@@ -696,21 +697,25 @@ export default function Home() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: 0.05 * i, duration: 0.3 }}
-                  className="rounded-xl bg-muted/40 p-3"
                 >
-                  <div className="flex items-center gap-1 mb-1.5">
-                    {isGain
-                      ? <TrendingUp size={11} className="text-gain flex-shrink-0" />
-                      : <TrendingDown size={11} className="text-loss flex-shrink-0" />}
-                    <p className="text-xs font-semibold truncate">{mover.symbol}</p>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground truncate mb-1.5">{mover.name}</p>
-                  <p className={`text-sm font-bold tabular-nums font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
-                    {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
-                  </p>
-                  <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
-                    {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
-                  </p>
+                  <Link
+                    to={`/portfolio/${mover.id}`}
+                    className="block rounded-xl bg-muted/40 p-3 transition-colors hover:bg-muted/60"
+                  >
+                    <div className="flex items-center gap-1 mb-1.5">
+                      {isGain
+                        ? <TrendingUp size={11} className="text-gain flex-shrink-0" />
+                        : <TrendingDown size={11} className="text-loss flex-shrink-0" />}
+                      <p className="text-xs font-semibold truncate">{mover.symbol}</p>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground truncate mb-1.5">{mover.name}</p>
+                    <p className={`text-sm font-bold tabular-nums font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
+                      {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
+                    </p>
+                    <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+                      {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
+                    </p>
+                  </Link>
                 </motion.div>
               )
             })}
