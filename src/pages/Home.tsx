@@ -735,16 +735,18 @@ export default function Home() {
           <div className="mb-3">
             <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best Performer</CardEyebrow>
           </div>
-          <p className="text-sm font-semibold truncate">{bestAsset?.name ?? '—'}</p>
-          {bestAsset && (
-            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
-              {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
-            </p>
-          )}
-          {bestAsset && (
-            <p className={`text-[10px] tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
-              {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
-            </p>
+          {bestAsset ? (
+            <Link to={`/portfolio/${bestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
+              <p className="text-sm font-semibold truncate">{bestAsset.name}</p>
+              <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+                {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
+              </p>
+              <p className={`text-[10px] tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+                {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
+              </p>
+            </Link>
+          ) : (
+            <p className="text-sm font-semibold truncate">—</p>
           )}
         </motion.div>
 
@@ -758,12 +760,14 @@ export default function Home() {
           <div className="mb-3">
             <CardEyebrow icon={Crown} className="text-primary">Largest Holding</CardEyebrow>
           </div>
-          <p className="text-sm font-semibold truncate">{largestAsset?.name ?? '—'}</p>
-          {largestAsset && (
-            <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
-          )}
-          {largestAsset && (
-            <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
+          {largestAsset ? (
+            <Link to={`/portfolio/${largestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
+              <p className="text-sm font-semibold truncate">{largestAsset.name}</p>
+              <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
+              <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
+            </Link>
+          ) : (
+            <p className="text-sm font-semibold truncate">—</p>
           )}
         </motion.div>
 
