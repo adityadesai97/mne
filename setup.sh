@@ -48,6 +48,14 @@
 #             Requires the `zip` command; falls back to Supabase CLI instructions
 #             if zip is not available.
 #
+#   Step 4e  Deploy Plaid integration edge functions
+#             Deploys plaid-create-link-token, plaid-exchange-token, plaid-sync,
+#             plaid-sync-me, and plaid-remove-item, and schedules plaid-sync
+#             hourly via pg_cron. Always run (not gated by push notifications) —
+#             each signed-in user brings their own free Plaid developer
+#             credentials via Settings, so there are no deployment-level Plaid
+#             secrets to configure here.
+#
 #   Step 5  Print Google OAuth setup instructions
 #             The app authenticates via Google OAuth through Supabase Auth.
 #             This step cannot be automated — it prints the exact callback URL and
@@ -479,6 +487,81 @@ if [ "$ENABLE_PUSH" = "true" ] && [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
   fi
 fi
 
+# ─── Step 4e: Deploy Plaid integration edge functions ─────────────────────────
+# Unlike the push-notification functions above, these are always deployed —
+# Plaid connections are opt-in per user (each brings their own free Plaid
+# developer credentials via Settings/Onboarding), not gated by ENABLE_PUSH.
+PLAID_FUNCTIONS_DEPLOYED=false
+PLAID_CRON_APPLIED=false
+if [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
+  if ! command -v zip &>/dev/null; then
+    warn "zip not found — Plaid edge functions must be deployed manually (see Step 6)."
+  else
+    echo ""
+    echo "  Deploying Plaid integration edge functions..."
+    PLAID_DEPLOY_FAILED_FUNCS=""
+    # slug:verify_jwt pairs — plaid-sync is cron-driven like check-*, the
+    # rest are invoked by the signed-in user's own browser session.
+    for ENTRY in "plaid-create-link-token:true" "plaid-exchange-token:true" "plaid-sync:false" "plaid-sync-me:true" "plaid-remove-item:true"; do
+      SLUG="${ENTRY%%:*}"
+      VERIFY_JWT="${ENTRY##*:}"
+      FN_ZIP="/tmp/mne_fn_${SLUG}.zip"
+      FN_META="{\"slug\":\"${SLUG}\",\"name\":\"${SLUG}\",\"verify_jwt\":${VERIFY_JWT}}"
+      (cd "supabase/functions/${SLUG}" && zip -qr "$FN_ZIP" index.ts)
+
+      FN_STATUS=$(curl -s -o /tmp/mne_fn_response.json -w "%{http_code}" \
+        -X PATCH \
+        -H "Authorization: Bearer ${PAT}" \
+        -F "metadata=${FN_META}" \
+        -F "file=@${FN_ZIP};type=application/zip" \
+        "https://api.supabase.com/v1/projects/${PROJECT_REF}/functions/${SLUG}")
+
+      if [ "$FN_STATUS" = "404" ]; then
+        FN_STATUS=$(curl -s -o /tmp/mne_fn_response.json -w "%{http_code}" \
+          -X POST \
+          -H "Authorization: Bearer ${PAT}" \
+          -F "metadata=${FN_META}" \
+          -F "file=@${FN_ZIP};type=application/zip" \
+          "https://api.supabase.com/v1/projects/${PROJECT_REF}/functions")
+      fi
+
+      rm -f "$FN_ZIP"
+
+      if [ "$FN_STATUS" = "200" ] || [ "$FN_STATUS" = "201" ]; then
+        ok "  Deployed ${SLUG}."
+      else
+        FN_MSG=$(node -e "
+          try {
+            const r = require('fs').readFileSync('/tmp/mne_fn_response.json','utf8');
+            const j = JSON.parse(r);
+            process.stdout.write(j.message || j.error || r);
+          } catch(e) { process.stdout.write('unknown error'); }
+        " 2>/dev/null || echo "unknown error")
+        warn "Failed to deploy ${SLUG} (HTTP ${FN_STATUS}): ${FN_MSG}"
+        PLAID_DEPLOY_FAILED_FUNCS="${PLAID_DEPLOY_FAILED_FUNCS} ${SLUG}"
+      fi
+    done
+    if [ -z "$PLAID_DEPLOY_FAILED_FUNCS" ]; then
+      PLAID_FUNCTIONS_DEPLOYED=true
+    fi
+  fi
+
+  echo "  Scheduling the hourly Plaid sync..."
+  PLAID_CRON_SQL='{"query":"create extension if not exists pg_net schema extensions;\ncreate extension if not exists pg_cron;\ndo $$ begin\n  if exists (select 1 from cron.job where jobname = '"'"'mne-plaid-sync'"'"') then\n    perform cron.unschedule('"'"'mne-plaid-sync'"'"');\n  end if;\nend $$;\nselect cron.schedule('"'"'mne-plaid-sync'"'"','"'"'0 * * * *'"'"',\n  format($q$select net.http_post(url:=%L,headers:='"'"'{\"Content-Type\": \"application/json\"}'"'"'::jsonb,body:='"'"'{}'"'"'::jsonb)$q$,\n    '"'"'https://'"${PROJECT_REF}"'.supabase.co/functions/v1/plaid-sync'"'"'));"}'
+  PLAID_CRON_STATUS=$(curl -s -o /tmp/mne_plaid_cron_response.json -w "%{http_code}" \
+    -X POST \
+    -H "Authorization: Bearer ${PAT}" \
+    -H "Content-Type: application/json" \
+    -d "$PLAID_CRON_SQL" \
+    "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query")
+  if [ "$PLAID_CRON_STATUS" = "200" ] || [ "$PLAID_CRON_STATUS" = "201" ]; then
+    ok "  Plaid sync scheduled (hourly)."
+    PLAID_CRON_APPLIED=true
+  else
+    warn "Plaid cron setup failed (HTTP ${PLAID_CRON_STATUS}) — schedule it manually (see Step 6)."
+  fi
+fi
+
 # ─── Step 5: Google OAuth setup ───────────────────────────────────────────────
 header "Step 5: Enable Google sign-in"
 
@@ -585,6 +668,47 @@ if [ "$SKIP_ENV" = "false" ] && [ "$ENABLE_PUSH" = "true" ]; then
     echo ""
   fi
 fi
+
+# ─── Step 6b: Plaid integration — deploy summary ───────────────────────────────
+header "Step 6b: Plaid integration edge functions"
+
+if [ "$PLAID_FUNCTIONS_DEPLOYED" = "true" ]; then
+  ok "Plaid edge functions were deployed automatically."
+else
+  echo "  Five Supabase edge functions must be deployed to your project:"
+  echo "    plaid-create-link-token, plaid-exchange-token, plaid-sync, plaid-sync-me, plaid-remove-item"
+  echo ""
+  echo "  Deploy using the Supabase CLI (install at https://supabase.com/docs/guides/cli):"
+  echo ""
+  echo "    supabase login"
+  PLAID_REF="${PROJECT_REF:-<your-project-ref>}"
+  echo "    supabase functions deploy plaid-create-link-token --project-ref ${PLAID_REF}"
+  echo "    supabase functions deploy plaid-exchange-token    --project-ref ${PLAID_REF}"
+  echo "    supabase functions deploy plaid-sync              --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy plaid-sync-me           --project-ref ${PLAID_REF}"
+  echo "    supabase functions deploy plaid-remove-item       --project-ref ${PLAID_REF}"
+  echo ""
+fi
+
+if [ "$PLAID_CRON_APPLIED" = "true" ]; then
+  ok "Plaid's hourly sync schedule was applied automatically."
+else
+  echo "  ${BOLD}pg_cron schedule${RESET} — run this SQL in Supabase SQL Editor"
+  echo "  after deploying the functions:"
+  echo ""
+  echo "    create extension if not exists pg_net schema extensions;"
+  echo "    create extension if not exists pg_cron;"
+  echo ""
+  echo "    select cron.schedule('mne-plaid-sync','0 * * * *',"
+  echo "      \$\$ select net.http_post(url:='https://${PROJECT_REF:-<your-project-ref>}.supabase.co/functions/v1/plaid-sync',"
+  echo "          headers:='{\"Content-Type\": \"application/json\"}'::jsonb, body:='{}'::jsonb) \$\$);"
+  echo ""
+fi
+
+echo "  No deployment-level Plaid secrets are needed — each signed-in user"
+echo "  enters their own free Plaid developer credentials (client_id/secret)"
+echo "  in Settings, the same way they enter their own Claude/Finnhub keys."
+echo ""
 
 # ─── Step 7: Email allowlist reminder ─────────────────────────────────────────
 if [ "$SKIP_ENV" = "false" ] && [ "$RESTRICT_SIGNUPS" = "true" ]; then

@@ -2264,7 +2264,9 @@ function validateFixedIncomeLot(lot: any, label: string): string | null {
   return null
 }
 
-function validateWriteToolInput(toolName: string, input: any): string | null {
+// Exported alongside executeTool so PlaidReviewModal can run the same
+// required-field checks before writing a confirmed position.
+export function validateWriteToolInput(toolName: string, input: any): string | null {
   if (toolName === 'add_stock_transaction') {
     if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
     if (!Number.isFinite(Number(input.count)) || Number(input.count) <= 0) return 'Shares must be a positive number'
@@ -2439,7 +2441,10 @@ function confirmationMessageFor(toolName: string, input: any): string {
   }
 }
 
-async function executeTool(toolName: string, input: any, userId: string): Promise<void> {
+// Exported so PlaidReviewModal can reuse the exact same find-or-create
+// ticker/location/asset/subtype write logic when the user confirms a
+// synced Plaid position, instead of duplicating it.
+export async function executeTool(toolName: string, input: any, userId: string): Promise<void> {
   const supabase = getSupabaseClient()
 
   if (toolName === 'add_ticker_to_watchlist') {

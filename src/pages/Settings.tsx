@@ -13,7 +13,22 @@ import { useHideValues } from '@/hooks/useHideValues'
 import { listConversations, deleteConversation, type ConversationSummary } from '@/lib/db/conversations'
 import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
 import { formatDateMDY } from '@/lib/dates'
-import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus } from 'lucide-react'
+import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus, Link2 } from 'lucide-react'
+import {
+  getPlaidCredentialsStatus,
+  savePlaidCredentials,
+  listPlaidItems,
+  removePlaidItem,
+  createPlaidLinkToken,
+  exchangePlaidPublicToken,
+  syncPlaidNow,
+  getPendingPlaidPositionsCount,
+  PLAID_ITEM_LIMIT,
+  type PlaidItem,
+} from '@/lib/db/plaid'
+import { openPlaidLink } from '@/lib/plaidLink'
+import { showAppAlert } from '@/lib/appAlerts'
+import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -109,6 +124,18 @@ export default function Settings() {
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
   const [providerWarning, setProviderWarning] = useState('')
+  const [plaidStatus, setPlaidStatus] = useState({ configured: false, clientId: null as string | null, plaidEnv: 'production' })
+  const [editingPlaidCreds, setEditingPlaidCreds] = useState(false)
+  const [plaidCredsDraft, setPlaidCredsDraft] = useState({ clientId: '', secret: '' })
+  const [plaidCredsSaving, setPlaidCredsSaving] = useState(false)
+  const [plaidCredsError, setPlaidCredsError] = useState('')
+  const [plaidItems, setPlaidItems] = useState<PlaidItem[]>([])
+  const [plaidConnecting, setPlaidConnecting] = useState(false)
+  const [plaidSyncing, setPlaidSyncing] = useState(false)
+  const [plaidRemovingId, setPlaidRemovingId] = useState<string | null>(null)
+  const [plaidPendingCount, setPlaidPendingCount] = useState(0)
+  const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
+  const [plaidError, setPlaidError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [allowedEmails, setAllowedEmails] = useState<{ id: string; email: string; is_admin: boolean }[]>([])
   const [newAllowedEmail, setNewAllowedEmail] = useState('')
@@ -141,6 +168,7 @@ export default function Settings() {
       })
       .catch(console.error)
     getPushEnabled().then(setPushEnabled)
+    void refreshPlaidData()
 
     // Check admin status
     getSupabaseClient().auth.getUser().then(({ data: { user } }) => {
@@ -238,6 +266,95 @@ export default function Settings() {
       setKeyError(e.message ?? 'Failed to save')
     } finally {
       setKeySaving(false)
+    }
+  }
+
+  async function refreshPlaidData() {
+    try {
+      const [status, items, pendingCount] = await Promise.all([
+        getPlaidCredentialsStatus(),
+        listPlaidItems(),
+        getPendingPlaidPositionsCount(),
+      ])
+      setPlaidStatus(status)
+      setPlaidItems(items)
+      setPlaidPendingCount(pendingCount)
+    } catch (e) {
+      // Plaid tables may not exist yet on an older self-hosted schema —
+      // fail quietly rather than blocking the rest of Settings.
+      console.error(e)
+    }
+  }
+
+  async function handleSavePlaidCreds() {
+    if (!plaidCredsDraft.clientId || (!plaidStatus.configured && !plaidCredsDraft.secret)) {
+      setPlaidCredsError('Client ID and Secret are required')
+      return
+    }
+    setPlaidCredsSaving(true)
+    setPlaidCredsError('')
+    try {
+      await savePlaidCredentials(plaidCredsDraft.clientId, plaidStatus.plaidEnv || 'production', plaidCredsDraft.secret)
+      setEditingPlaidCreds(false)
+      await refreshPlaidData()
+    } catch (e: any) {
+      setPlaidCredsError(e.message ?? 'Failed to save')
+    } finally {
+      setPlaidCredsSaving(false)
+    }
+  }
+
+  async function handleConnectPlaidAccount() {
+    setPlaidConnecting(true)
+    setPlaidError('')
+    try {
+      const linkToken = await createPlaidLinkToken()
+      await openPlaidLink(linkToken, {
+        onSuccess: (publicToken, metadata) => {
+          exchangePlaidPublicToken(publicToken, metadata.institution?.institution_id ?? null, metadata.institution?.name ?? null)
+            .then(({ pendingCount }) => {
+              showAppAlert(
+                pendingCount > 0
+                  ? `Connected — ${pendingCount} position${pendingCount !== 1 ? 's' : ''} to review`
+                  : 'Account connected',
+                { variant: 'success' },
+              )
+              void refreshPlaidData()
+            })
+            .catch((e: Error) => showAppAlert(e.message || 'Failed to finish connecting that account', { variant: 'error' }))
+            .finally(() => setPlaidConnecting(false))
+        },
+        onExit: () => setPlaidConnecting(false),
+      })
+    } catch (e: any) {
+      setPlaidError(e.message ?? 'Failed to start Plaid Link')
+      setPlaidConnecting(false)
+    }
+  }
+
+  async function handleSyncPlaidNow() {
+    setPlaidSyncing(true)
+    setPlaidError('')
+    try {
+      const { pendingCount } = await syncPlaidNow()
+      showAppAlert(pendingCount > 0 ? `${pendingCount} position${pendingCount !== 1 ? 's' : ''} to review` : 'Up to date', { variant: 'success' })
+      await refreshPlaidData()
+    } catch (e: any) {
+      setPlaidError(e.message ?? 'Sync failed')
+    } finally {
+      setPlaidSyncing(false)
+    }
+  }
+
+  async function handleRemovePlaidItem(id: string) {
+    setPlaidRemovingId(id)
+    try {
+      await removePlaidItem(id)
+      await refreshPlaidData()
+    } catch (e: any) {
+      showAppAlert(e.message ?? 'Failed to disconnect', { variant: 'error' })
+    } finally {
+      setPlaidRemovingId(null)
     }
   }
 
@@ -702,6 +819,115 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      {/* Plaid */}
+      <SectionHeader><Link2 size={10} className="inline mr-1.5 mb-0.5" />Connected Accounts (Plaid)</SectionHeader>
+      {editingPlaidCreds ? (
+        <div className="bg-card rounded-xl p-4 space-y-3 animate-slideDown">
+          <p className="text-[11px] text-muted-foreground">
+            Your own free Plaid developer credentials — not shared with other mne users. Get them at{' '}
+            <a href="https://dashboard.plaid.com/team/keys" target="_blank" rel="noopener noreferrer" className="text-primary/70 hover:text-primary underline underline-offset-2">
+              dashboard.plaid.com
+            </a>.
+          </p>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Plaid Client ID</label>
+            <input
+              type="password"
+              placeholder={plaidStatus.configured ? '•••••••• (unchanged)' : '66...'}
+              value={plaidCredsDraft.clientId}
+              onChange={e => setPlaidCredsDraft(d => ({ ...d, clientId: e.target.value }))}
+              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Plaid Secret</label>
+            <input
+              type="password"
+              placeholder={plaidStatus.configured ? '•••••••• (leave blank to keep current)' : 'production secret'}
+              value={plaidCredsDraft.secret}
+              onChange={e => setPlaidCredsDraft(d => ({ ...d, secret: e.target.value }))}
+              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+          </div>
+          {plaidCredsError && <p className="text-xs text-destructive">{plaidCredsError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleSavePlaidCreds}
+              disabled={plaidCredsSaving}
+              className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {plaidCredsSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => { setEditingPlaidCreds(false); setPlaidCredsError('') }}
+              className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-card rounded-xl overflow-hidden">
+          <Row
+            label={plaidStatus.configured ? 'Plaid credentials configured' : 'Set up Plaid credentials'}
+            hint={plaidStatus.configured ? undefined : 'Required once, free — connects accounts instead of manual entry'}
+            onClick={() => { setPlaidCredsDraft({ clientId: '', secret: '' }); setPlaidCredsError(''); setEditingPlaidCreds(true) }}
+          />
+        </div>
+      )}
+
+      {plaidStatus.configured && (
+        <div className="bg-card rounded-xl overflow-hidden mt-2 divide-y divide-border/60">
+          {plaidPendingCount > 0 && (
+            <Row
+              label={`Review ${plaidPendingCount} synced position${plaidPendingCount !== 1 ? 's' : ''}`}
+              hint="Nothing is added to your portfolio until you confirm each one"
+              onClick={() => setPlaidReviewOpen(true)}
+            />
+          )}
+          {plaidItems.map(item => (
+            <Row
+              key={item.id}
+              label={item.institution_name || 'Connected account'}
+              hint={
+                item.status !== 'active'
+                  ? `Needs attention (${item.status})`
+                  : item.last_synced_at
+                    ? `Last synced ${formatDateMDY(item.last_synced_at)}`
+                    : 'Not yet synced'
+              }
+              right={
+                <button
+                  type="button"
+                  disabled={plaidRemovingId === item.id}
+                  onClick={() => void handleRemovePlaidItem(item.id)}
+                  className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 text-xs disabled:opacity-50"
+                >
+                  {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
+                </button>
+              }
+            />
+          ))}
+          <Row
+            label={plaidConnecting ? 'Opening…' : 'Connect another account'}
+            hint={plaidItems.length >= PLAID_ITEM_LIMIT ? `Free-plan limit reached (${PLAID_ITEM_LIMIT}/${PLAID_ITEM_LIMIT})` : `${plaidItems.length}/${PLAID_ITEM_LIMIT} connected`}
+            disabled={plaidConnecting || plaidItems.length >= PLAID_ITEM_LIMIT}
+            onClick={() => void handleConnectPlaidAccount()}
+          />
+          <Row
+            label={plaidSyncing ? 'Syncing…' : 'Sync now'}
+            disabled={plaidSyncing || plaidItems.length === 0}
+            onClick={() => void handleSyncPlaidNow()}
+          />
+        </div>
+      )}
+      {plaidError && <p className="text-xs text-destructive mt-2 px-1">{plaidError}</p>}
+      <PlaidReviewModal
+        open={plaidReviewOpen}
+        onClose={() => setPlaidReviewOpen(false)}
+        onChanged={() => void refreshPlaidData()}
+      />
 
       {/* Admin */}
       {isAdmin && (

@@ -51,6 +51,7 @@ This interactive script handles:
 - Optional features: email allowlist, landing page, push notifications
 - Applying the database schema automatically via the Supabase Management API (requires a [Personal Access Token](https://supabase.com/dashboard/account/tokens) — an account-level Supabase token, separate from your project's anon key); falls back to manual instructions if you skip it
 - If push notifications are enabled and a PAT was provided: setting VAPID secrets, pg_cron schedules, and deploying edge functions automatically
+- Deploying the Plaid integration's edge functions and scheduling its hourly sync (always attempted when a PAT is provided — no deployment-level secrets needed, since each signed-in user brings their own free Plaid developer credentials from Settings)
 
 > **If setup fails partway through**, re-running `bash setup.sh` is safe — the schema step is idempotent and the script will skip `.env.local` if it already exists.
 
@@ -70,7 +71,7 @@ This interactive script handles:
 bash run.sh
 ```
 
-Open `http://localhost:5173`, sign in with Google, then enter your AI provider key and Finnhub key when prompted.
+Open `http://localhost:5173`, sign in with Google, then enter your AI provider key and Finnhub key when prompted. You'll also be offered an optional Plaid step to connect your bank/brokerage accounts instead of entering positions by hand — skip it and set it up later from Settings if you'd rather not deal with it now.
 
 #### 4. Deploy edge functions (push notifications only)
 
@@ -177,6 +178,12 @@ Configure thresholds in Settings → Notifications.
 >     'https://<ref>.supabase.co/functions/v1/check-capital-gains',
 >     '{"Content-Type":"application/json","Authorization":"Bearer <anon-key>"}'));
 > ```
+
+### Plaid Integration
+
+Connect a bank or brokerage account (Settings → Connected Accounts, or the optional onboarding step) to sync Stock, 401k, Cash, HSA, and Bond/T-Bill positions instead of entering them by hand. Each signed-in user brings their own free Plaid developer credentials — get a `client_id`/`secret` at [dashboard.plaid.com](https://dashboard.plaid.com/team/keys) (Plaid's free Trial plan covers up to 10 connected accounts with no cost) and paste them into Settings, the same way you'd add your own Claude or Finnhub key. There's nothing to configure at the deployment level.
+
+Sync is review-first: nothing is written to your portfolio until you confirm it. A banner appears the next time you open the app after new positions are detected, and Settings always has a "Review pending" entry point. Anything Plaid can't supply — RSU/ESPP grant schedules, bond coupon rate and maturity terms, an empty tax-lot history — stays directly editable on that same review screen, pre-filled with whatever Plaid did provide.
 
 ### Import / Export
 

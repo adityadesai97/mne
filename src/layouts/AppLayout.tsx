@@ -17,6 +17,8 @@ import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
 import { subscribeToResumeConversationRequests } from '@/lib/commandBarBridge'
+import { getPendingPlaidPositionsCount } from '@/lib/db/plaid'
+import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -121,6 +123,18 @@ export default function AppLayout() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
+  const [plaidPendingCount, setPlaidPendingCount] = useState(0)
+  const [plaidBannerDismissed, setPlaidBannerDismissed] = useState(false)
+  const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
+
+  const refreshPlaidPendingCount = async () => {
+    try {
+      setPlaidPendingCount(await getPendingPlaidPositionsCount())
+    } catch {
+      // Plaid tables may not exist yet on an older self-hosted schema —
+      // treat that the same as "nothing pending" rather than erroring.
+    }
+  }
 
   // Settings' conversation history list lives outside CommandBar's tree —
   // this bridges its "continue this conversation" click into opening the
@@ -155,6 +169,7 @@ export default function AppLayout() {
           setCgAlert(`${count} lot${count !== 1 ? 's' : ''} promoted to Long Term capital gains status ✓`)
         }
         await syncFinnhubKey()
+        await refreshPlaidPendingCount()
 
         // Backfill logos for tickers that don't have one yet
         if (config.finnhubApiKey) {
@@ -299,6 +314,36 @@ export default function AppLayout() {
           <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
         </div>
       )}
+      {/*
+        Review-first: a Plaid sync only ever stages rows in
+        plaid_pending_positions — nothing lands in the portfolio until the
+        user confirms it here. This banner is the "surfaces the next time
+        the app opens" trigger; Settings has a permanent entry point to the
+        same modal for anyone who dismisses it.
+      */}
+      {plaidPendingCount > 0 && !plaidBannerDismissed && (
+        <div
+          className={`fixed left-0 right-0 md:left-16 z-50 bg-brand text-white px-4 pb-2 text-sm flex justify-between items-center ${cgAlert ? 'top-9' : 'top-0'}`}
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
+        >
+          <span>
+            {plaidPendingCount} synced position{plaidPendingCount !== 1 ? 's' : ''} to review
+          </span>
+          <div className="flex items-center gap-3 ml-4">
+            <button onClick={() => setPlaidReviewOpen(true)} className="underline underline-offset-2 hover:no-underline">
+              Review
+            </button>
+            <button onClick={() => setPlaidBannerDismissed(true)} className="text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
+          </div>
+        </div>
+      )}
+      <PlaidReviewModal
+        open={plaidReviewOpen}
+        onClose={() => setPlaidReviewOpen(false)}
+        onChanged={() => {
+          void refreshPlaidPendingCount()
+        }}
+      />
       <AnimatePresence>
         {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
       </AnimatePresence>

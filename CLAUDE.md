@@ -197,6 +197,22 @@ Asset dedup on import: before importing, `importData()` reads the signed-in user
 
 `src/lib/autoThemes.ts` — uses the active LLM (via `createLLMClient`) to automatically suggest and assign themes to tickers based on their sector/industry. Controlled by `auto_theme_assignment_enabled` in `user_settings`.
 
+### Plaid Integration
+
+Each signed-in user brings their own free Plaid developer credentials (`client_id`/`secret`, entered in Settings or the optional Onboarding `'plaid'` step) — not one credential set shared across the deployment. This means the free Trial plan's 10-connected-account cap belongs to each user individually, and there are no deployment-level Plaid secrets to configure.
+
+Data model (`supabase/migrations/20260908000000_add_plaid_integration.sql`):
+- `plaid_credentials` — per-user `client_id`/`plaid_env`, owner-readable.
+- `plaid_credential_secrets` — the `secret`, RLS enabled with **no select policy at all** (write-only from the client's perspective, like a password field — only a service-role edge function ever reads it).
+- `plaid_items` — one row per connected institution login ("Item"), owner-`select`-only; only edge functions insert/update/delete.
+- `plaid_item_secrets` — the per-item `access_token`, same zero-select-policy pattern as `plaid_credential_secrets`.
+- `plaid_pending_positions` — staging rows a sync detected but the user hasn't confirmed; nothing here has touched `assets`/`transactions`/`fixed_income_lots` yet.
+- `plaid_synced_positions` — idempotency map so a confirmed position's later syncs update it in place instead of re-flagging it for review.
+
+Edge functions (`supabase/functions/plaid-*`): `plaid-create-link-token` and `plaid-exchange-token` (`verify_jwt: true`, user-invoked — the first user-invoked functions in this repo; the four `check-*`/`send-push` functions are all `verify_jwt: false` cron/service-role jobs) handle Plaid Link; `plaid-sync` (`verify_jwt: false`, hourly via `pg_cron`, loops every user's items) and `plaid-sync-me` (`verify_jwt: true`, scoped to the caller, backs the Settings "Sync now" button and the post-connect initial pull) do the actual holdings/balance diffing; `plaid-remove-item` (`verify_jwt: true`) disconnects. All five duplicate the same small credential-lookup + Plaid-fetch snippet rather than sharing a module — see the Gotchas entry below.
+
+Sync is **review-first**: a detected position is written to `plaid_pending_positions`, never directly to the portfolio. `AppLayout.tsx`'s startup effect surfaces a banner the next time the app opens if any are pending; `PlaidReviewModal.tsx` (opened from that banner or from Settings) lets the user fill in anything Plaid didn't supply — RSU/ESPP grant schedules, bond coupon rate/maturity/face value, an empty tax-lot history — before confirming. Confirm calls `executeTool`/`validateWriteToolInput` (exported from `src/lib/claude.ts` for this reuse) with the same tool names the AI command bar's write tools use (`add_stock_transaction`, `add_cash_asset`), so a synced position is written exactly the way a manually-entered one would be.
+
 ## Environment Variables
 
 Required (in `.env.local`):
@@ -212,6 +228,8 @@ VITE_LANDING_AS_HOME=false    # Show landing page before sign-in
 VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 ```
 
+Not required here: Plaid credentials are per-user (entered in Settings, stored in `plaid_credentials`/`plaid_credential_secrets`), not a `VITE_`-prefixed env var or a deployment-level Supabase Edge Function secret.
+
 ## Gotchas
 
 **Image attachments require Claude**: Attaching an image in the command bar throws if the active LLM provider is Groq. CSV and PDF work with both providers.
@@ -219,6 +237,10 @@ VITE_VAPID_PUBLIC_KEY=        # Required for push notifications
 **`is_allowed_email_admin()` bypasses RLS intentionally**: The helper function is SECURITY DEFINER so it can query `allowed_emails` without triggering recursive policy evaluation. Don't remove this without replacing with a safe equivalent.
 
 **RLS on new tables**: Every new Supabase table needs an explicit RLS policy or all writes silently fail with a policy violation. Check `supabase/migrations/` for the pattern used on existing tables.
+
+**A secret table can have RLS enabled with *no* policies at all**: `plaid_credential_secrets` and `plaid_item_secrets` do this deliberately — RLS enabled + zero `select` policy for `authenticated`/`anon` means default-deny, so the row can never be read back by a normal client, only by a service-role edge function. Don't "fix" a Plaid secret query that returns nothing from the browser — that's the point, not a bug.
+
+**Edge functions in this repo don't share code across files**: `setup.sh`/`upgrade.sh` zip each function's `index.ts` in isolation (`cd supabase/functions/<slug> && zip -qr ... index.ts`), so a `_shared/` import would silently break at deploy time. `check-vests`/`check-prices` and all five `plaid-*` functions duplicate small helpers instead — keep duplicated copies in sync by hand when changing them.
 
 **deleteAsset cascade**: There is no `ON DELETE CASCADE` at the DB level. `deleteAsset()` in `src/lib/db/assets.ts` manually deletes `transactions` → `rsu_grants` → `stock_subtypes`, and `fixed_income_lots`, before deleting the asset. Any new child tables added to `stock_subtypes` (or directly to `assets`, like `fixed_income_lots`) must be added to this function.
 
