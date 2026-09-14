@@ -10,6 +10,11 @@ export interface ConversationSummary {
   title: string
   created_at: string
   updated_at: string
+  // Only populated by listConversations (the Settings history list, where
+  // they're displayed) — omitted from getConversation/getAllConversations'
+  // selects since those callers don't show them.
+  total_input_tokens?: number
+  total_output_tokens?: number
 }
 
 export interface Conversation extends ConversationSummary {
@@ -34,7 +39,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, created_at, updated_at')
+    .select('id, title, created_at, updated_at, total_input_tokens, total_output_tokens')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
   if (error) throw error
@@ -101,6 +106,31 @@ export async function saveConversation(input: {
     .single()
   if (error) throw error
   return data.id
+}
+
+/** Adds this turn's token usage to a conversation's running totals — called
+ *  alongside saveConversation once a turn resolves and its usage (from
+ *  AgentTrace.usage) is known. Best-effort: a logging failure here must
+ *  never surface to the user or block the conversation from being saved. */
+export async function incrementConversationUsage(id: string, inputTokens: number, outputTokens: number): Promise<void> {
+  if (inputTokens <= 0 && outputTokens <= 0) return
+  try {
+    const { data, error } = await getSupabaseClient()
+      .from('command_conversations')
+      .select('total_input_tokens, total_output_tokens')
+      .eq('id', id)
+      .maybeSingle()
+    if (error || !data) return
+    await getSupabaseClient()
+      .from('command_conversations')
+      .update({
+        total_input_tokens: Number(data.total_input_tokens ?? 0) + inputTokens,
+        total_output_tokens: Number(data.total_output_tokens ?? 0) + outputTokens,
+      })
+      .eq('id', id)
+  } catch (err) {
+    console.error('Failed to update conversation token usage', err)
+  }
 }
 
 export async function deleteConversation(id: string): Promise<void> {

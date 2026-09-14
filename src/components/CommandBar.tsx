@@ -5,8 +5,11 @@ import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
-import { saveConversation, getConversation, type ConversationMessage } from '@/lib/db/conversations'
+import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage } from '@/lib/db/conversations'
+import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
+import { config } from '@/store/config'
+import { MODEL_FOR_PROVIDER } from '@/lib/llm'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -517,11 +520,24 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     return () => { cancelled = true }
   }, [open, resumeConversationId])
 
-  const persistConversation = useCallback(async (messages: DisplayMessage[]) => {
+  const persistConversation = useCallback(async (messages: DisplayMessage[], usage?: AgentTrace['usage']) => {
     const serialized = serializeDisplayMessages(messages)
     if (serialized.length === 0) return
     try {
       conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized })
+      if (usage && (usage.inputTokens > 0 || usage.outputTokens > 0)) {
+        const provider = config.llmProvider
+        const model = MODEL_FOR_PROVIDER[provider]
+        void incrementConversationUsage(conversationIdRef.current, usage.inputTokens, usage.outputTokens)
+        void logLlmUsage({
+          feature: 'command_bar',
+          provider,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          conversationId: conversationIdRef.current,
+        })
+      }
     } catch (e) {
       console.error('Failed to save conversation history', e)
     }
@@ -577,7 +593,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         ]
         setDisplayMessages(updated)
         setIsExpanded(true)
-        void persistConversation(updated)
+        void persistConversation(updated, action.trace?.usage)
       } else if (wasExpanded) {
         const updated: DisplayMessage[] = [
           ...baseMessages,
@@ -1112,6 +1128,7 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
   }
   if (message.kind === 'text') {
     const traceSteps = message.trace?.steps ?? []
+    const usage = message.trace?.usage
 
     return (
       <div className="flex items-start gap-2">
@@ -1151,6 +1168,11 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
               <MessageSquare size={11} aria-hidden="true" />
               Feedback
             </button>
+            {usage && (usage.inputTokens > 0 || usage.outputTokens > 0) && (
+              <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                {usage.inputTokens.toLocaleString()} in · {usage.outputTokens.toLocaleString()} out tokens
+              </span>
+            )}
           </div>
           {feedbackOpen && (
             <FeedbackForm agentResponse={message.content} userQuery={userQuery} onDismiss={() => setFeedbackOpen(false)} />

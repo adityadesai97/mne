@@ -18,9 +18,14 @@ export type AgentTraceStep = {
   label: string
   detail?: string
 }
+export type AgentTraceUsage = {
+  inputTokens: number
+  outputTokens: number
+}
 export type AgentTrace = {
   generatedAt: string
   steps: AgentTraceStep[]
+  usage?: AgentTraceUsage
 }
 
 function clipText(value: unknown, maxLength = 220): string {
@@ -3318,11 +3323,16 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   const addTrace = (label: string, detail?: string) => {
     traceSteps.push({ label, ...(detail ? { detail } : {}) })
   }
+  // Accumulates usage across every internal LLM round this turn makes
+  // (tool-use rounds included, not just the final reply) — runLLM below is
+  // the single call site that feeds this, so every round is counted.
+  const turnUsage: AgentTraceUsage = { inputTokens: 0, outputTokens: 0 }
   const withTrace = (payload: any) => ({
     ...payload,
     trace: {
       generatedAt: new Date().toISOString(),
       steps: traceSteps,
+      ...(turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0 ? { usage: turnUsage } : {}),
     } as AgentTrace,
   })
 
@@ -3374,15 +3384,22 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   // practice tool-only rounds emit little or no visible text before calling
   // a tool, so this mostly matters for the final round; onStreamStart lets
   // the caller reset its buffer between rounds regardless.
-  const runLLM = async (systemPrompt: string, inputMessages: any[], toolsOverride: typeof tools = tools): Promise<NormalizedResponse> => client.chat.completions.create({
-    model: MODEL_FOR_PROVIDER[config.llmProvider],
-    max_tokens: 8192,
-    // Use temperature=0 when processing a file attachment for deterministic extraction.
-    // For regular conversational queries no temperature is set (API default).
-    ...(attachment ? { temperature: 0 } : {}),
-    messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
-    tools: toolsOverride,
-  }, streamCallbacks)
+  const runLLM = async (systemPrompt: string, inputMessages: any[], toolsOverride: typeof tools = tools): Promise<NormalizedResponse> => {
+    const response = await client.chat.completions.create({
+      model: MODEL_FOR_PROVIDER[config.llmProvider],
+      max_tokens: 8192,
+      // Use temperature=0 when processing a file attachment for deterministic extraction.
+      // For regular conversational queries no temperature is set (API default).
+      ...(attachment ? { temperature: 0 } : {}),
+      messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
+      tools: toolsOverride,
+    }, streamCallbacks)
+    if (response.usage) {
+      turnUsage.inputTokens += response.usage.inputTokens
+      turnUsage.outputTokens += response.usage.outputTokens
+    }
+    return response
+  }
 
   const shouldAttachComputedContext = isAnalyticalQuestion(lastUserContent) || mentionsNetWorth(lastUserContent)
   const analysisContext = shouldAttachComputedContext
