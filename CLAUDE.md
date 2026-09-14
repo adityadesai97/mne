@@ -99,7 +99,7 @@ All data pages support pull-to-refresh on mobile via `usePullToRefresh` (`src/ho
 
 ### user_settings Columns
 
-Key columns (all RLS-protected): `claude_api_key`, `groq_api_key`, `llm_provider`, `finnhub_api_key`, `price_alert_threshold`, `rsu_alert_days_before`, `auto_theme_assignment_enabled`, `price_alerts_enabled`, `vest_alerts_enabled`, `capital_gains_alerts_enabled`, `portfolio_explanation_enabled`. Note: `tax_harvest_threshold` was removed (migration `20260303000001_remove_tax_harvest_threshold.sql`).
+Key columns (all RLS-protected): `claude_api_key`, `groq_api_key`, `llm_provider`, `finnhub_api_key`, `price_alert_threshold`, `rsu_alert_days_before`, `auto_theme_assignment_enabled`, `price_alerts_enabled`, `vest_alerts_enabled`, `capital_gains_alerts_enabled`. Note: `tax_harvest_threshold` and `portfolio_explanation_enabled` were removed (migrations `20260303000001_remove_tax_harvest_threshold.sql`, `20260918000000_drop_portfolio_explanation_enabled.sql`).
 
 Home chart range is in `localStorage` (`mne_home_chart_range`, values: `1M | 3M | 6M | 1Y | ALL`), not DB.
 
@@ -152,7 +152,7 @@ The command bar requires the user to be signed in; if not, it prompts re-authent
 
 ### Portfolio Performance Explanation
 
-A toggleable (`user_settings.portfolio_explanation_enabled`, default off) LLM-generated summary of why the user's portfolio moved, generated entirely on demand — there is no scheduled/background generation at all. Home shows a one-line, zero-cost teaser (`PortfolioExplanationCard.tsx`); clicking it opens a command bar session that fetches or generates the actual explanation. One row per user in `portfolio_explanations` (upserted in place — no history table; `llm_usage_log` is where per-generation trends live).
+An LLM-generated summary of why the user's portfolio moved, generated entirely on demand — there is no scheduled/background generation at all, so (unlike the other AI features) there's no settings toggle for it; there's nothing to opt out of costing anything until it's actually clicked. Home shows a one-line, zero-cost teaser (`PortfolioExplanationCard.tsx`, arrow icon hinting it's clickable); clicking it opens a command bar session that fetches or generates the actual explanation. One row per user in `portfolio_explanations` (upserted in place — no history table; `llm_usage_log` is where per-generation trends live).
 
 `src/lib/portfolioExplanation.ts` is the one implementation of the attribution math and generation orchestration — no edge function, no Deno port, since nothing runs unattended anymore.
 
@@ -163,6 +163,7 @@ A toggleable (`user_settings.portfolio_explanation_enabled`, default off) LLM-ge
 - News grounding is fetched by the app's own code (Finnhub, using the existing `finnhub_api_key` — no new provider), never left to the LLM's own knowledge, and only for what's actually moving: `/company-news` for the (≤5) actual movers, `/news?category=general` only when a majority of holdings moved together (`isBroadMarketMove`). Only `headline`/`source`/`url`/`datetime` are kept from Finnhub's response.
 - "Sector" moves reuse the app's existing `themes`/`ticker_themes` construct (there's no formal sector column) — grouping data already in memory, no extra fetch.
 - The model returns plain prose — it's shown as a normal command bar reply, not a specially-rendered card; the richer structured data (`movers`/`theme_moves`/`market_headlines`) stays in the DB row for trend/debugging purposes even though the chat bubble doesn't render it specially.
+- **Headline links are appended deterministically, not written by the LLM.** The model is only ever shown a headline's title/source (never its URL — see `buildExplanationUserPrompt`), so it has no URL to get wrong or invent. `appendSources()` appends a markdown "Sources" list built straight from the fetched headline data after the LLM reply comes back, baked into the stored `summary` (so cached reuse keeps working links too). `CommandBar.tsx`'s `parseInlineMd` renders `[text](url)` as a real clickable link — general markdown link support the command bar didn't have before this needed it.
 - Claude calls pass `output_config: { effort: 'low' }` (Sonnet 5 runs adaptive thinking by default otherwise) and a small `max_tokens`.
 
 `portfolio_explanations.trigger` is always `'manual'` now (every generation is user-triggered); `'major_move'`/`'market_close'` are historic values from when this used to run on a schedule, kept in the type only because old rows may still carry them.

@@ -308,6 +308,26 @@ export function buildExplanationUserPrompt(
   return lines.join('\n')
 }
 
+/** Appends a deterministic, clickable "Sources" list to the LLM's summary —
+ *  built from the headline data we already fetched, never from anything
+ *  the model wrote, so a link is always exactly the URL Finnhub gave us
+ *  (the LLM is never shown URLs in the first place, only titles/sources,
+ *  per buildExplanationUserPrompt — it has no URL to get wrong or invent).
+ *  Rendered as markdown links by CommandBar's parseInlineMd. Deduped by
+ *  URL since a headline could in principle surface for more than one
+ *  mover. Returns the summary unchanged when there's nothing to cite. */
+export function appendSources(summary: string, movers: PortfolioExplanationMover[], marketHeadlines: PortfolioExplanationHeadline[]): string {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const h of [...movers.flatMap(m => m.headlines), ...marketHeadlines]) {
+    if (!h.url || seen.has(h.url)) continue
+    seen.add(h.url)
+    lines.push(`- [${h.title}](${h.url})${h.source ? ` — ${h.source}` : ''}`)
+  }
+  if (lines.length === 0) return summary
+  return `${summary}\n\nSources:\n${lines.join('\n')}`
+}
+
 function trimHeadlines(raw: any[], limit: number): PortfolioExplanationHeadline[] {
   return raw
     .filter(a => a && a.headline)
@@ -407,7 +427,8 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
     ],
     ...(config.llmProvider === 'claude' ? { output_config: { effort: 'low' as const } } : {}),
   })
-  const summary = response.choices[0]?.message?.content?.trim() || buildStaticNoMoveSummary(result.dayChangeDollars, result.dayChangePercent)
+  const rawSummary = response.choices[0]?.message?.content?.trim() || buildStaticNoMoveSummary(result.dayChangeDollars, result.dayChangePercent)
+  const summary = appendSources(rawSummary, movers, marketHeadlines)
   const inputTokens = response.usage?.inputTokens ?? null
   const outputTokens = response.usage?.outputTokens ?? null
 
