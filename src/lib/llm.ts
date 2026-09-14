@@ -13,8 +13,13 @@ interface NormalizedToolCall {
   type: 'function'
   function: { name: string; arguments: string }
 }
+export interface NormalizedUsage {
+  inputTokens: number
+  outputTokens: number
+}
 export interface NormalizedResponse {
   choices: [{ message: { content: string | null; tool_calls?: NormalizedToolCall[] } }]
+  usage?: NormalizedUsage
 }
 
 // ── Streaming callbacks ───────────────────────────────────────────────────────
@@ -34,7 +39,17 @@ export interface LLMClient {
   chat: {
     completions: {
       create(
-        params: { model: string; max_tokens?: number; temperature?: number; messages: any[]; tools?: any[] },
+        params: {
+          model: string
+          max_tokens?: number
+          temperature?: number
+          messages: any[]
+          tools?: any[]
+          // Claude-only: caps thinking/reasoning depth for simple, low-stakes
+          // calls (e.g. the portfolio explanation summary) that don't need
+          // Sonnet's default adaptive thinking. Ignored by GroqAdapter.
+          output_config?: { effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
+        },
         callbacks?: StreamCallbacks,
       ): Promise<NormalizedResponse>
     }
@@ -85,7 +100,10 @@ function toNormalizedResponse(response: Anthropic.Message): NormalizedResponse {
     .filter(b => b.type === 'text')
     .map(b => b.text)
     .join('\n') || null
-  return { choices: [{ message: { content: text, tool_calls: toolCalls.length ? toolCalls : undefined } }] }
+  const usage = response.usage
+    ? { inputTokens: response.usage.input_tokens ?? 0, outputTokens: response.usage.output_tokens ?? 0 }
+    : undefined
+  return { choices: [{ message: { content: text, tool_calls: toolCalls.length ? toolCalls : undefined } }], usage }
 }
 
 // ── Claude adapter ─────────────────────────────────────────────────────────
@@ -105,6 +123,7 @@ class ClaudeAdapter {
           temperature?: number
           messages: any[]
           tools?: any[]
+          output_config?: { effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
         },
         callbacks?: StreamCallbacks,
       ): Promise<NormalizedResponse> => {
@@ -124,7 +143,8 @@ class ClaudeAdapter {
           ...(system ? { system } : {}),
           messages: conversationMessages,
           ...(tools?.length ? { tools } : {}),
-        })
+          ...(params.output_config ? { output_config: params.output_config } : {}),
+        } as any)
         if (callbacks?.onTextDelta) {
           stream.on('text', (delta) => callbacks.onTextDelta!(delta))
         }
@@ -163,6 +183,10 @@ class GroqAdapter {
           messages: params.messages,
           ...(params.tools?.length ? { tools: params.tools } : {}),
           stream: true,
+          // Without this, Groq's OpenAI-compatible stream never emits usage —
+          // the trailing chunk that carries it (choices: [], a top-level
+          // `usage` field) is opt-in.
+          stream_options: { include_usage: true },
         })
 
         let content = ''
@@ -170,8 +194,15 @@ class GroqAdapter {
         // whatever order the model interleaves them — accumulate per index,
         // not by concatenating chunks in arrival order.
         const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string }>()
+        let usage: NormalizedUsage | undefined
 
         for await (const chunk of stream) {
+          // The usage-only trailing chunk has an empty `choices` array (no
+          // delta to read) but carries `usage` at the top level — check it
+          // before bailing out on a missing delta below.
+          if (chunk.usage) {
+            usage = { inputTokens: chunk.usage.prompt_tokens ?? 0, outputTokens: chunk.usage.completion_tokens ?? 0 }
+          }
           const delta = chunk.choices[0]?.delta
           if (!delta) continue
           if (delta.content) {
@@ -192,7 +223,7 @@ class GroqAdapter {
           type: 'function' as const,
           function: { name: tc.name, arguments: tc.arguments },
         }))
-        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined } }] }
+        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined } }], usage }
       },
     },
   }

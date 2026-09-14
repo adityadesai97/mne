@@ -99,6 +99,7 @@ export default function Settings() {
     price_alerts_enabled: true,
     vest_alerts_enabled: true,
     capital_gains_alerts_enabled: true,
+    portfolio_explanation_enabled: false,
   })
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
@@ -200,7 +201,7 @@ export default function Settings() {
     }
   }
 
-  async function setNotificationToggle(field: 'price_alerts_enabled' | 'vest_alerts_enabled' | 'capital_gains_alerts_enabled', enabled: boolean) {
+  async function setNotificationToggle(field: 'price_alerts_enabled' | 'vest_alerts_enabled' | 'capital_gains_alerts_enabled' | 'portfolio_explanation_enabled', enabled: boolean) {
     const next = { ...settingsRef.current, [field]: enabled }
     setSettings(next)
     settingsRef.current = next
@@ -419,6 +420,19 @@ export default function Settings() {
             onDisable={() => { void setAutoThemeAssignmentEnabled(false) }}
           />
         </div>
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Portfolio Performance Explanation</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              AI summary of why your portfolio moved, shown on Home
+            </p>
+          </div>
+          <Toggle
+            enabled={settings.portfolio_explanation_enabled === true}
+            onEnable={() => { void setNotificationToggle('portfolio_explanation_enabled', true) }}
+            onDisable={() => { void setNotificationToggle('portfolio_explanation_enabled', false) }}
+          />
+        </div>
         <Row
           label="Conversation History"
           hint="View and continue past command bar conversations"
@@ -452,7 +466,12 @@ export default function Settings() {
                   className="flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <p className="text-sm font-medium truncate">{c.title}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{formatDateMDY(c.updated_at)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {formatDateMDY(c.updated_at)}
+                    {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
+                      <span className="tabular-nums"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
+                    )}
+                  </p>
                 </button>
                 <button
                   type="button"

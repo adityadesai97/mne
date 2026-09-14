@@ -1,0 +1,74 @@
+import { getSupabaseClient } from '../supabase'
+
+export interface PortfolioExplanationHeadline {
+  title: string
+  source: string
+  url: string
+  datetime: number
+}
+
+export interface PortfolioExplanationMover {
+  symbol: string
+  name: string
+  dollarChange: number
+  percentChange: number
+  contributionPct: number
+  theme?: string
+  headlines: PortfolioExplanationHeadline[]
+}
+
+export interface PortfolioExplanationThemeMove {
+  theme: string
+  direction: 'up' | 'down'
+  avgPercentChange: number
+  memberSymbols: string[]
+}
+
+export type PortfolioExplanationTrigger = 'manual' | 'major_move' | 'market_close'
+
+export interface PortfolioExplanationRow {
+  id: string
+  user_id: string
+  summary: string
+  has_major_moves: boolean
+  day_change_dollars: number | null
+  day_change_percent: number | null
+  basis_net_worth: number | null
+  movers: PortfolioExplanationMover[]
+  is_broad_market_move: boolean
+  market_headlines: PortfolioExplanationHeadline[]
+  theme_moves: PortfolioExplanationThemeMove[]
+  trigger: PortfolioExplanationTrigger
+  input_tokens: number | null
+  output_tokens: number | null
+  generated_at: string
+}
+
+export type PortfolioExplanationInput = Omit<PortfolioExplanationRow, 'id' | 'user_id' | 'generated_at'>
+
+/** The signed-in user's latest explanation row, or null if none has been
+ *  generated yet. There's only ever one row per user — new generations
+ *  overwrite it (see upsertPortfolioExplanation). */
+export async function getPortfolioExplanation(): Promise<PortfolioExplanationRow | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('portfolio_explanations')
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  return data as PortfolioExplanationRow | null
+}
+
+/** Replaces the signed-in user's explanation row (upsert on the table's
+ *  unique user_id index) — there is intentionally no history kept here;
+ *  `llm_usage_log` is where per-generation trends live. */
+export async function upsertPortfolioExplanation(input: PortfolioExplanationInput): Promise<PortfolioExplanationRow> {
+  const { data: { user } } = await getSupabaseClient().auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { data, error } = await getSupabaseClient()
+    .from('portfolio_explanations')
+    .upsert({ ...input, user_id: user.id, generated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    .select()
+    .single()
+  if (error) throw error
+  return data as PortfolioExplanationRow
+}
