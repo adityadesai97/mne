@@ -4,8 +4,12 @@ import { Sparkles, RefreshCw, ExternalLink } from 'lucide-react'
 import { getUserSettings } from '@/lib/db/settings'
 import { getPortfolioExplanation, type PortfolioExplanationRow, type PortfolioExplanationMover } from '@/lib/db/portfolioExplanations'
 import { generatePortfolioExplanation } from '@/lib/portfolioExplanation'
+import { saveConversation } from '@/lib/db/conversations'
+import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
+
+const ASK_ABOUT_THIS_PROMPT = 'Why is my portfolio moving?'
 
 type HighlightTarget =
   | { kind: 'mover'; mover: PortfolioExplanationMover }
@@ -44,11 +48,15 @@ function fmtPercent(n: number): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 }
 
+// stopPropagation everywhere in here: the whole card is a click target for
+// "ask about this in the command bar" (see PortfolioExplanationCard below),
+// and this panel's own controls (close, headline links) must not also
+// trigger that.
 function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: () => void }) {
   if (target.kind === 'mover') {
     const { mover } = target
     return (
-      <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
+      <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="font-medium text-foreground">{mover.symbol} — {mover.name}</p>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-[11px]">Close</button>
@@ -75,7 +83,7 @@ function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: ()
 
   const { move } = target
   return (
-    <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
+    <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between">
         <p className="font-medium text-foreground">{move.theme}</p>
         <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-[11px]">Close</button>
@@ -131,6 +139,25 @@ export function PortfolioExplanationCard() {
     }
   }
 
+  // Clicking the card opens the command bar pre-loaded with this
+  // explanation as a two-turn conversation, so the user can ask follow-ups
+  // right where they read it — a fresh conversation each click (saved like
+  // any other command bar exchange, so it also shows up in history).
+  async function handleAskAboutThis() {
+    if (!explanation) return
+    try {
+      const id = await saveConversation({
+        messages: [
+          { role: 'user', content: ASK_ABOUT_THIS_PROMPT },
+          { role: 'assistant', content: explanation.summary },
+        ],
+      })
+      resumeConversationInCommandBar(id)
+    } catch (e) {
+      console.error('Failed to start command bar session from portfolio explanation', e)
+    }
+  }
+
   const highlighted = useHighlightedSummary(explanation)
 
   if (enabled === false || enabled === null) return null
@@ -138,13 +165,20 @@ export function PortfolioExplanationCard() {
   return (
     <motion.div
       {...revealUp(0.02)}
-      className="md:col-span-6 bg-card shadow-card rounded-2xl p-5"
+      onClick={() => void handleAskAboutThis()}
+      role={explanation ? 'button' : undefined}
+      tabIndex={explanation ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (explanation && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); void handleAskAboutThis() }
+      }}
+      title={explanation ? 'Ask a follow-up in the command bar' : undefined}
+      className={`md:col-span-6 bg-card shadow-card rounded-2xl p-5 ${explanation ? 'cursor-pointer' : ''}`}
     >
       <div className="mb-3 flex items-center justify-between">
         <CardEyebrow icon={Sparkles}>Why is my portfolio moving?</CardEyebrow>
         <button
           type="button"
-          onClick={() => void handleRegenerate()}
+          onClick={(e) => { e.stopPropagation(); void handleRegenerate() }}
           disabled={regenerating}
           title="Regenerate"
           aria-label="Regenerate explanation"
@@ -170,7 +204,7 @@ export function PortfolioExplanationCard() {
                   <button
                     key={piece.key}
                     type="button"
-                    onClick={() => setSelectedTarget(selectedTarget === piece.target ? null : piece.target)}
+                    onClick={(e) => { e.stopPropagation(); setSelectedTarget(selectedTarget === piece.target ? null : piece.target) }}
                     className="font-medium text-primary hover:underline underline-offset-2"
                   >
                     {piece.text}
@@ -183,7 +217,7 @@ export function PortfolioExplanationCard() {
             <div className="mt-2 text-xs text-muted-foreground space-y-1">
               <p className="uppercase tracking-[0.1em] text-[10px]">Market context</p>
               {explanation.market_headlines.map((h, i) => (
-                <a key={i} href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                <a key={i} href={h.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-primary hover:underline">
                   {h.title} <ExternalLink size={10} />
                 </a>
               ))}
