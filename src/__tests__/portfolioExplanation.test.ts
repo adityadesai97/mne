@@ -1,5 +1,5 @@
 import {
-  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt,
+  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate,
 } from '../lib/portfolioExplanation'
 
 function stockAsset(opts: {
@@ -81,19 +81,24 @@ test('shouldRegenerate is true with no prior explanation', () => {
   expect(shouldRegenerate({ dayChangePercent: 1.2 }, null)).toBe(true)
 })
 
-test('shouldRegenerate is false for a small change since the last generation', () => {
-  const last = { day_change_percent: 1.0 } as any
+test('shouldRegenerate is false for a small change since the last generation, same market day', () => {
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate() } as any
   expect(shouldRegenerate({ dayChangePercent: 1.2 }, last)).toBe(false)
 })
 
 test('shouldRegenerate is true once the swing moves past the hysteresis band', () => {
-  const last = { day_change_percent: 1.0 } as any
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate() } as any
   expect(shouldRegenerate({ dayChangePercent: 2.0 }, last)).toBe(true)
 })
 
 test('shouldRegenerate is true on a sign flip', () => {
-  const last = { day_change_percent: 0.5 } as any
+  const last = { day_change_percent: 0.5, market_date: todayMarketDate() } as any
   expect(shouldRegenerate({ dayChangePercent: -0.5 }, last)).toBe(true)
+})
+
+test('shouldRegenerate is true once a new market day has started, even with an unchanged swing', () => {
+  const last = { day_change_percent: 1.2, market_date: '2020-01-01' } as any
+  expect(shouldRegenerate({ dayChangePercent: 1.2 }, last)).toBe(true)
 })
 
 test('buildStaticNoMoveSummary reports a flat day with no dollar figure', () => {
@@ -124,4 +129,36 @@ test('buildExplanationUserPrompt includes theme and market sections when present
   expect(prompt).toContain('Semiconductors')
   expect(prompt).toContain('Market context:')
   expect(prompt).toContain('Fed holds rates')
+})
+
+test('buildTeaser returns null when there is no major move', () => {
+  const result = computeMovers([stockAsset({ symbol: 'KO', currentPrice: 100.05, previousClose: 100, shares: 10 })], 1_000_000)
+  expect(buildTeaser(result)).toBeNull()
+})
+
+test('buildTeaser names a single dominant mover directly', () => {
+  const assets = [
+    stockAsset({ symbol: 'CRM', currentPrice: 108, previousClose: 100, shares: 100 }), // +8%, +$800
+    stockAsset({ symbol: 'KO', currentPrice: 100.05, previousClose: 100, shares: 10 }), // noise
+  ]
+  const result = computeMovers(assets, 100_000)
+  expect(buildTeaser(result)).toBe('CRM moved +8.00% today. Want to know why?')
+})
+
+test('buildTeaser counts multiple significant movers when no single one dominates', () => {
+  const assets = [
+    stockAsset({ symbol: 'AAA', currentPrice: 106, previousClose: 100, shares: 10 }),
+    stockAsset({ symbol: 'BBB', currentPrice: 94, previousClose: 100, shares: 10 }),
+  ]
+  const result = computeMovers(assets, 1_000_000)
+  expect(buildTeaser(result)).toBe('2 items in your portfolio moved substantially today. Want to know why?')
+})
+
+test('buildTeaser falls back to the aggregate swing when no single holding crosses the per-stock bar', () => {
+  const assets = Array.from({ length: 20 }, (_, i) =>
+    stockAsset({ symbol: `T${i}`, currentPrice: 102, previousClose: 100, shares: 1000 }),
+  )
+  const result = computeMovers(assets, 100_000)
+  expect(result.movers.every(m => Math.abs(m.percentChange) < 5)).toBe(true)
+  expect(buildTeaser(result)).toMatch(/^Your portfolio went up \d+\.\d\d% today\. Want to know why\?$/)
 })

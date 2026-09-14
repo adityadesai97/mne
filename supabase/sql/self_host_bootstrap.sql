@@ -359,6 +359,9 @@ create table if not exists public.portfolio_explanations (
 );
 create unique index if not exists portfolio_explanations_user_id_key
   on public.portfolio_explanations (user_id);
+-- Generation is on-demand only (see CLAUDE.md) — reused until a material
+-- move happens or a new market day starts, tracked by this column.
+alter table public.portfolio_explanations add column if not exists market_date date not null default current_date;
 
 -- Append-only usage ledger shared by portfolio explanations + the command
 -- bar. Each feature also denormalizes its own latest/running totals above
