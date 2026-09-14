@@ -173,6 +173,10 @@ A toggleable (`user_settings.portfolio_explanation_enabled`, default off), LLM-g
 
 Each feature also denormalizes its own display copy so showing usage never requires querying/aggregating the log: `portfolio_explanations.input_tokens`/`output_tokens` (this generation's totals) and `command_conversations.total_input_tokens`/`total_output_tokens` (summed across a conversation's turns via `incrementConversationUsage`). `runCommand`'s `AgentTrace` carries a turn's accumulated `usage` (summed across every internal tool-use round through the same `runLLM` closure) so the command bar can display it without new plumbing.
 
+Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/TokenUsageInfo.tsx`) renders a small (i) icon that reveals them in a click-triggered tooltip (not hover, so it works on touch), used by both the portfolio explanation card and each command bar reply. Feedback submitted on a reply (`FeedbackForm` in `CommandBar.tsx`) carries that turn's usage and the conversation's `origin` into `command_feedback.input_tokens`/`output_tokens`/`conversation_origin` — see below.
+
+`command_conversations.origin` (`'command_bar' | 'portfolio_explanation'`) records which surface started the conversation — set once at creation, read back on resume so `FeedbackForm` can pass it through. `saveConversation({ origin })` only honors this on the initial insert; the Home page card's "ask about this" flow (`PortfolioExplanationCard.tsx`) is the one caller that sets it to `'portfolio_explanation'`, so it's evident on review when feedback came from a session that began there rather than a typed command.
+
 ### In-App Alerts
 
 `src/lib/appAlerts.ts` — lightweight pub/sub for transient toast-style notifications. `showAppAlert(message, options)` fires an event consumed by `AppAlertsHost.tsx`. Variants: `info`, `success`, `error`.
