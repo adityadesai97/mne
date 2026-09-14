@@ -2,14 +2,15 @@ import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X, Paperclip, Sparkles, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
-import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
+import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
-import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage } from '@/lib/db/conversations'
+import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage, type ConversationOrigin } from '@/lib/db/conversations'
 import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
 import { config } from '@/store/config'
 import { MODEL_FOR_PROVIDER } from '@/lib/llm'
+import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -385,6 +386,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   // which every later exchange updates the same row instead of creating a
   // new one.
   const conversationIdRef = useRef<string | null>(null)
+  // Which surface this thread started from — 'portfolio_explanation' when
+  // resumed from the Home page card (see the resume effect below), else the
+  // 'command_bar' default for a normal typed turn. Threaded into feedback
+  // (FeedbackForm) so it's evident on review where the conversation began.
+  const conversationOriginRef = useRef<ConversationOrigin>('command_bar')
 
   const handleClose = () => {
     if (writesDone) {
@@ -491,6 +497,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       resetStream()
       msgIdRef.current = 0
       conversationIdRef.current = null
+      conversationOriginRef.current = 'command_bar'
     }
   }, [open])
 
@@ -505,6 +512,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         const conversation = await getConversation(resumeConversationId)
         if (cancelled || !conversation) return
         conversationIdRef.current = conversation.id
+        conversationOriginRef.current = conversation.origin ?? 'command_bar'
         setDisplayMessages(conversation.messages.map((m) => (
           m.role === 'user'
             ? { id: nextId(), role: 'user' as const, content: m.content }
@@ -868,6 +876,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                               onDone={handleWriteDone}
                               onClose={handleClose}
                               userQuery={precedingUserMessage?.role === 'user' ? precedingUserMessage.content : undefined}
+                              conversationOrigin={conversationOriginRef.current}
                             />
                           </motion.div>
                         )
@@ -1113,7 +1122,7 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   return <p className="p-4 text-sm text-destructive">{normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
 }
 
-function MessageBubble({ message, onDone, onClose, userQuery }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string }) {
+function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string; conversationOrigin?: ConversationOrigin }) {
   const [showTrace, setShowTrace] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
@@ -1168,14 +1177,16 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
               <MessageSquare size={11} aria-hidden="true" />
               Feedback
             </button>
-            {usage && (usage.inputTokens > 0 || usage.outputTokens > 0) && (
-              <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-                {usage.inputTokens.toLocaleString()} in · {usage.outputTokens.toLocaleString()} out tokens
-              </span>
-            )}
+            <TokenUsageInfo inputTokens={usage?.inputTokens} outputTokens={usage?.outputTokens} />
           </div>
           {feedbackOpen && (
-            <FeedbackForm agentResponse={message.content} userQuery={userQuery} onDismiss={() => setFeedbackOpen(false)} />
+            <FeedbackForm
+              agentResponse={message.content}
+              userQuery={userQuery}
+              usage={usage}
+              conversationOrigin={conversationOrigin}
+              onDismiss={() => setFeedbackOpen(false)}
+            />
           )}
         </div>
       </div>
@@ -1193,7 +1204,13 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
 /** Inline feedback form for a single agent response — free text plus an
  *  optional file attachment (e.g. a screenshot of the bad output), submitted
  *  to `command_feedback` alongside the response text itself. */
-function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: string; userQuery?: string; onDismiss: () => void }) {
+function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onDismiss }: {
+  agentResponse: string
+  userQuery?: string
+  usage?: AgentTraceUsage
+  conversationOrigin?: ConversationOrigin
+  onDismiss: () => void
+}) {
   const [text, setText] = useState('')
   const [attachment, setAttachment] = useState<CommandFeedbackAttachment | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1209,7 +1226,15 @@ function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: 
     setSubmitting(true)
     setError(null)
     try {
-      await submitCommandFeedback({ userQuery, agentResponse, feedbackText: text.trim() || null, attachment })
+      await submitCommandFeedback({
+        userQuery,
+        agentResponse,
+        feedbackText: text.trim() || null,
+        attachment,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        conversationOrigin,
+      })
       setSubmitted(true)
     } catch (e: any) {
       setError(e.message || 'Failed to submit feedback')
@@ -1220,6 +1245,11 @@ function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: 
 
   return (
     <div className="rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-2">
+      {conversationOrigin === 'portfolio_explanation' && (
+        <p className="text-[10px] text-muted-foreground/70 italic">
+          This conversation started from the portfolio explanation card — that'll be noted with your feedback.
+        </p>
+      )}
       <textarea
         rows={2}
         placeholder="What was wrong, or how could this be better?"

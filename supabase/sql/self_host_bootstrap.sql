@@ -315,6 +315,9 @@ create table if not exists public.command_feedback (
   attachment_content text,
   created_at timestamptz not null default now()
 );
+alter table public.command_feedback add column if not exists input_tokens int;
+alter table public.command_feedback add column if not exists output_tokens int;
+alter table public.command_feedback add column if not exists conversation_origin text not null default 'command_bar';
 
 -- Command bar conversation history. `messages` is a JSONB array of
 -- {role, content} — the same shape threaded through runCommand's history —
@@ -331,6 +334,9 @@ create index if not exists command_conversations_user_updated_idx
   on public.command_conversations (user_id, updated_at desc);
 alter table public.command_conversations add column if not exists total_input_tokens int not null default 0;
 alter table public.command_conversations add column if not exists total_output_tokens int not null default 0;
+-- Which surface started the conversation ('command_bar' | 'portfolio_explanation')
+-- — set once at creation and never changed; see CLAUDE.md.
+alter table public.command_conversations add column if not exists origin text not null default 'command_bar';
 
 -- Portfolio Performance Explanation: a toggleable, LLM-generated summary of
 -- why the user's portfolio moved. See CLAUDE.md for the full design.

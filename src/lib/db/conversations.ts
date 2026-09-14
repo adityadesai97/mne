@@ -5,6 +5,8 @@ export interface ConversationMessage {
   content: string
 }
 
+export type ConversationOrigin = 'command_bar' | 'portfolio_explanation'
+
 export interface ConversationSummary {
   id: string
   title: string
@@ -19,6 +21,13 @@ export interface ConversationSummary {
 
 export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[]
+  // Which surface started this conversation — 'portfolio_explanation' when
+  // the user clicked the Home page explanation card rather than typing
+  // directly into the command bar. Feeds into feedback (see feedback.ts)
+  // so it's evident, on review, which conversations began that way.
+  // Optional/defaults to 'command_bar' since not every caller selects it
+  // (e.g. the "All data" export doesn't need it).
+  origin?: ConversationOrigin
 }
 
 const TITLE_MAX_LENGTH = 60
@@ -55,31 +64,35 @@ export async function getAllConversations(): Promise<Conversation[]> {
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, messages, created_at, updated_at')
+    .select('id, title, messages, created_at, updated_at, origin')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return (data ?? []).map((row) => ({ ...row, messages: Array.isArray(row.messages) ? row.messages : [] }))
+  return (data ?? []).map((row: any) => ({ ...row, messages: Array.isArray(row.messages) ? row.messages : [], origin: row.origin ?? 'command_bar' }))
 }
 
 export async function getConversation(id: string): Promise<Conversation | null> {
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, messages, created_at, updated_at')
+    .select('id, title, messages, created_at, updated_at, origin')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  return { ...data, messages: Array.isArray(data.messages) ? data.messages : [] }
+  return { ...data, messages: Array.isArray(data.messages) ? data.messages : [], origin: (data as any).origin ?? 'command_bar' }
 }
 
 /** Creates or updates a conversation's saved message list. Pass `id` to
  *  update an existing conversation (title is left as-is when a title was
  *  already set); omit it to create a new one, deriving the title from the
- *  first message. Returns the conversation's id. */
+ *  first message. `origin` only applies on creation — pass
+ *  'portfolio_explanation' when seeding a conversation from that card
+ *  (see PortfolioExplanationCard); omit it for a normal typed command bar
+ *  turn, which defaults to 'command_bar'. Returns the conversation's id. */
 export async function saveConversation(input: {
   id?: string | null
   messages: ConversationMessage[]
+  origin?: ConversationOrigin
 }): Promise<string> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) throw new Error('Not authenticated')
@@ -101,6 +114,7 @@ export async function saveConversation(input: {
       user_id: user.id,
       title: deriveConversationTitle(firstUserMessage),
       messages: input.messages,
+      origin: input.origin ?? 'command_bar',
     })
     .select('id')
     .single()

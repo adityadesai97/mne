@@ -8,6 +8,7 @@ import { saveConversation } from '@/lib/db/conversations'
 import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
+import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 
 const ASK_ABOUT_THIS_PROMPT = 'Why is my portfolio moving?'
 
@@ -151,6 +152,7 @@ export function PortfolioExplanationCard() {
           { role: 'user', content: ASK_ABOUT_THIS_PROMPT },
           { role: 'assistant', content: explanation.summary },
         ],
+        origin: 'portfolio_explanation',
       })
       resumeConversationInCommandBar(id)
     } catch (e) {
@@ -228,11 +230,7 @@ export function PortfolioExplanationCard() {
 
           <div className="mt-3 pt-2 border-t border-white/[0.05] flex items-center justify-between text-[10px] text-muted-foreground/70">
             <span>{new Date(explanation.generated_at).toLocaleString()}</span>
-            {(explanation.input_tokens || explanation.output_tokens) && (
-              <span className="tabular-nums">
-                {(explanation.input_tokens ?? 0).toLocaleString()} in · {(explanation.output_tokens ?? 0).toLocaleString()} out tokens
-              </span>
-            )}
+            <TokenUsageInfo inputTokens={explanation.input_tokens} outputTokens={explanation.output_tokens} />
           </div>
         </>
       )}
