@@ -152,20 +152,20 @@ The command bar requires the user to be signed in; if not, it prompts re-authent
 
 ### Portfolio Performance Explanation
 
-A toggleable (`user_settings.portfolio_explanation_enabled`, default off), LLM-generated summary of why the user's portfolio moved, shown on Home. One row per user in `portfolio_explanations` (upserted in place — no history table; `llm_usage_log` is where per-generation trends live).
+A toggleable (`user_settings.portfolio_explanation_enabled`, default off) LLM-generated summary of why the user's portfolio moved, generated entirely on demand — there is no scheduled/background generation at all. Home shows a one-line, zero-cost teaser (`PortfolioExplanationCard.tsx`); clicking it opens a command bar session that fetches or generates the actual explanation. One row per user in `portfolio_explanations` (upserted in place — no history table; `llm_usage_log` is where per-generation trends live).
 
-`src/lib/portfolioExplanation.ts` is the one implementation of the attribution math; `supabase/functions/check-portfolio-explanations/index.ts` is a self-contained Deno port of the same rules (edge functions can't import from `src/`, same reason `check-vests` ports the RSU vesting math — keep the two in sync).
+`src/lib/portfolioExplanation.ts` is the one implementation of the attribution math and generation orchestration — no edge function, no Deno port, since nothing runs unattended anymore.
 
-**Token-efficiency rules** (the reason this is cheap to run unattended for every opted-in user):
-- All attribution math (which holdings moved, by how much, whether it's theme-wide or market-wide) runs in JS against data already loaded — the LLM only ever sees a compact digest, never the raw asset graph.
+- **The Home page teaser costs nothing.** `buildTeaser()` is pure JS over `computeMovers()`'s output (no LLM call, no DB read) — Home already has `assets`/net worth loaded, so the card computes its one line fresh on every render. Returns `null` (card renders nothing) when there's no major move. Picks whichever framing fits: one dominant holding ("CRM moved +4.10% today..."), several individually-significant movers ("5 items in your portfolio moved substantially..."), or the aggregate swing alone ("Your portfolio went up 1.20% today...").
+- **The actual explanation is generated only when a user asks for it** — clicking the teaser (`openPortfolioExplanationInCommandBar()` in `commandBarBridge.ts`) opens the command bar, which shows "Why is my portfolio moving?" immediately and calls `generatePortfolioExplanation()` itself (see `CommandBar.tsx`'s `startExplanationRequest` handling), using its normal loading/thinking UI while that runs.
+- **The stored explanation is reused, not regenerated, until it's actually stale**: `shouldRegenerate()` says no (skip the LLM entirely) unless either (a) today's swing has moved meaningfully past what's stored, or flipped sign (`REGENERATION_HYSTERESIS_PCT`), or (b) the stored explanation is from an earlier market day — `portfolio_explanations.market_date` (compared against `todayMarketDate()`, a plain UTC calendar-day key, same granularity as `net_worth_snapshots.date`/`tickers.last_updated` elsewhere in this app) resets it at the next market open regardless of how small the swing looks so far.
 - A quiet day (no major move) short-circuits to a static, deterministically-built string — zero LLM tokens, zero news calls.
-- Regeneration is gated by hysteresis (`shouldRegenerate`): a swing has to move meaningfully past what's already stored (or flip sign) before another LLM call is worth it. The daily market-close sweep (`{ force: true }`) is the one path that always regenerates — still cheap, since a quiet day still takes the zero-cost path above.
 - News grounding is fetched by the app's own code (Finnhub, using the existing `finnhub_api_key` — no new provider), never left to the LLM's own knowledge, and only for what's actually moving: `/company-news` for the (≤5) actual movers, `/news?category=general` only when a majority of holdings moved together (`isBroadMarketMove`). Only `headline`/`source`/`url`/`datetime` are kept from Finnhub's response.
 - "Sector" moves reuse the app's existing `themes`/`ticker_themes` construct (there's no formal sector column) — grouping data already in memory, no extra fetch.
-- The model returns plain prose, never structured highlight data — the frontend highlights mover/theme names by substring match against `portfolio_explanations.movers`/`theme_moves`, which it already has. Clicking a highlight never calls the LLM again.
+- The model returns plain prose — it's shown as a normal command bar reply, not a specially-rendered card; the richer structured data (`movers`/`theme_moves`/`market_headlines`) stays in the DB row for trend/debugging purposes even though the chat bubble doesn't render it specially.
 - Claude calls pass `output_config: { effort: 'low' }` (Sonnet 5 runs adaptive thinking by default otherwise) and a small `max_tokens`.
 
-`generatePortfolioExplanation({ force })` in `portfolioExplanation.ts` is the browser-side orchestration the Home page's manual "Regenerate" button calls. The scheduled hourly (major-move) and daily (market-close) sweeps run through the edge function instead, since there's no browser session to run the browser path in.
+`portfolio_explanations.trigger` is always `'manual'` now (every generation is user-triggered); `'major_move'`/`'market_close'` are historic values from when this used to run on a schedule, kept in the type only because old rows may still carry them.
 
 ### Token Usage Tracking
 
@@ -173,9 +173,9 @@ A toggleable (`user_settings.portfolio_explanation_enabled`, default off), LLM-g
 
 Each feature also denormalizes its own display copy so showing usage never requires querying/aggregating the log: `portfolio_explanations.input_tokens`/`output_tokens` (this generation's totals) and `command_conversations.total_input_tokens`/`total_output_tokens` (summed across a conversation's turns via `incrementConversationUsage`). `runCommand`'s `AgentTrace` carries a turn's accumulated `usage` (summed across every internal tool-use round through the same `runLLM` closure) so the command bar can display it without new plumbing.
 
-Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/TokenUsageInfo.tsx`) renders a small (i) icon that reveals them in a click-triggered tooltip (not hover, so it works on touch), used by both the portfolio explanation card and each command bar reply. Feedback submitted on a reply (`FeedbackForm` in `CommandBar.tsx`) carries that turn's usage and the conversation's `origin` into `command_feedback.input_tokens`/`output_tokens`/`conversation_origin` — see below.
+Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/TokenUsageInfo.tsx`) renders a small (i) icon that reveals them in a click-triggered tooltip (not hover, so it works on touch), used on each command bar reply — including a portfolio explanation, which lands there as a normal reply once generated. Feedback submitted on a reply (`FeedbackForm` in `CommandBar.tsx`) carries that turn's usage and the conversation's `origin` into `command_feedback.input_tokens`/`output_tokens`/`conversation_origin` — see below.
 
-`command_conversations.origin` (`'command_bar' | 'portfolio_explanation'`) records which surface started the conversation — set once at creation, read back on resume so `FeedbackForm` can pass it through. `saveConversation({ origin })` only honors this on the initial insert; the Home page card's "ask about this" flow (`PortfolioExplanationCard.tsx`) is the one caller that sets it to `'portfolio_explanation'`, so it's evident on review when feedback came from a session that began there rather than a typed command.
+`command_conversations.origin` (`'command_bar' | 'portfolio_explanation'`) records which surface started the conversation — set once at creation, read back on resume so `FeedbackForm` can pass it through. `saveConversation({ origin })` only honors this on the initial insert; `CommandBar.tsx`'s handling of a portfolio-explanation open request is what sets it to `'portfolio_explanation'` before persisting that first exchange, so it's evident on review when feedback came from a session that began there rather than a typed command.
 
 ### In-App Alerts
 
@@ -183,14 +183,13 @@ Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/Tok
 
 ### Edge Functions
 
-Five Deno functions in `supabase/functions/`:
+Four Deno functions in `supabase/functions/`:
 - `send-push` — sends Web Push notifications via `npm:web-push`; requires `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` secrets
 - `check-prices` — fetches Finnhub quotes, fires push if price moved ≥ user threshold
 - `check-vests` — alerts on each discrete vest event (per grant's `vesting_frequency`) landing within `rsu_alert_days_before` days, not just the grant's final `vest_end`
 - `check-capital-gains` — promotes Short Term lots older than 1 year to Long Term, sends push
-- `check-portfolio-explanations` — generates/regenerates the Portfolio Performance Explanation (see above); invoke with no body for the hourly major-move sweep, `{ force: true }` for the daily market-close sweep
 
-`check-*` functions are scheduled hourly (prices/vests/portfolio-explanations) or daily (capital gains at 9am; portfolio-explanations' forced sweep shortly after US market close) via pg_cron. They call `send-push` using `SUPABASE_ANON_KEY` (functions are deployed with `verify_jwt: false`).
+`check-*` functions are scheduled hourly (prices/vests) or daily at 9am (capital gains) via pg_cron. They call `send-push` using `SUPABASE_ANON_KEY` (functions are deployed with `verify_jwt: false`). The Portfolio Performance Explanation has no edge function — it's generated entirely on demand from the browser (see above).
 
 ### PWA & Service Worker
 

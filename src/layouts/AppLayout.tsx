@@ -16,7 +16,7 @@ import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
-import { subscribeToResumeConversationRequests } from '@/lib/commandBarBridge'
+import { subscribeToResumeConversationRequests, subscribeToExplanationRequests } from '@/lib/commandBarBridge'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -120,6 +120,7 @@ export default function AppLayout() {
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
+  const [explanationRequestPending, setExplanationRequestPending] = useState(false)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
 
   // Settings' conversation history list lives outside CommandBar's tree —
@@ -128,6 +129,16 @@ export default function AppLayout() {
   useEffect(() => {
     return subscribeToResumeConversationRequests((conversationId) => {
       setResumeConversationId(conversationId)
+      setCmdOpen(true)
+    })
+  }, [])
+
+  // Same bridge, for the Home page's portfolio explanation teaser — it has
+  // no existing conversation to resume, just a request to open the command
+  // bar and let it fetch/generate the explanation itself.
+  useEffect(() => {
+    return subscribeToExplanationRequests(() => {
+      setExplanationRequestPending(true)
       setCmdOpen(true)
     })
   }, [])
@@ -285,6 +296,8 @@ export default function AppLayout() {
         onClose={() => setCmdOpen(false)}
         resumeConversationId={resumeConversationId}
         onResumeHandled={() => setResumeConversationId(null)}
+        startExplanationRequest={explanationRequestPending}
+        onExplanationRequestHandled={() => setExplanationRequestPending(false)}
       />
       {cgAlert && (
         <div

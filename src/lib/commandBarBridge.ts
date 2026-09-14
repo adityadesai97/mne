@@ -18,3 +18,22 @@ export function subscribeToResumeConversationRequests(listener: ResumeConversati
 export function resumeConversationInCommandBar(conversationId: string) {
   resumeListeners.forEach(listener => listener(conversationId))
 }
+
+// Same pattern, for the Home page's portfolio explanation teaser: it has no
+// existing conversation to resume, just a request to open the command bar
+// and have it fetch/generate the explanation itself (see CommandBar.tsx's
+// handling of `startExplanationRequest`).
+type StartExplanationListener = () => void
+
+const explanationListeners = new Set<StartExplanationListener>()
+
+export function subscribeToExplanationRequests(listener: StartExplanationListener) {
+  explanationListeners.add(listener)
+  return () => {
+    explanationListeners.delete(listener)
+  }
+}
+
+export function openPortfolioExplanationInCommandBar() {
+  explanationListeners.forEach(listener => listener())
+}

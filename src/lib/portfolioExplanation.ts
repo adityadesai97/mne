@@ -3,11 +3,10 @@
 // Everything that can be computed from data already in memory (which
 // holdings moved, how much, whether that's a theme-wide or market-wide
 // pattern) is pure JS here — the LLM is only ever handed a short digest of
-// the result and asked to phrase it into prose. This file is the one
-// implementation of that math; `supabase/functions/check-portfolio-
-// explanations/index.ts` is a self-contained Deno port of the same rules
-// (edge functions can't import from `src/`, same reason `check-vests`
-// duplicates the RSU vesting math).
+// the result and asked to phrase it into prose. The full explanation is
+// generated ONLY on demand (a user opening it from the Home page teaser),
+// never by a background job — `buildTeaser` (the Home page card's one-line
+// hook) needs no LLM call at all, it's derived straight from computeMovers.
 
 import { getAllAssets } from './db/assets'
 import {
@@ -40,6 +39,14 @@ export const REGENERATION_HYSTERESIS_PCT = 0.75
 export const NOISE_BAND_PCT = 0.3
 export const BROAD_MOVE_MIN_POSITIONS = 3
 export const BROAD_MOVE_MAJORITY = 0.6
+/** A single mover dominant enough to name directly in the teaser/prompt
+ *  rather than talking about "N holdings" in the abstract. */
+export const DOMINANT_MOVER_CONTRIBUTION_PCT = 50
+
+/** The user turn seeded into the command bar when opening the explanation
+ *  from the Home page teaser — shared so the teaser's click handler and the
+ *  command bar's handling of it agree on the exact text. */
+export const EXPLANATION_TRIGGER_QUESTION = 'Why is my portfolio moving?'
 
 export interface SymbolMove {
   symbol: string
@@ -191,12 +198,23 @@ export function computeMovers(assets: any[], netWorth: number): MoversResult {
   return { movers, dayChangeDollars, dayChangePercent, hasMajorMove, isBroadMarketMove, themeMoves }
 }
 
+/** Calendar-day key used as a (deliberately simple) stand-in for "which
+ *  market session are we in" — the same UTC-date granularity already used
+ *  elsewhere in this app for "daily" things (net_worth_snapshots.date,
+ *  tickers.last_updated), not a timezone-aware NYSE-open calculation. */
+export function todayMarketDate(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
 /** Whether it's worth spending another LLM call given what's already
- *  stored — a sign flip, or the swing moving meaningfully past what's
- *  already reflected, per REGENERATION_HYSTERESIS_PCT. A `force` regenerate
- *  (the manual button, or the daily market-close sweep) bypasses this. */
+ *  stored: the stored explanation is from a prior market day (reset every
+ *  market open, see CLAUDE.md), or today's swing has moved meaningfully
+ *  past what's already reflected (or flipped sign), per
+ *  REGENERATION_HYSTERESIS_PCT. A `force` regenerate bypasses this
+ *  entirely (see generatePortfolioExplanation). */
 export function shouldRegenerate(current: { dayChangePercent: number }, last: PortfolioExplanationRow | null): boolean {
   if (!last) return true
+  if (last.market_date !== todayMarketDate()) return true
   const prevPct = Number(last.day_change_percent ?? 0)
   const currPct = current.dayChangePercent
   const signFlipped = prevPct !== 0 && currPct !== 0 && Math.sign(prevPct) !== Math.sign(currPct)
@@ -218,6 +236,33 @@ export function buildStaticNoMoveSummary(dayChangeDollars: number, dayChangePerc
     return 'No major moves today — your portfolio held steady.'
   }
   return `No major moves today — your portfolio was ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}), within normal day-to-day movement.`
+}
+
+/** The Home page card's one-line hook — entirely deterministic (no LLM,
+ *  no news calls), built straight from computeMovers' output so the card
+ *  costs nothing to render on every page load. Returns null when there's
+ *  nothing worth surfacing (computeMovers.hasMajorMove is false), in which
+ *  case the card renders nothing at all. Picks whichever framing fits the
+ *  shape of today's move:
+ *  - one holding dominates the swing → name it directly ("CRM moved …")
+ *  - several holdings individually crossed the per-stock bar → count them
+ *  - otherwise it's the aggregate swing carrying the story on its own */
+export function buildTeaser(result: MoversResult): string | null {
+  if (!result.hasMajorMove) return null
+
+  const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT)
+  const dominant = significantMovers.length === 1 && significantMovers[0].contributionPct >= DOMINANT_MOVER_CONTRIBUTION_PCT
+    ? significantMovers[0]
+    : null
+
+  if (dominant) {
+    return `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} today. Want to know why?`
+  }
+  if (significantMovers.length >= 2) {
+    return `${significantMovers.length} items in your portfolio moved substantially today. Want to know why?`
+  }
+  const direction = result.dayChangeDollars >= 0 ? 'up' : 'down'
+  return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% today. Want to know why?`
 }
 
 export const EXPLANATION_SYSTEM_PROMPT = `You explain a user's investment portfolio's daily performance in plain English.
@@ -301,13 +346,15 @@ export async function fetchMarketHeadlines(finnhubApiKey: string): Promise<Portf
   }
 }
 
-/** Browser-only orchestration: loads the portfolio, decides whether to
- *  regenerate, and (only when there's something to explain) fetches
- *  supporting headlines and calls the LLM. This is what the Home page's
- *  manual "Regenerate" button calls (force: true); the scheduled major-move
- *  and market-close sweeps run the ported equivalent in
- *  check-portfolio-explanations, since edge functions have no browser
- *  session to run this in. */
+/** Browser-only orchestration, called only when the user asks for it (the
+ *  Home page teaser opening a command bar session — see
+ *  CommandBar.tsx/commandBarBridge.ts): loads the portfolio, reuses the
+ *  stored explanation if it's still from today's market session and
+ *  nothing material has moved since (shouldRegenerate), otherwise
+ *  regenerates — fetching supporting headlines only when there's actually
+ *  something to explain. There is no background/scheduled path anymore;
+ *  every call here is inherently "manual" (a user opened it), `force`
+ *  exists only to bypass the cache-reuse check outright if ever needed. */
 export async function generatePortfolioExplanation(options: { force?: boolean } = {}): Promise<PortfolioExplanationRow> {
   const { force = false } = options
   const assets = await getAllAssets()
@@ -321,6 +368,8 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
     return existing
   }
 
+  const marketDate = todayMarketDate()
+
   if (!result.hasMajorMove) {
     return upsertPortfolioExplanation({
       summary: buildStaticNoMoveSummary(result.dayChangeDollars, result.dayChangePercent),
@@ -332,7 +381,8 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
       is_broad_market_move: false,
       market_headlines: [],
       theme_moves: [],
-      trigger: force ? 'manual' : 'major_move',
+      trigger: 'manual',
+      market_date: marketDate,
       input_tokens: null,
       output_tokens: null,
     })
@@ -371,7 +421,8 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
     is_broad_market_move: result.isBroadMarketMove,
     market_headlines: marketHeadlines,
     theme_moves: result.themeMoves,
-    trigger: force ? 'manual' : 'major_move',
+    trigger: 'manual',
+    market_date: marketDate,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
   })

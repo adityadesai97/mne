@@ -11,6 +11,7 @@ import { showAppAlert } from '@/lib/appAlerts'
 import { config } from '@/store/config'
 import { MODEL_FOR_PROVIDER } from '@/lib/llm'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
+import { generatePortfolioExplanation, EXPLANATION_TRIGGER_QUESTION } from '@/lib/portfolioExplanation'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -361,9 +362,15 @@ interface Props {
   /** Called once the resume request above has been consumed (loaded or
    *  failed) so the caller can clear it. */
   onResumeHandled?: () => void
+  /** Set by the Home page portfolio explanation teaser to open the panel
+   *  and have it fetch/generate the explanation itself as a fresh
+   *  conversation (there's nothing to resume — see commandBarBridge.ts). */
+  startExplanationRequest?: boolean
+  /** Called once the explanation request above has been consumed. */
+  onExplanationRequestHandled?: () => void
 }
 
-export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled }: Props) {
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled }: Props) {
   const [query, setQuery] = useState('')
   const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
@@ -532,7 +539,10 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     const serialized = serializeDisplayMessages(messages)
     if (serialized.length === 0) return
     try {
-      conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized })
+      // `origin` is only honored by saveConversation on the initial insert
+      // (no id yet) — harmless to pass on every later update of the same
+      // conversation too.
+      conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized, origin: conversationOriginRef.current })
       if (usage && (usage.inputTokens > 0 || usage.outputTokens > 0)) {
         const provider = config.llmProvider
         const model = MODEL_FOR_PROVIDER[provider]
@@ -550,6 +560,54 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       console.error('Failed to save conversation history', e)
     }
   }, [])
+
+  // Opening from the Home page portfolio explanation teaser: there's no
+  // conversation to resume, just a fresh one to start. Shows the seeded
+  // question immediately (reusing the normal `loading` thinking indicator)
+  // while generatePortfolioExplanation runs — which itself decides whether
+  // to reuse the cached explanation or actually call the LLM (see
+  // CLAUDE.md) — then appends the reply and persists as usual.
+  useEffect(() => {
+    if (!open || !startExplanationRequest) return
+    let cancelled = false
+    ;(async () => {
+      conversationIdRef.current = null
+      conversationOriginRef.current = 'portfolio_explanation'
+      const userMessage: DisplayMessage = { id: nextId(), role: 'user', content: EXPLANATION_TRIGGER_QUESTION }
+      setDisplayMessages([userMessage])
+      setIsExpanded(true)
+      setLoading(true)
+      try {
+        const row = await generatePortfolioExplanation()
+        if (cancelled) return
+        const usage = (row.input_tokens || row.output_tokens)
+          ? { inputTokens: row.input_tokens ?? 0, outputTokens: row.output_tokens ?? 0 }
+          : undefined
+        const assistantMessage: DisplayMessage = {
+          id: nextId(),
+          role: 'assistant',
+          kind: 'text',
+          content: row.summary,
+          trace: { generatedAt: new Date().toISOString(), steps: [], usage },
+        }
+        const updated = [userMessage, assistantMessage]
+        setDisplayMessages(updated)
+        void persistConversation(updated, usage)
+      } catch (e: any) {
+        if (cancelled) return
+        setDisplayMessages([
+          userMessage,
+          { id: nextId(), role: 'assistant', kind: 'action', action: { type: 'error', message: normalizeErrorMessage(e?.message || 'Failed to generate the explanation') } },
+        ])
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          onExplanationRequestHandled?.()
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, startExplanationRequest, persistConversation])
 
   useEffect(() => {
     if (inputRef.current) autoGrow(inputRef.current)

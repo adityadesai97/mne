@@ -596,7 +596,7 @@ export default function Home() {
           )}
         </motion.div>
 
-        <PortfolioExplanationCard />
+        <PortfolioExplanationCard assets={assets} netWorth={totalValue} />
 
         {/* ALLOCATION */}
         <motion.div
