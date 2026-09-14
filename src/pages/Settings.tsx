@@ -99,7 +99,6 @@ export default function Settings() {
     price_alerts_enabled: true,
     vest_alerts_enabled: true,
     capital_gains_alerts_enabled: true,
-    portfolio_explanation_enabled: false,
   })
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
@@ -201,7 +200,7 @@ export default function Settings() {
     }
   }
 
-  async function setNotificationToggle(field: 'price_alerts_enabled' | 'vest_alerts_enabled' | 'capital_gains_alerts_enabled' | 'portfolio_explanation_enabled', enabled: boolean) {
+  async function setNotificationToggle(field: 'price_alerts_enabled' | 'vest_alerts_enabled' | 'capital_gains_alerts_enabled', enabled: boolean) {
     const next = { ...settingsRef.current, [field]: enabled }
     setSettings(next)
     settingsRef.current = next
@@ -418,19 +417,6 @@ export default function Settings() {
             enabled={settings.auto_theme_assignment_enabled !== false}
             onEnable={() => { void setAutoThemeAssignmentEnabled(true) }}
             onDisable={() => { void setAutoThemeAssignmentEnabled(false) }}
-          />
-        </div>
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Portfolio Performance Explanation</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              AI summary of why your portfolio moved, shown on Home
-            </p>
-          </div>
-          <Toggle
-            enabled={settings.portfolio_explanation_enabled === true}
-            onEnable={() => { void setNotificationToggle('portfolio_explanation_enabled', true) }}
-            onDisable={() => { void setNotificationToggle('portfolio_explanation_enabled', false) }}
           />
         </div>
         <Row

@@ -1,5 +1,5 @@
 import {
-  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate,
+  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, appendSources,
 } from '../lib/portfolioExplanation'
 
 function stockAsset(opts: {
@@ -161,4 +161,32 @@ test('buildTeaser falls back to the aggregate swing when no single holding cross
   const result = computeMovers(assets, 100_000)
   expect(result.movers.every(m => Math.abs(m.percentChange) < 5)).toBe(true)
   expect(buildTeaser(result)).toMatch(/^Your portfolio went up \d+\.\d\d% today\. Want to know why\?$/)
+})
+
+test('appendSources leaves the summary unchanged when there is nothing to cite', () => {
+  expect(appendSources('Portfolio rose today.', [], [])).toBe('Portfolio rose today.')
+})
+
+test('appendSources appends a deduped, clickable list built from headline data, not the model', () => {
+  const movers = [
+    {
+      symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 5, contributionPct: 100,
+      headlines: [
+        { title: 'Nvidia beats', source: 'Reuters', url: 'https://example.com/nvda', datetime: 0 },
+        { title: 'No URL here', source: 'AP', url: '', datetime: 0 },
+      ],
+    },
+  ] as any
+  const marketHeadlines = [
+    { title: 'Nvidia beats', source: 'Reuters', url: 'https://example.com/nvda', datetime: 0 }, // duplicate URL
+    { title: 'Fed holds rates', source: 'AP', url: 'https://example.com/fed', datetime: 0 },
+  ]
+  const result = appendSources('Portfolio rose today.', movers, marketHeadlines)
+  expect(result).toContain('Portfolio rose today.')
+  expect(result).toContain('Sources:')
+  expect(result).toContain('- [Nvidia beats](https://example.com/nvda) — Reuters')
+  expect(result).toContain('- [Fed holds rates](https://example.com/fed) — AP')
+  expect(result).not.toContain('No URL here')
+  // The duplicate URL only appears once.
+  expect(result.match(/example\.com\/nvda/g)).toHaveLength(1)
 })

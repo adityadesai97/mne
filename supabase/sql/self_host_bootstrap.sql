@@ -282,7 +282,9 @@ alter table public.user_settings add column if not exists capital_gains_alerts_e
 alter table public.user_settings add column if not exists llm_provider text not null default 'claude';
 alter table public.user_settings add column if not exists groq_api_key text;
 alter table public.user_settings drop column if exists tax_harvest_threshold;
-alter table public.user_settings add column if not exists portfolio_explanation_enabled boolean not null default false;
+-- Was a toggle for the (now removed) background generation path; the
+-- feature is on-demand only now, so there's nothing to opt in/out of.
+alter table public.user_settings drop column if exists portfolio_explanation_enabled;
 
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),

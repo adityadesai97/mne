@@ -34,8 +34,10 @@ function normalizeErrorMessage(message: string): string {
   return message
 }
 
+const MARKDOWN_LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/
+
 function parseInlineMd(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i}>{part.slice(2, -2)}</strong>
@@ -48,6 +50,14 @@ function parseInlineMd(text: string): React.ReactNode {
         <code key={i} className="px-1 py-0.5 rounded bg-muted text-[0.92em] font-mono">
           {part.slice(1, -1)}
         </code>
+      )
+    }
+    const link = MARKDOWN_LINK_RE.exec(part)
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          {link[1]}
+        </a>
       )
     }
     return <Fragment key={i}>{part}</Fragment>
