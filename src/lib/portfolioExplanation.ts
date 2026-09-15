@@ -280,8 +280,14 @@ export function buildStaticNoMoveSummary(dayChangeDollars: number, dayChangePerc
  *  since it was generated — a new sector, a new mover, or (if neither)
  *  just the changed swing — rather than repeating a generic line that
  *  might describe the same story the user already read. Otherwise (first
- *  time today, or nothing's changed) picks whichever generic framing fits:
+ *  time today, or nothing's changed) picks whichever generic framing fits,
+ *  in priority order (mirroring the "what's new" path above so sector gets
+ *  the same first-class treatment on the very first check of the day, not
+ *  just once something has changed since the last one):
  *  - one holding dominates the swing → name it directly ("CRM moved …")
+ *  - a sector/theme move was flagged → name it ("Your Semiconductors
+ *    holdings moved …"), picking the theme with the largest average move
+ *    when more than one is flagged
  *  - several holdings individually crossed the per-stock bar → count them
  *  - otherwise it's the aggregate swing carrying the story on its own */
 export function buildTeaser(result: MoversResult, previous?: PortfolioExplanationRow | null): string | null {
@@ -307,6 +313,10 @@ export function buildTeaser(result: MoversResult, previous?: PortfolioExplanatio
 
   if (dominant) {
     return `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} today. Want to know why?`
+  }
+  if (result.themeMoves.length > 0) {
+    const primaryTheme = [...result.themeMoves].sort((a, b) => Math.abs(b.avgPercentChange) - Math.abs(a.avgPercentChange))[0]
+    return `Your ${primaryTheme.theme} holdings moved ${primaryTheme.direction} ${Math.abs(primaryTheme.avgPercentChange).toFixed(2)}% today. Want to know why?`
   }
   if (significantMovers.length >= 2) {
     return `${significantMovers.length} items in your portfolio moved substantially today. Want to know why?`
