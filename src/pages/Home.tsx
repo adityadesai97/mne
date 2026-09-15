@@ -355,15 +355,19 @@ export default function Home() {
     return [...dailyMovers].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 5)
   }, [dailyMovers, moverSort])
 
-  // Today's change, from the tail of the net worth series (today's snapshot
-  // vs yesterday's, one row per day) — drives both the ambient glow's color
-  // and the daily change figure shown under the hero number.
-  const previousNetWorthValue = netWorthValues.length >= 2 ? netWorthValues[netWorthValues.length - 2] : null
-  const todayChange = netWorthValues.length >= 2
-    ? netWorthValues[netWorthValues.length - 1] - previousNetWorthValue!
-    : 0
-  const todayChangePercent = previousNetWorthValue ? (todayChange / previousNetWorthValue) * 100 : 0
-  const hasMood = netWorthValues.length >= 2 && todayChange !== 0
+  // Today's change: the sum of each stock position's (current price − last
+  // close) move — the same computeDailyChange basis Portfolio Pulse uses
+  // (via computeMovers), so the hero and the explanation card always agree.
+  // Deliberately NOT derived from the net worth snapshot series anymore —
+  // that compared today's live net worth to whatever net worth happened to
+  // be recorded the last time the app was open yesterday (recordDailySnapshot
+  // overwrites "today"'s row on every visit), which could be any point in
+  // yesterday's session rather than its actual close, and silently understated
+  // or overstated the real move depending on when that was. Drives both the
+  // ambient glow's color and the daily change figure under the hero number.
+  const todayChange = dailyMovers.reduce((sum, m) => sum + m.dollarChange, 0)
+  const todayChangePercent = totalValue > 0 ? (todayChange / totalValue) * 100 : 0
+  const hasMood = dailyMovers.length > 0 && todayChange !== 0
   const moodIsPositive = todayChange >= 0
 
   // Short rotating one-liners for the insight ticker — all derived from data
