@@ -17,6 +17,7 @@ import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
 import { subscribeToResumeConversationRequests, subscribeToExplanationRequests } from '@/lib/commandBarBridge'
+import type { PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -120,7 +121,7 @@ export default function AppLayout() {
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
-  const [explanationRequestPending, setExplanationRequestPending] = useState(false)
+  const [pendingExplanationSlot, setPendingExplanationSlot] = useState<PortfolioInsightSlot | null>(null)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
 
   // Settings' conversation history list lives outside CommandBar's tree —
@@ -133,12 +134,12 @@ export default function AppLayout() {
     })
   }, [])
 
-  // Same bridge, for the Home page's portfolio explanation teaser — it has
-  // no existing conversation to resume, just a request to open the command
-  // bar and let it fetch/generate the explanation itself.
+  // Same bridge, for the Portfolio Pulse carousel — it has no existing
+  // conversation to resume, just a request to open the command bar and let
+  // it fetch/generate the clicked card's own explanation.
   useEffect(() => {
-    return subscribeToExplanationRequests(() => {
-      setExplanationRequestPending(true)
+    return subscribeToExplanationRequests((slot) => {
+      setPendingExplanationSlot(slot)
       setCmdOpen(true)
     })
   }, [])
@@ -296,8 +297,8 @@ export default function AppLayout() {
         onClose={() => setCmdOpen(false)}
         resumeConversationId={resumeConversationId}
         onResumeHandled={() => setResumeConversationId(null)}
-        startExplanationRequest={explanationRequestPending}
-        onExplanationRequestHandled={() => setExplanationRequestPending(false)}
+        startExplanationRequest={pendingExplanationSlot}
+        onExplanationRequestHandled={() => setPendingExplanationSlot(null)}
       />
       {cgAlert && (
         <div

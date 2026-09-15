@@ -1,6 +1,7 @@
 import {
   computeMovers, computeMoversForWindow, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
   explanationTriggerQuestion, DAILY_PORTFOLIO_SLOT, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME, MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME,
+  computeCandidateSlots, buildSlotTeaser, scopeMoversResult, CUSTOM_WINDOW_DAYS,
   type PortfolioInsightSlot,
 } from '../lib/portfolioExplanation'
 import type { TickerPricePoint } from '../lib/db/tickerPriceHistory'
@@ -337,4 +338,77 @@ test('explanationTriggerQuestion names the stock/sector and timeframe for other 
 
 test('MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME also scales up with timeframe', () => {
   expect(MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME.daily).toBeLessThan(MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME.yearly)
+})
+
+test('scopeMoversResult narrows to just one stock for a stock-scope slot', () => {
+  const movers = [
+    { symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 8, contributionPct: 60, headlines: [] },
+    { symbol: 'AMD', name: 'AMD', dollarChange: 50, percentChange: 4, contributionPct: 40, headlines: [] },
+  ]
+  const result = moversResult(1.0, { movers, themeMoves: [] })
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 }
+  const scoped = scopeMoversResult(result, slot)
+  expect(scoped.movers).toEqual([movers[0]])
+  expect(scoped.hasMajorMove).toBe(true)
+  expect(scoped.dayChangeDollars).toBe(100)
+  expect(scoped.dayChangePercent).toBe(8)
+})
+
+test('buildSlotTeaser for DAILY_PORTFOLIO_SLOT matches buildTeaser exactly', () => {
+  const assets = [stockAsset({ symbol: 'CRM', currentPrice: 108, previousClose: 100, shares: 100 })]
+  const result = computeMovers(assets, 100_000)
+  expect(buildSlotTeaser(DAILY_PORTFOLIO_SLOT, result)).toBe(buildTeaser(result))
+})
+
+test('buildSlotTeaser names the stock directly for a stock-scope slot', () => {
+  const assets = [
+    stockAsset({ symbol: 'NVDA', currentPrice: 110, previousClose: 100, shares: 10 }),
+    stockAsset({ symbol: 'KO', currentPrice: 100.05, previousClose: 100, shares: 10 }),
+  ]
+  const result = computeMovers(assets, 100_000)
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 }
+  expect(buildSlotTeaser(slot, result)).toBe('NVDA moved +10.00% today. Want to know why?')
+})
+
+test('buildSlotTeaser names the sector for a sector-scope slot', () => {
+  const assets = [
+    stockAsset({ symbol: 'NVDA', currentPrice: 106, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AMD', currentPrice: 105, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AVGO', currentPrice: 107, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+  ]
+  const result = computeMovers(assets, 1_000_000)
+  const slot: PortfolioInsightSlot = { scope: 'sector', scopeKey: 'Semiconductors', timeframe: 'daily', windowDays: 1 }
+  expect(buildSlotTeaser(slot, result)).toBe('Your Semiconductors holdings moved up 6.00% today. Want to know why?')
+})
+
+test('buildSlotTeaser returns null for a stock-scope slot whose mover no longer qualifies', () => {
+  const assets = [stockAsset({ symbol: 'KO', currentPrice: 100.05, previousClose: 100, shares: 10 })]
+  const result = computeMovers(assets, 100_000)
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 }
+  expect(buildSlotTeaser(slot, result)).toBeNull()
+})
+
+test('computeCandidateSlots surfaces both a daily and weekly slot for the same stock when each crosses its own bar', () => {
+  const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 110, previousClose: 100, shares: 10, tickerId: 't-nvda' })]
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-nvda', [{ date: daysAgo(7), price: 95 }]]])
+  const slots = computeCandidateSlots(assets, 1_000_000, priceHistory)
+  expect(slots).toContainEqual({ scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 })
+  expect(slots).toContainEqual({ scope: 'stock', scopeKey: 'NVDA', timeframe: 'weekly', windowDays: 7 })
+})
+
+test('computeCandidateSlots finds a notable custom-window move not covered by any fixed timeframe', () => {
+  const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 130, previousClose: 129, shares: 10, tickerId: 't-nvda' })]
+  const priceHistory = new Map<string, TickerPricePoint[]>([
+    ['t-nvda', [
+      { date: daysAgo(60), price: 100 }, // +30% over 60 days
+      { date: daysAgo(30), price: 115 }, // +13% over 30 days — under the 15% monthly bar
+      { date: daysAgo(7), price: 122 }, // +6.6% over 7 days — under the 8% weekly bar
+    ]],
+  ])
+  const slots = computeCandidateSlots(assets, 1_000_000, priceHistory)
+  const fixedTimeframeSlots = slots.filter(s => s.scopeKey === 'NVDA' && s.timeframe !== 'custom')
+  expect(fixedTimeframeSlots).toHaveLength(0)
+  const customSlot = slots.find(s => s.scope === 'stock' && s.scopeKey === 'NVDA' && s.timeframe === 'custom')
+  expect(customSlot).toBeDefined()
+  expect(CUSTOM_WINDOW_DAYS).toContain(customSlot!.windowDays)
 })
