@@ -1,24 +1,40 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles, ArrowRight } from 'lucide-react'
 import { computeMovers, buildTeaser } from '@/lib/portfolioExplanation'
+import { getPortfolioExplanation, type PortfolioExplanationRow } from '@/lib/db/portfolioExplanations'
 import { openPortfolioExplanationInCommandBar } from '@/lib/commandBarBridge'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
 
-/** The Home page's portfolio explanation teaser — a one-line, fully
- *  deterministic hook (see buildTeaser: no LLM call, no DB read, computed
- *  straight from the already-loaded assets/net worth every render) that
- *  opens a command bar session on click. The actual LLM-generated
- *  explanation is fetched/generated there, on demand — see
- *  CommandBar.tsx's handling of `startExplanationRequest`. Always on (no
- *  settings toggle — there's nothing to opt out of costing anything until
- *  it's clicked); renders nothing when there's no major move to point at. */
+/** The Home page's portfolio explanation teaser — a one-line, deterministic
+ *  hook (see buildTeaser: no LLM call, computed straight from the
+ *  already-loaded assets/net worth every render) that opens a command bar
+ *  session on click. The actual LLM-generated explanation is fetched/
+ *  generated there, on demand — see CommandBar.tsx's handling of
+ *  `startExplanationRequest`. Always on (no settings toggle — there's
+ *  nothing to opt out of costing anything until it's clicked); renders
+ *  nothing when there's no major move to point at.
+ *
+ *  Also does one cheap DB read for the previously-generated explanation
+ *  (if any), purely so buildTeaser can tell "you already saw this" from
+ *  "something new happened since" and word the hook accordingly — no LLM
+ *  involved, just a row read. */
 export function PortfolioExplanationCard({ assets, netWorth }: { assets: any[]; netWorth: number }) {
+  const [previous, setPrevious] = useState<PortfolioExplanationRow | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getPortfolioExplanation()
+      .then(row => { if (!cancelled) setPrevious(row) })
+      .catch(e => console.error('Failed to load previous portfolio explanation', e))
+    return () => { cancelled = true }
+  }, [])
+
   const teaser = useMemo(() => {
     if (assets.length === 0) return null
-    return buildTeaser(computeMovers(assets, netWorth))
-  }, [assets, netWorth])
+    return buildTeaser(computeMovers(assets, netWorth), previous)
+  }, [assets, netWorth, previous])
 
   if (!teaser) return null
 
