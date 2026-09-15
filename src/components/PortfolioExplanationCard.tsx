@@ -25,7 +25,7 @@ export function PortfolioExplanationCard({ assets, netWorth }: { assets: any[]; 
 
   useEffect(() => {
     let cancelled = false
-    getPortfolioExplanation()
+    getPortfolioExplanation('portfolio', '', 'daily')
       .then(row => { if (!cancelled) setPrevious(row) })
       .catch(e => console.error('Failed to load previous portfolio explanation', e))
     return () => { cancelled = true }

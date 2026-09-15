@@ -379,6 +379,28 @@ create unique index if not exists portfolio_explanations_user_id_key
 -- move happens or a new market day starts, tracked by this column.
 alter table public.portfolio_explanations add column if not exists market_date date not null default current_date;
 
+-- One row per (user, scope, scope_key, timeframe) — the Portfolio Pulse
+-- carousel caches an independent explanation per insight (a stock's daily
+-- move, a sector's weekly move, the portfolio's yearly move, etc.).
+alter table public.portfolio_explanations add column if not exists scope text not null default 'portfolio';
+alter table public.portfolio_explanations add column if not exists scope_key text not null default '';
+alter table public.portfolio_explanations add column if not exists timeframe text not null default 'daily';
+alter table public.portfolio_explanations add column if not exists window_days int not null default 1;
+
+alter table public.portfolio_explanations drop constraint if exists portfolio_explanations_scope_check;
+alter table public.portfolio_explanations
+  add constraint portfolio_explanations_scope_check
+  check (scope in ('stock', 'sector', 'portfolio'));
+
+alter table public.portfolio_explanations drop constraint if exists portfolio_explanations_timeframe_check;
+alter table public.portfolio_explanations
+  add constraint portfolio_explanations_timeframe_check
+  check (timeframe in ('daily', 'weekly', 'monthly', 'yearly', 'custom'));
+
+drop index if exists portfolio_explanations_user_id_key;
+create unique index if not exists portfolio_explanations_scope_key
+  on public.portfolio_explanations (user_id, scope, scope_key, timeframe);
+
 -- Append-only usage ledger shared by portfolio explanations + the command
 -- bar. Each feature also denormalizes its own latest/running totals above
 -- for cheap inline display without querying this table.

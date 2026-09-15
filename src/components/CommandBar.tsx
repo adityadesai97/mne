@@ -12,7 +12,7 @@ import { config } from '@/store/config'
 import { MODEL_FOR_PROVIDER } from '@/lib/llm'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
-import { generatePortfolioExplanation, EXPLANATION_TRIGGER_QUESTION, stripSources } from '@/lib/portfolioExplanation'
+import { generatePortfolioExplanation, DAILY_PORTFOLIO_SLOT, EXPLANATION_TRIGGER_QUESTION, stripSources } from '@/lib/portfolioExplanation'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -589,7 +589,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       setIsExpanded(true)
       setLoading(true)
       try {
-        const row = await generatePortfolioExplanation()
+        const row = await generatePortfolioExplanation(DAILY_PORTFOLIO_SLOT)
         if (cancelled) return
         const usage = (row.input_tokens || row.output_tokens)
           ? { inputTokens: row.input_tokens ?? 0, outputTokens: row.output_tokens ?? 0 }

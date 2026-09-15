@@ -30,6 +30,13 @@ export interface PortfolioExplanationThemeMove {
 // old rows in the DB may still carry them.
 export type PortfolioExplanationTrigger = 'manual' | 'major_move' | 'market_close'
 
+// What a row is about: the whole portfolio, one sector/theme, or one stock,
+// over a given window. Together (scope, scope_key, timeframe) identify one
+// of the Portfolio Pulse carousel's independent insight slots — see
+// PortfolioInsightSlot in portfolioExplanation.ts, which is the same shape.
+export type PortfolioExplanationScope = 'stock' | 'sector' | 'portfolio'
+export type PortfolioExplanationTimeframe = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+
 export interface PortfolioExplanationRow {
   id: string
   user_id: string
@@ -44,10 +51,20 @@ export interface PortfolioExplanationRow {
   theme_moves: PortfolioExplanationThemeMove[]
   trigger: PortfolioExplanationTrigger
   // Calendar day (todayMarketDate() in portfolioExplanation.ts) this
-  // explanation reflects — a stored explanation from any earlier day is
-  // treated as stale and regenerated on next request ("reset every market
-  // open"), regardless of how small today's swing looks so far.
+  // explanation reflects — only meaningful for timeframe 'daily' (see
+  // shouldRegenerate's resetsDaily param): a stored daily explanation from
+  // any earlier day is treated as stale regardless of how small the swing
+  // looks so far. Rolling weekly/monthly/yearly/custom windows have no such
+  // discrete "reset" and rely on the hysteresis/membership checks alone.
   market_date: string
+  // Empty string for scope 'portfolio' (not null — see the migration for
+  // why); the symbol for 'stock'; the theme name for 'sector'.
+  scope: PortfolioExplanationScope
+  scope_key: string
+  timeframe: PortfolioExplanationTimeframe
+  // The actual day-count backing the timeframe (1/7/30/365, or an
+  // arbitrary value for 'custom', which has no fixed count of its own).
+  window_days: number
   input_tokens: number | null
   output_tokens: number | null
   generated_at: string
@@ -55,27 +72,36 @@ export interface PortfolioExplanationRow {
 
 export type PortfolioExplanationInput = Omit<PortfolioExplanationRow, 'id' | 'user_id' | 'generated_at'>
 
-/** The signed-in user's latest explanation row, or null if none has been
- *  generated yet. There's only ever one row per user — new generations
- *  overwrite it (see upsertPortfolioExplanation). */
-export async function getPortfolioExplanation(): Promise<PortfolioExplanationRow | null> {
+/** The signed-in user's stored explanation row for one insight slot
+ *  (scope + scope_key + timeframe), or null if that slot has never been
+ *  generated. One row per slot — a new generation for the same slot
+ *  overwrites it (see upsertPortfolioExplanation). */
+export async function getPortfolioExplanation(
+  scope: PortfolioExplanationScope,
+  scopeKey: string,
+  timeframe: PortfolioExplanationTimeframe,
+): Promise<PortfolioExplanationRow | null> {
   const { data, error } = await getSupabaseClient()
     .from('portfolio_explanations')
     .select('*')
+    .eq('scope', scope)
+    .eq('scope_key', scopeKey)
+    .eq('timeframe', timeframe)
     .maybeSingle()
   if (error) throw error
   return data as PortfolioExplanationRow | null
 }
 
-/** Replaces the signed-in user's explanation row (upsert on the table's
- *  unique user_id index) — there is intentionally no history kept here;
- *  `llm_usage_log` is where per-generation trends live. */
+/** Replaces the signed-in user's explanation row for this insight slot
+ *  (upsert on the table's unique (user_id, scope, scope_key, timeframe)
+ *  index) — there is intentionally no history kept here; `llm_usage_log`
+ *  is where per-generation trends live. */
 export async function upsertPortfolioExplanation(input: PortfolioExplanationInput): Promise<PortfolioExplanationRow> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('portfolio_explanations')
-    .upsert({ ...input, user_id: user.id, generated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    .upsert({ ...input, user_id: user.id, generated_at: new Date().toISOString() }, { onConflict: 'user_id,scope,scope_key,timeframe' })
     .select()
     .single()
   if (error) throw error

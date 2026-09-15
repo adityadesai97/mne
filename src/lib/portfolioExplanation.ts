@@ -15,8 +15,11 @@ import {
   type PortfolioExplanationHeadline,
   type PortfolioExplanationMover,
   type PortfolioExplanationRow,
+  type PortfolioExplanationScope,
   type PortfolioExplanationThemeMove,
+  type PortfolioExplanationTimeframe,
 } from './db/portfolioExplanations'
+import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
 import { computeDailyChange, computeShareCount, computeTotalNetWorth } from './portfolio'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
@@ -43,10 +46,67 @@ export const BROAD_MOVE_MAJORITY = 0.6
  *  rather than talking about "N holdings" in the abstract. */
 export const DOMINANT_MOVER_CONTRIBUTION_PCT = 50
 
+/** A single Portfolio Pulse carousel card: one insight, independently
+ *  generated/cached/regenerated. `scopeKey` is '' for scope 'portfolio',
+ *  the symbol for 'stock', the theme name for 'sector'. `windowDays` is the
+ *  actual day-count backing `timeframe` (1/7/30/365, or an arbitrary value
+ *  for 'custom') — see the matching columns on portfolio_explanations. */
+export interface PortfolioInsightSlot {
+  scope: PortfolioExplanationScope
+  scopeKey: string
+  timeframe: PortfolioExplanationTimeframe
+  windowDays: number
+}
+
+/** The one slot that existed before the carousel — kept as a named constant
+ *  so the still-single-card UI can keep behaving exactly as before while
+ *  the generation/storage layer underneath is generalized. */
+export const DAILY_PORTFOLIO_SLOT: PortfolioInsightSlot = { scope: 'portfolio', scopeKey: '', timeframe: 'daily', windowDays: 1 }
+
+/** A move-size bar that's major for one timeframe is noise for another — a
+ *  5% daily stock move is notable, a 5% yearly move isn't. 'daily' keeps
+ *  the original constants above as its default; the rest are tunable. */
+export const MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME: Record<PortfolioExplanationTimeframe, number> = {
+  daily: MAJOR_MOVE_STOCK_PCT,
+  weekly: 8,
+  monthly: 15,
+  yearly: 30,
+  custom: 20,
+}
+export const MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME: Record<PortfolioExplanationTimeframe, number> = {
+  daily: MAJOR_MOVE_PORTFOLIO_PCT,
+  weekly: 2.5,
+  monthly: 5,
+  yearly: 10,
+  custom: 5,
+}
+
 /** The user turn seeded into the command bar when opening the explanation
  *  from the Home page teaser — shared so the teaser's click handler and the
- *  command bar's handling of it agree on the exact text. */
+ *  command bar's handling of it agree on the exact text. Superseded by
+ *  `explanationTriggerQuestion(slot)` for the carousel's other slots; kept
+ *  as the exact literal the single daily-portfolio card has always used. */
 export const EXPLANATION_TRIGGER_QUESTION = 'Why is my portfolio moving?'
+
+function timeframeLabel(timeframe: PortfolioExplanationTimeframe, windowDays: number): string {
+  switch (timeframe) {
+    case 'daily': return 'today'
+    case 'weekly': return 'this week'
+    case 'monthly': return 'this month'
+    case 'yearly': return 'this year'
+    case 'custom': return `over the last ${windowDays} days`
+  }
+}
+
+/** The user turn seeded into the command bar for any carousel slot —
+ *  generalizes EXPLANATION_TRIGGER_QUESTION, which remains the exact
+ *  literal this produces for DAILY_PORTFOLIO_SLOT. */
+export function explanationTriggerQuestion(slot: PortfolioInsightSlot): string {
+  const when = timeframeLabel(slot.timeframe, slot.windowDays)
+  if (slot.scope === 'stock') return `Why did ${slot.scopeKey} move ${when}?`
+  if (slot.scope === 'sector') return `Why did my ${slot.scopeKey} holdings move ${when}?`
+  return slot.timeframe === 'daily' ? 'Why is my portfolio moving?' : `Why is my portfolio moving ${when}?`
+}
 
 export interface SymbolMove {
   symbol: string
@@ -130,12 +190,72 @@ function detectThemeMoves(symbolMoves: SymbolMove[]): PortfolioExplanationThemeM
   return result
 }
 
-/** The core attribution pass: ranks movers, and derives both the
- *  theme-cluster and whole-market breadth signals from the same per-symbol
- *  data — see CLAUDE.md's token-efficiency notes for why each tier only
- *  fires (or fetches supporting news) when its own condition is met. */
-export function computeMovers(assets: any[], netWorth: number): MoversResult {
-  const symbolMoves = computeSymbolMoves(assets)
+/** Given `history` (one ticker's price points, sorted ascending by date),
+ *  finds the closest recorded price at least `days` old — the anchor for a
+ *  weekly/monthly/yearly/custom move, playing the role `previous_close`
+ *  plays for the daily case. Returns null when there's no point old enough
+ *  yet (a new ticker, or one added before ticker_price_history existed) —
+ *  the caller simply excludes that symbol from this window, which is what
+ *  makes longer-timeframe cards phase in gradually as history accumulates. */
+function findPriceApproxNDaysAgo(history: TickerPricePoint[], days: number): number | null {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  const cutoffStr = cutoff.toISOString().split('T')[0]
+  let candidate: TickerPricePoint | null = null
+  for (const point of history) {
+    if (point.date > cutoffStr) break
+    candidate = point
+  }
+  return candidate ? candidate.price : null
+}
+
+/** Same shape as computeSymbolMoves, but for a weekly/monthly/yearly/custom
+ *  window — each stock's move is `shares × (currentPrice − priceNDaysAgo)`
+ *  using ticker_price_history instead of previous_close. A stock with no
+ *  history point old enough for `days` is excluded, same as computeSymbolMoves
+ *  excluding a stock with no previous_close. Kept separate from
+ *  computeSymbolMoves (rather than parameterizing it) so the well-tested
+ *  daily path is never at risk of a regression from this generalization. */
+function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, TickerPricePoint[]>, days: number): SymbolMove[] {
+  const bySymbol = new Map<string, SymbolMove>()
+  for (const asset of assets) {
+    if (asset.asset_type !== 'Stock') continue
+    const symbol = asset.ticker?.symbol
+    const tickerId = asset.ticker?.id
+    if (!symbol || !tickerId) continue
+    const shares = computeShareCount(asset)
+    if (shares <= 0) continue
+    const currentPrice = Number(asset.ticker?.current_price)
+    if (!Number.isFinite(currentPrice)) continue
+    const priceThen = findPriceApproxNDaysAgo(priceHistory.get(tickerId) ?? [], days)
+    if (priceThen == null || priceThen <= 0) continue
+
+    const dollarChange = shares * (currentPrice - priceThen)
+    const percentChange = ((currentPrice - priceThen) / priceThen) * 100
+
+    const existing = bySymbol.get(symbol)
+    if (existing) {
+      existing.dollarChange += dollarChange
+      continue
+    }
+    bySymbol.set(symbol, {
+      symbol,
+      name: String(asset.name ?? symbol),
+      dollarChange,
+      percentChange,
+      themes: tickerThemeNames(asset),
+    })
+  }
+  return [...bySymbol.values()]
+}
+
+/** The core attribution pass, shared by every timeframe: ranks movers, and
+ *  derives both the theme-cluster and whole-market breadth signals from the
+ *  same per-symbol data — see CLAUDE.md's token-efficiency notes for why
+ *  each tier only fires (or fetches supporting news) when its own condition
+ *  is met. `stockPct`/`portfolioPct` are the timeframe-scaled "major move"
+ *  bars (see MAJOR_MOVE_*_PCT_BY_TIMEFRAME). */
+function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: number, portfolioPct: number): MoversResult {
   const dayChangeDollars = Math.round(symbolMoves.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100
   const dayChangePercent = netWorth > 0 ? (dayChangeDollars / netWorth) * 100 : 0
 
@@ -192,10 +312,36 @@ export function computeMovers(assets: any[], netWorth: number): MoversResult {
   }))
 
   const hasMajorMove =
-    movers.some(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT) ||
-    Math.abs(dayChangePercent) >= MAJOR_MOVE_PORTFOLIO_PCT
+    movers.some(m => Math.abs(m.percentChange) >= stockPct) ||
+    Math.abs(dayChangePercent) >= portfolioPct
 
   return { movers, dayChangeDollars, dayChangePercent, hasMajorMove, isBroadMarketMove, themeMoves }
+}
+
+/** The daily basis — current price vs. previous_close, summed. Unchanged
+ *  from before this file gained other timeframes; every existing caller
+ *  (Home's hero/Daily Movers, the Portfolio Pulse teaser) keeps working
+ *  exactly as documented in CLAUDE.md. */
+export function computeMovers(assets: any[], netWorth: number): MoversResult {
+  return attributeMoves(computeSymbolMoves(assets), netWorth, MAJOR_MOVE_STOCK_PCT, MAJOR_MOVE_PORTFOLIO_PCT)
+}
+
+/** The weekly/monthly/yearly/custom basis — same attribution pipeline as
+ *  computeMovers, sourced from `priceHistory` (see getTickerPriceHistory)
+ *  instead of previous_close, with move-size bars scaled to the timeframe. */
+export function computeMoversForWindow(
+  assets: any[],
+  netWorth: number,
+  priceHistory: Map<string, TickerPricePoint[]>,
+  windowDays: number,
+  timeframe: PortfolioExplanationTimeframe,
+): MoversResult {
+  return attributeMoves(
+    computeSymbolMovesForWindow(assets, priceHistory, windowDays),
+    netWorth,
+    MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[timeframe],
+    MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME[timeframe],
+  )
 }
 
 /** Calendar-day key used as a (deliberately simple) stand-in for "which
@@ -228,7 +374,10 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
  *  stored — checked at three independent levels, any one of which is
  *  enough on its own (see CLAUDE.md):
  *  - market day: the stored explanation is from a prior market session
- *    (reset every market open) regardless of how the numbers compare.
+ *    (reset every market open) regardless of how the numbers compare. Only
+ *    applies when `resetsDaily` is true (the default) — a rolling
+ *    weekly/monthly/yearly/custom window has no such discrete boundary and
+ *    relies on the checks below alone (see generatePortfolioExplanation).
  *  - portfolio: today's aggregate swing has moved meaningfully past what's
  *    stored, or flipped sign (REGENERATION_HYSTERESIS_PCT).
  *  - stock / sector: the *set* of individually-significant movers, or of
@@ -237,9 +386,9 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
  *    even if the aggregate swing happens to look similar.
  *  A `force` regenerate bypasses this entirely (see
  *  generatePortfolioExplanation). */
-export function shouldRegenerate(current: MoversResult, last: PortfolioExplanationRow | null): boolean {
+export function shouldRegenerate(current: MoversResult, last: PortfolioExplanationRow | null, resetsDaily: boolean = true): boolean {
   if (!last) return true
-  if (last.market_date !== todayMarketDate()) return true
+  if (resetsDaily && last.market_date !== todayMarketDate()) return true
 
   const prevPct = Number(last.day_change_percent ?? 0)
   const currPct = current.dayChangePercent
@@ -325,14 +474,19 @@ export function buildTeaser(result: MoversResult, previous?: PortfolioExplanatio
   return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% today. Want to know why?`
 }
 
-export const EXPLANATION_SYSTEM_PROMPT = `You explain a user's investment portfolio's daily performance in plain English.
+/** `timeWord` defaults to 'daily' so the exported constant below (still
+ *  used wherever a slot isn't threaded through) reads exactly as before. */
+export function explanationSystemPrompt(timeWord: string = 'daily'): string {
+  return `You explain a user's investment portfolio's ${timeWord} performance in plain English.
 Rules:
 - Use ONLY the facts given below. Never invent a cause, headline, or number.
 - Write 2-4 sentences, no preamble, no markdown.
 - Mention specific ticker symbols and theme names by name where relevant (so the app can highlight them) — don't paraphrase them away.
 - If headlines are provided for a mover or the market, briefly weave in the likely cause; if none are provided for something, just report the numbers.
 - Distinguish company-specific moves from theme-wide or broad-market moves when the facts show that pattern.
-- If an earlier update from today is given, this is a refresh of it, not a brand new answer: keep whatever from it is still relevant (don't silently drop a still-current position or theme just because it isn't repeated below), and clearly work in what's new. Don't just concatenate the two — write one coherent update. If something from the earlier update is no longer reflected in today's facts below, drop it.`
+- If an earlier update covering the same period is given, this is a refresh of it, not a brand new answer: keep whatever from it is still relevant (don't silently drop a still-current position or theme just because it isn't repeated below), and clearly work in what's new. Don't just concatenate the two — write one coherent update. If something from the earlier update is no longer reflected in the facts below, drop it.`
+}
+export const EXPLANATION_SYSTEM_PROMPT = explanationSystemPrompt()
 
 export function buildExplanationUserPrompt(
   movers: PortfolioExplanationMover[],
@@ -341,21 +495,24 @@ export function buildExplanationUserPrompt(
   themeMoves: PortfolioExplanationThemeMove[],
   marketHeadlines: PortfolioExplanationHeadline[],
   previousSummary?: string,
+  label: string = 'Portfolio day change',
+  swingWord: string = "today's",
+  previousLabel: string = 'Earlier update from today',
 ): string {
   const lines: string[] = []
   if (previousSummary) {
-    lines.push(`Earlier update from today: "${previousSummary}"`)
+    lines.push(`${previousLabel}: "${previousSummary}"`)
     lines.push('')
     lines.push('Current facts (may supersede parts of the earlier update):')
   }
-  lines.push(`Portfolio day change: ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}).`)
+  lines.push(`${label}: ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}).`)
 
   lines.push('Movers:')
   for (const m of movers) {
     const headlineText = m.headlines.length
       ? ` Headlines: ${m.headlines.map(h => `"${h.title}" (${h.source})`).join('; ')}`
       : ''
-    lines.push(`- ${m.symbol} (${m.name}): ${fmtDollars(m.dollarChange)} (${fmtPercent(m.percentChange)}), ${m.contributionPct}% of today's swing.${headlineText}`)
+    lines.push(`- ${m.symbol} (${m.name}): ${fmtDollars(m.dollarChange)} (${fmtPercent(m.percentChange)}), ${m.contributionPct}% of ${swingWord} swing.${headlineText}`)
   }
 
   if (themeMoves.length > 0) {
@@ -427,25 +584,85 @@ export async function fetchMarketHeadlines(finnhubApiKey: string): Promise<Portf
   }
 }
 
-/** Browser-only orchestration, called only when the user asks for it (the
- *  Home page teaser opening a command bar session — see
- *  CommandBar.tsx/commandBarBridge.ts): loads the portfolio, reuses the
- *  stored explanation if it's still from today's market session and
- *  nothing material has moved since (shouldRegenerate), otherwise
- *  regenerates — fetching supporting headlines only when there's actually
- *  something to explain. There is no background/scheduled path anymore;
- *  every call here is inherently "manual" (a user opened it), `force`
- *  exists only to bypass the cache-reuse check outright if ever needed. */
-export async function generatePortfolioExplanation(options: { force?: boolean } = {}): Promise<PortfolioExplanationRow> {
+/** Narrows a whole-portfolio MoversResult down to just one slot's own
+ *  story — same shape, so every downstream step (shouldRegenerate, the
+ *  hasMajorMove branch, prompt building, storage) treats every scope
+ *  uniformly. Assumes (for 'stock'/'sector') that `scopeKey` already
+ *  appears in `result.movers`/`result.themeMoves` — true for any slot
+ *  produced by the carousel's own candidate-slot detection, since slots are
+ *  derived from this same computeMovers/computeMoversForWindow output. */
+function scopeMoversResult(result: MoversResult, slot: PortfolioInsightSlot): MoversResult {
+  if (slot.scope === 'portfolio') return result
+
+  if (slot.scope === 'stock') {
+    const mover = result.movers.find(m => m.symbol === slot.scopeKey)
+    return {
+      movers: mover ? [mover] : [],
+      themeMoves: [],
+      hasMajorMove: !!mover,
+      isBroadMarketMove: false,
+      dayChangeDollars: mover?.dollarChange ?? 0,
+      dayChangePercent: mover?.percentChange ?? 0,
+    }
+  }
+
+  const theme = result.themeMoves.find(t => t.theme === slot.scopeKey)
+  const members = result.movers.filter(m => m.theme === slot.scopeKey)
+  return {
+    movers: members,
+    themeMoves: theme ? [theme] : [],
+    hasMajorMove: !!theme,
+    isBroadMarketMove: false,
+    dayChangeDollars: Math.round(members.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100,
+    dayChangePercent: theme?.avgPercentChange ?? 0,
+  }
+}
+
+/** Slot-specific wording for the LLM prompt — '' (all defaults) for
+ *  DAILY_PORTFOLIO_SLOT so that slot's prompt text is byte-for-byte
+ *  unchanged from before this file supported other slots. */
+function promptContextForSlot(slot: PortfolioInsightSlot): { label?: string; swingWord?: string; timeWord?: string } {
+  if (slot.scope === 'portfolio' && slot.timeframe === 'daily') return {}
+  const when = timeframeLabel(slot.timeframe, slot.windowDays)
+  const subject = slot.scope === 'stock' ? slot.scopeKey : slot.scope === 'sector' ? `${slot.scopeKey} holdings` : 'Portfolio'
+  return { label: `${subject} change ${when}`, swingWord: when, timeWord: when }
+}
+
+/** Browser-only orchestration, called only when the user asks for it (a
+ *  Portfolio Pulse carousel card opening a command bar session — see
+ *  CommandBar.tsx/commandBarBridge.ts): loads the portfolio, computes that
+ *  slot's own move (daily via computeMovers, otherwise via
+ *  computeMoversForWindow + ticker_price_history), reuses the stored
+ *  explanation for this exact (scope, scope_key, timeframe) if nothing
+ *  material has moved since (shouldRegenerate), otherwise regenerates —
+ *  fetching supporting headlines only when there's actually something to
+ *  explain. There is no background/scheduled path anymore; every call here
+ *  is inherently "manual" (a user opened it), `force` exists only to bypass
+ *  the cache-reuse check outright if ever needed. */
+export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, options: { force?: boolean } = {}): Promise<PortfolioExplanationRow> {
   const { force = false } = options
   const assets = await getAllAssets()
   const netWorth = computeTotalNetWorth(assets)
-  const result = computeMovers(assets, netWorth)
 
-  const existing = await getPortfolioExplanation()
+  let fullResult: MoversResult
+  if (slot.timeframe === 'daily') {
+    fullResult = computeMovers(assets, netWorth)
+  } else {
+    const tickerIds = [...new Set(
+      assets.filter((a: any) => a.asset_type === 'Stock' && a.ticker?.id).map((a: any) => a.ticker.id as string),
+    )]
+    // A little slack past windowDays so a ticker's oldest-available row
+    // still counts as "the anchor" even if it landed a day or two late.
+    const sinceDate = new Date(Date.now() - (slot.windowDays + 5) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const priceHistory = await getTickerPriceHistory(tickerIds, sinceDate)
+    fullResult = computeMoversForWindow(assets, netWorth, priceHistory, slot.windowDays, slot.timeframe)
+  }
+  const result = scopeMoversResult(fullResult, slot)
+
+  const existing = await getPortfolioExplanation(slot.scope, slot.scopeKey, slot.timeframe)
   // shouldRegenerate always returns true when `existing` is null, so this
   // branch is only reachable with a non-null row to fall back to.
-  if (!force && existing && !shouldRegenerate(result, existing)) {
+  if (!force && existing && !shouldRegenerate(result, existing, slot.timeframe === 'daily')) {
     return existing
   }
 
@@ -464,6 +681,10 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
       theme_moves: [],
       trigger: 'manual',
       market_date: marketDate,
+      scope: slot.scope,
+      scope_key: slot.scopeKey,
+      timeframe: slot.timeframe,
+      window_days: slot.windowDays,
       input_tokens: null,
       output_tokens: null,
     })
@@ -476,21 +697,24 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))
 
-  // Carry the still-relevant parts of an earlier update from today forward
-  // rather than replacing it outright (see CLAUDE.md) — only within the
-  // same market day; a prior day's story has nothing to do with today's.
-  const previousSummary = existing && existing.has_major_moves && existing.market_date === marketDate
+  // Carry the still-relevant parts of an earlier update for this same slot
+  // forward rather than replacing it outright (see CLAUDE.md). For 'daily'
+  // only within the same market day; other timeframes are rolling windows
+  // with no such discrete boundary, so any existing major-move story for
+  // this slot is fair game to carry forward.
+  const previousSummary = existing && existing.has_major_moves && (slot.timeframe !== 'daily' || existing.market_date === marketDate)
     ? stripSources(existing.summary)
     : undefined
 
-  const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines, previousSummary)
+  const { label, swingWord, timeWord } = promptContextForSlot(slot)
+  const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines, previousSummary, label, swingWord)
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
   const model = MODEL_FOR_PROVIDER[config.llmProvider]
   const response = await client.chat.completions.create({
     model,
     max_tokens: 220,
     messages: [
-      { role: 'system', content: EXPLANATION_SYSTEM_PROMPT },
+      { role: 'system', content: explanationSystemPrompt(timeWord) },
       { role: 'user', content: prompt },
     ],
     ...(config.llmProvider === 'claude' ? { output_config: { effort: 'low' as const } } : {}),
@@ -514,6 +738,10 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
     theme_moves: result.themeMoves,
     trigger: 'manual',
     market_date: marketDate,
+    scope: slot.scope,
+    scope_key: slot.scopeKey,
+    timeframe: slot.timeframe,
+    window_days: slot.windowDays,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
   })
