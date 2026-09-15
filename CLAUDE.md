@@ -60,6 +60,8 @@ themes ──→ theme_targets  (optional allocation target %)
 
 **RSU vesting is discrete, not continuous** (migration `20260829000000_add_rsu_vesting_frequency.sql`): `rsu_grants.vesting_frequency` ('monthly' | 'quarterly' | 'annually' | 'continuous', DB-constrained, `NOT NULL DEFAULT 'quarterly'`) records how a grant vests after its cliff — a lump at `cliff_date` (or `vest_start` if no cliff was recorded) covering however many periods elapsed since `grant_date`, then one equal installment every period through `vest_end`, with the cliff absorbing the rounding remainder so installments sum to exactly `total_shares`. `continuous` falls back to the old smooth linear interpolation across `[vest_start, vest_end]`, for a grant nobody's told the app the real cadence of. `rsuVestedSharesAsOf` / `computeRsuVestEvents` in `src/lib/charts.ts` are the one implementation of this math — the RSU vesting progress chart, `computeRsuVestingSchedule` in `src/lib/claude.ts` (the command bar's `get_rsu_vesting_schedule` tool), and `supabase/functions/check-vests` (a self-contained Deno port, since edge functions can't import from `src/`) all key off it. Existing grants were backfilled to `'quarterly'` — the most common real-world schedule — confirmed against an actual user's brokerage statement.
 
+**`ticker_price_history`** (migration `20260919000000_add_ticker_price_history.sql`) is a daily per-ticker price snapshot table — one row per `(user_id, ticker_id, date)`, upserted in place same as `net_worth_snapshots` (today's row reflects whatever price was live the last time it was refreshed that day, not necessarily the market close). It exists because `tickers` itself only ever stores `current_price`/`previous_close` — no history — and it's the only source of historical per-ticker prices in the app, backing weekly/monthly/yearly/custom-timeframe stock and sector moves in the Portfolio Pulse carousel (see below). Populated from both places prices already get refreshed: `refreshAllPrices()` (`src/lib/db/tickers.ts`, via `recordTickerPriceSnapshots()` in `src/lib/db/tickerPriceHistory.ts`) and `check-prices`' own upsert. There's no backfill for days before this started recording — a newly-added ticker (or a ticker added before this table existed) simply has no history yet, so longer-timeframe cards for it phase in gradually as history accumulates.
+
 Every table has RLS enabled — users see only their own rows.
 
 All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transactions.ts`, `tickers.ts`, `locations.ts`, `settings.ts`, `grants.ts`, `snapshots.ts`, `themes.ts`, `fixedIncomeLots.ts`. These are plain async functions that call `getSupabaseClient()` directly — no ORM, no query builder abstraction beyond the Supabase JS client.
@@ -189,7 +191,7 @@ Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/Tok
 
 Four Deno functions in `supabase/functions/`:
 - `send-push` — sends Web Push notifications via `npm:web-push`; requires `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` secrets
-- `check-prices` — fetches Finnhub quotes, fires push if price moved ≥ user threshold
+- `check-prices` — fetches Finnhub quotes, fires push if price moved ≥ user threshold, and upserts today's row into `ticker_price_history` (see below)
 - `check-vests` — alerts on each discrete vest event (per grant's `vesting_frequency`) landing within `rsu_alert_days_before` days, not just the grant's final `vest_end`
 - `check-capital-gains` — promotes Short Term lots older than 1 year to Long Term, sends push
 
