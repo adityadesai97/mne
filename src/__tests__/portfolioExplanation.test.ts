@@ -1,5 +1,5 @@
 import {
-  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, appendSources, stripSources,
+  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
 } from '../lib/portfolioExplanation'
 
 // shouldRegenerate takes a full MoversResult — a minimal one for tests that
@@ -242,37 +242,11 @@ test('buildTeaser ignores a previous explanation from an earlier market day', ()
   expect(buildTeaser(result, previous)).toBe('CRM moved +8.00% today. Want to know why?')
 })
 
-test('stripSources removes the appended Sources block', () => {
-  const withSources = appendSources('Portfolio rose today.', [
-    { symbol: 'NVDA', name: 'Nvidia', dollarChange: 1, percentChange: 1, contributionPct: 1, headlines: [{ title: 'x', source: 'y', url: 'https://example.com', datetime: 0 }] } as any,
-  ], [])
-  expect(stripSources(withSources)).toBe('Portfolio rose today.')
+test('stripSources removes a legacy appended Sources block, if present', () => {
+  const legacy = 'Portfolio rose today.\n\nSources:\n- [Nvidia beats](https://example.com) — Reuters'
+  expect(stripSources(legacy)).toBe('Portfolio rose today.')
 })
 
-test('appendSources leaves the summary unchanged when there is nothing to cite', () => {
-  expect(appendSources('Portfolio rose today.', [], [])).toBe('Portfolio rose today.')
-})
-
-test('appendSources appends a deduped, clickable list built from headline data, not the model', () => {
-  const movers = [
-    {
-      symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 5, contributionPct: 100,
-      headlines: [
-        { title: 'Nvidia beats', source: 'Reuters', url: 'https://example.com/nvda', datetime: 0 },
-        { title: 'No URL here', source: 'AP', url: '', datetime: 0 },
-      ],
-    },
-  ] as any
-  const marketHeadlines = [
-    { title: 'Nvidia beats', source: 'Reuters', url: 'https://example.com/nvda', datetime: 0 }, // duplicate URL
-    { title: 'Fed holds rates', source: 'AP', url: 'https://example.com/fed', datetime: 0 },
-  ]
-  const result = appendSources('Portfolio rose today.', movers, marketHeadlines)
-  expect(result).toContain('Portfolio rose today.')
-  expect(result).toContain('Sources:')
-  expect(result).toContain('- [Nvidia beats](https://example.com/nvda) — Reuters')
-  expect(result).toContain('- [Fed holds rates](https://example.com/fed) — AP')
-  expect(result).not.toContain('No URL here')
-  // The duplicate URL only appears once.
-  expect(result.match(/example\.com\/nvda/g)).toHaveLength(1)
+test('stripSources leaves a summary with no Sources block unchanged', () => {
+  expect(stripSources('Portfolio rose today.')).toBe('Portfolio rose today.')
 })

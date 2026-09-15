@@ -1,8 +1,23 @@
 import { getSupabaseClient } from '../supabase'
+import type { PortfolioExplanationHeadline, PortfolioExplanationMover, PortfolioExplanationThemeMove } from './portfolioExplanations'
+
+/** Structured data behind a portfolio-explanation reply — carried
+ *  alongside the plain summary text so the command bar can render
+ *  interactive mover/theme highlights and a market-context list instead of
+ *  a flat links list (see CommandBar.tsx's ExplanationMessageContent).
+ *  Only ever set on the one assistant message that IS a generated
+ *  explanation; a normal command bar reply (including follow-ups in the
+ *  same conversation) has none. */
+export interface ConversationMessageExplanationDetail {
+  movers: PortfolioExplanationMover[]
+  themeMoves: PortfolioExplanationThemeMove[]
+  marketHeadlines: PortfolioExplanationHeadline[]
+}
 
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
+  explanationDetail?: ConversationMessageExplanationDetail
 }
 
 export type ConversationOrigin = 'command_bar' | 'portfolio_explanation'
