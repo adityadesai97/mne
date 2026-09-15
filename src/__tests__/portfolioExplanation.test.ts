@@ -1,6 +1,9 @@
 import {
-  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
+  computeMovers, computeMoversForWindow, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
+  explanationTriggerQuestion, DAILY_PORTFOLIO_SLOT, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME, MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME,
+  type PortfolioInsightSlot,
 } from '../lib/portfolioExplanation'
+import type { TickerPricePoint } from '../lib/db/tickerPriceHistory'
 
 // shouldRegenerate takes a full MoversResult — a minimal one for tests that
 // only care about the portfolio-level (aggregate %) check.
@@ -15,12 +18,14 @@ function stockAsset(opts: {
   previousClose: number
   shares?: number
   themes?: string[]
+  tickerId?: string
 }) {
   return {
     asset_type: 'Stock',
     name: opts.name ?? opts.symbol,
     price: null,
     ticker: {
+      id: opts.tickerId ?? opts.symbol,
       symbol: opts.symbol,
       current_price: opts.currentPrice,
       previous_close: opts.previousClose,
@@ -28,6 +33,13 @@ function stockAsset(opts: {
     },
     stock_subtypes: [{ transactions: [{ count: String(opts.shares ?? 10), cost_price: '1' }], rsu_grants: [] }],
   } as any
+}
+
+// Builds a days-ago date key the same way findPriceApproxNDaysAgo does.
+function daysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().split('T')[0]
 }
 
 test('a single outsized mover is flagged as a major move with no theme/market signal', () => {
@@ -259,4 +271,70 @@ test('stripSources removes a legacy appended Sources block, if present', () => {
 
 test('stripSources leaves a summary with no Sources block unchanged', () => {
   expect(stripSources('Portfolio rose today.')).toBe('Portfolio rose today.')
+})
+
+test('computeMoversForWindow sources moves from ticker_price_history instead of previous_close', () => {
+  const assets = [
+    stockAsset({ symbol: 'NVDA', currentPrice: 130, previousClose: 129, shares: 10, tickerId: 't-nvda' }), // flat today, +30% over the window
+  ]
+  const priceHistory = new Map<string, TickerPricePoint[]>([
+    ['t-nvda', [{ date: daysAgo(10), price: 100 }, { date: daysAgo(1), price: 129 }]],
+  ])
+  const result = computeMoversForWindow(assets, 100_000, priceHistory, 7, 'weekly')
+  expect(result.movers).toHaveLength(1)
+  expect(result.movers[0].percentChange).toBeCloseTo(30, 0)
+  expect(result.movers[0].dollarChange).toBeCloseTo(300, 0)
+})
+
+test('computeMoversForWindow excludes a ticker with no history old enough for the window', () => {
+  const assets = [
+    stockAsset({ symbol: 'NEW', currentPrice: 110, previousClose: 109, shares: 10, tickerId: 't-new' }),
+  ]
+  // Only 2 days of history recorded — not enough for a 30-day (monthly) window.
+  const priceHistory = new Map<string, TickerPricePoint[]>([
+    ['t-new', [{ date: daysAgo(2), price: 108 }]],
+  ])
+  const result = computeMoversForWindow(assets, 100_000, priceHistory, 30, 'monthly')
+  expect(result.movers).toHaveLength(0)
+  expect(result.hasMajorMove).toBe(false)
+})
+
+test('move-size bars scale with timeframe — a move major daily is not automatically major weekly', () => {
+  expect(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.daily).toBeLessThan(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.weekly)
+  expect(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.weekly).toBeLessThan(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.monthly)
+  expect(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.monthly).toBeLessThan(MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.yearly)
+
+  const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 106, previousClose: 105, shares: 10, tickerId: 't-nvda' })] // +6% over the window
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-nvda', [{ date: daysAgo(7), price: 100 }]]])
+  const weekly = computeMoversForWindow(assets, 100_000, priceHistory, 7, 'weekly')
+  expect(weekly.hasMajorMove).toBe(false) // 6% < the 8% weekly bar
+
+  const dailyLikeAssets = [stockAsset({ symbol: 'NVDA', currentPrice: 106, previousClose: 100, shares: 10 })] // +6% today
+  expect(computeMovers(dailyLikeAssets, 100_000).hasMajorMove).toBe(true) // 6% >= the 5% daily bar
+})
+
+test('shouldRegenerate with resetsDaily false ignores a stale market_date on a rolling window', () => {
+  const current = moversResult(2)
+  const stale = { market_date: '2020-01-01', day_change_percent: 2, movers: [], theme_moves: [] } as any
+  expect(shouldRegenerate(current, stale)).toBe(true) // default resetsDaily=true still resets
+  expect(shouldRegenerate(current, stale, false)).toBe(false) // same swing, no membership change — no reset for a rolling window
+})
+
+test('explanationTriggerQuestion matches the exact legacy string for the daily portfolio slot', () => {
+  expect(explanationTriggerQuestion(DAILY_PORTFOLIO_SLOT)).toBe('Why is my portfolio moving?')
+})
+
+test('explanationTriggerQuestion names the stock/sector and timeframe for other slots', () => {
+  const stockSlot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NVDA', timeframe: 'weekly', windowDays: 7 }
+  expect(explanationTriggerQuestion(stockSlot)).toBe('Why did NVDA move this week?')
+
+  const sectorSlot: PortfolioInsightSlot = { scope: 'sector', scopeKey: 'Semiconductors', timeframe: 'monthly', windowDays: 30 }
+  expect(explanationTriggerQuestion(sectorSlot)).toBe('Why did my Semiconductors holdings move this month?')
+
+  const customSlot: PortfolioInsightSlot = { scope: 'portfolio', scopeKey: '', timeframe: 'custom', windowDays: 60 }
+  expect(explanationTriggerQuestion(customSlot)).toBe('Why is my portfolio moving over the last 60 days?')
+})
+
+test('MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME also scales up with timeframe', () => {
+  expect(MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME.daily).toBeLessThan(MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME.yearly)
 })
