@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase'
+import { recordTickerPriceSnapshots } from './tickerPriceHistory'
 
 export async function getAllTickers() {
   const { data, error } = await getSupabaseClient()
@@ -52,6 +53,7 @@ export async function updateTickerPrice(symbol: string, price: number, previousC
 export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
   const tickers = await getAllTickers()
   const stockTickers = (tickers ?? []).filter((t: any) => t.symbol)
+  const pricePoints: { tickerId: string; price: number }[] = []
   await Promise.all(stockTickers.map(async (ticker: any) => {
     try {
       const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker.symbol}&token=${finnhubApiKey}`)
@@ -59,7 +61,11 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
       if (quote.c && Number.isFinite(Number(quote.c))) {
         const previousClose = Number.isFinite(Number(quote.pc)) ? Number(quote.pc) : null
         await updateTickerPrice(ticker.symbol, Number(quote.c), previousClose)
+        pricePoints.push({ tickerId: ticker.id, price: Number(quote.c) })
       }
     } catch { /* best-effort per ticker */ }
   }))
+  try {
+    await recordTickerPriceSnapshots(pricePoints)
+  } catch { /* best-effort — a missed daily snapshot just delays that ticker's history */ }
 }

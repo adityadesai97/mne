@@ -43,12 +43,23 @@ Deno.serve(async () => {
         })
       }
 
-      const update: Record<string, unknown> = { current_price: newPrice, last_updated: new Date().toISOString().split('T')[0] }
+      const today = new Date().toISOString().split('T')[0]
+      const update: Record<string, unknown> = { current_price: newPrice, last_updated: today }
       if (Number.isFinite(Number(quote.pc))) update.previous_close = Number(quote.pc)
 
       await supabase.from('tickers')
         .update(update)
         .eq('id', ticker.id)
+
+      // Daily price-history snapshot — backs weekly/monthly/yearly/custom
+      // timeframe stock and sector moves in the Portfolio Pulse carousel.
+      // Same idempotent "overwrite today's row" upsert as the client path
+      // (src/lib/db/tickerPriceHistory.ts) and net_worth_snapshots.
+      await supabase.from('ticker_price_history')
+        .upsert(
+          { user_id: userSettings.user_id, ticker_id: ticker.id, date: today, price: newPrice },
+          { onConflict: 'user_id,ticker_id,date' },
+        )
     }
   }
 

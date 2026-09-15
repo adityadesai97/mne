@@ -303,6 +303,20 @@ create table if not exists public.net_worth_snapshots (
 create unique index if not exists net_worth_snapshots_user_id_date_key
   on public.net_worth_snapshots (user_id, date);
 
+-- One row per (user, ticker, day) — backs weekly/monthly/yearly/custom
+-- timeframe stock and sector moves in the Portfolio Pulse carousel.
+create table if not exists public.ticker_price_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker_id uuid not null references public.tickers(id) on delete cascade,
+  date date not null,
+  price numeric(12,4) not null
+);
+create unique index if not exists ticker_price_history_user_ticker_date_key
+  on public.ticker_price_history (user_id, ticker_id, date);
+create index if not exists ticker_price_history_ticker_date_idx
+  on public.ticker_price_history (ticker_id, date desc);
+
 -- Feedback on individual command bar agent responses. Attachment is stored
 -- inline as base64 (small user-supplied files, e.g. a screenshot) rather
 -- than requiring a Supabase Storage bucket for self-hosters.
@@ -398,6 +412,7 @@ alter table public.fixed_income_lots enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
+alter table public.ticker_price_history enable row level security;
 alter table public.command_feedback enable row level security;
 alter table public.command_conversations enable row level security;
 alter table public.portfolio_explanations enable row level security;
@@ -595,6 +610,14 @@ create policy own_push_subscriptions
 drop policy if exists own_net_worth_snapshots on public.net_worth_snapshots;
 create policy own_net_worth_snapshots
   on public.net_worth_snapshots
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_ticker_price_history on public.ticker_price_history;
+create policy own_ticker_price_history
+  on public.ticker_price_history
   for all
   to authenticated
   using (auth.uid() = user_id)
