@@ -180,6 +180,16 @@ test('buildTeaser names a single dominant mover directly', () => {
   expect(buildTeaser(result)).toBe('CRM moved +8.00% today. Want to know why?')
 })
 
+test('buildTeaser names a flagged sector on the first check of the day, before falling back to a plain count', () => {
+  const assets = [
+    stockAsset({ symbol: 'NVDA', currentPrice: 104, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AMD', currentPrice: 103, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AVGO', currentPrice: 106, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+  ]
+  const result = computeMovers(assets, 1_000_000)
+  expect(buildTeaser(result)).toBe('Your Semiconductors holdings moved up 4.33% today. Want to know why?')
+})
+
 test('buildTeaser counts multiple significant movers when no single one dominates', () => {
   const assets = [
     stockAsset({ symbol: 'AAA', currentPrice: 106, previousClose: 100, shares: 10 }),
