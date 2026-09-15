@@ -101,9 +101,10 @@ export async function getConversation(id: string): Promise<Conversation | null> 
  *  update an existing conversation (title is left as-is when a title was
  *  already set); omit it to create a new one, deriving the title from the
  *  first message. `origin` only applies on creation — pass
- *  'portfolio_explanation' when seeding a conversation from that card
- *  (see PortfolioExplanationCard); omit it for a normal typed command bar
- *  turn, which defaults to 'command_bar'. Returns the conversation's id. */
+ *  'portfolio_explanation' when seeding a conversation from a Portfolio
+ *  Pulse carousel card (see PortfolioPulseCarousel); omit it for a normal
+ *  typed command bar turn, which defaults to 'command_bar'. Returns the
+ *  conversation's id. */
 export async function saveConversation(input: {
   id?: string | null
   messages: ConversationMessage[]

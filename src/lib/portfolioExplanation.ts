@@ -355,13 +355,20 @@ export function todayMarketDate(): string {
 /** The set of holdings crossing the individual-mover bar — the "stock
  *  level" for staleness/change comparisons below. Works the same whether
  *  fed a fresh MoversResult.movers or a stored row's movers, since both
- *  are PortfolioExplanationMover[]. */
-function significantMoverSymbols(movers: PortfolioExplanationMover[]): Set<string> {
-  return new Set(movers.filter(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT).map(m => m.symbol))
+ *  are PortfolioExplanationMover[]. `stockPct` defaults to the daily bar so
+ *  every existing (2-arg) call site keeps its exact prior behavior; callers
+ *  working with a weekly/monthly/yearly/custom MoversResult should pass the
+ *  matching MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME entry instead. */
+function significantMoverSymbols(movers: PortfolioExplanationMover[], stockPct: number = MAJOR_MOVE_STOCK_PCT): Set<string> {
+  return new Set(movers.filter(m => Math.abs(m.percentChange) >= stockPct).map(m => m.symbol))
 }
 
-function themeNameSet(themeMoves: { theme: string }[]): Set<string> {
-  return new Set(themeMoves.map(t => t.theme))
+/** Same idea for theme moves — detectThemeMoves' own clustering condition
+ *  isn't magnitude-aware (it only checks member agreement), so this is what
+ *  keeps "did the flagged-theme set change" from firing on a theme whose
+ *  average move is too small to matter at this timeframe. */
+function significantThemeNames(themeMoves: { theme: string; avgPercentChange: number }[], stockPct: number = MAJOR_MOVE_STOCK_PCT): Set<string> {
+  return new Set(themeMoves.filter(t => Math.abs(t.avgPercentChange) >= stockPct).map(t => t.theme))
 }
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -386,7 +393,12 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
  *    even if the aggregate swing happens to look similar.
  *  A `force` regenerate bypasses this entirely (see
  *  generatePortfolioExplanation). */
-export function shouldRegenerate(current: MoversResult, last: PortfolioExplanationRow | null, resetsDaily: boolean = true): boolean {
+export function shouldRegenerate(
+  current: MoversResult,
+  last: PortfolioExplanationRow | null,
+  resetsDaily: boolean = true,
+  stockPct: number = MAJOR_MOVE_STOCK_PCT,
+): boolean {
   if (!last) return true
   if (resetsDaily && last.market_date !== todayMarketDate()) return true
 
@@ -395,8 +407,8 @@ export function shouldRegenerate(current: MoversResult, last: PortfolioExplanati
   const signFlipped = prevPct !== 0 && currPct !== 0 && Math.sign(prevPct) !== Math.sign(currPct)
   if (signFlipped || Math.abs(currPct - prevPct) >= REGENERATION_HYSTERESIS_PCT) return true
 
-  if (!setsEqual(significantMoverSymbols(current.movers), significantMoverSymbols(last.movers ?? []))) return true
-  if (!setsEqual(themeNameSet(current.themeMoves), themeNameSet(last.theme_moves ?? []))) return true
+  if (!setsEqual(significantMoverSymbols(current.movers, stockPct), significantMoverSymbols(last.movers ?? [], stockPct))) return true
+  if (!setsEqual(significantThemeNames(current.themeMoves, stockPct), significantThemeNames(last.theme_moves ?? [], stockPct))) return true
 
   return false
 }
@@ -418,60 +430,217 @@ export function buildStaticNoMoveSummary(dayChangeDollars: number, dayChangePerc
   return `No major moves today — your portfolio was ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}), within normal day-to-day movement.`
 }
 
-/** The Home page card's one-line hook — entirely deterministic (no LLM
- *  call; one cheap DB read for `previous` so it can tell "new" from
- *  "unchanged"), built straight from computeMovers' output. Returns null
- *  when there's nothing worth surfacing (computeMovers.hasMajorMove is
- *  false), in which case the card renders nothing at all.
+/** The portfolio-scope teaser for any timeframe — one-line hook, entirely
+ *  deterministic (no LLM call), built straight from a MoversResult (daily
+ *  via computeMovers, or weekly/monthly/yearly/custom via
+ *  computeMoversForWindow). Returns null when there's nothing worth
+ *  surfacing (`hasMajorMove` false).
  *
- *  When `previous` is the same market day's explanation and is now stale
- *  (shouldRegenerate), the wording calls out specifically what's new
- *  since it was generated — a new sector, a new mover, or (if neither)
- *  just the changed swing — rather than repeating a generic line that
- *  might describe the same story the user already read. Otherwise (first
- *  time today, or nothing's changed) picks whichever generic framing fits,
- *  in priority order (mirroring the "what's new" path above so sector gets
- *  the same first-class treatment on the very first check of the day, not
- *  just once something has changed since the last one):
+ *  When `previous` is comparable (same market day for 'daily'; any prior
+ *  row for a rolling window, since those have no discrete reset point) and
+ *  is now stale (shouldRegenerate), the wording calls out specifically
+ *  what's new since it was generated — a new sector, a new mover, or (if
+ *  neither) just the changed swing. Otherwise (first check, or nothing's
+ *  changed) picks whichever generic framing fits, in the same priority
+ *  order as the "what's new" branch so sector gets equal first-class
+ *  treatment either way:
  *  - one holding dominates the swing → name it directly ("CRM moved …")
  *  - a sector/theme move was flagged → name it ("Your Semiconductors
  *    holdings moved …"), picking the theme with the largest average move
  *    when more than one is flagged
  *  - several holdings individually crossed the per-stock bar → count them
  *  - otherwise it's the aggregate swing carrying the story on its own */
-export function buildTeaser(result: MoversResult, previous?: PortfolioExplanationRow | null): string | null {
+function buildPortfolioTeaser(
+  result: MoversResult,
+  timeframe: PortfolioExplanationTimeframe,
+  windowDays: number,
+  previous?: PortfolioExplanationRow | null,
+): string | null {
   if (!result.hasMajorMove) return null
 
-  const sameDayPrevious = previous && previous.market_date === todayMarketDate() ? previous : null
-  if (sameDayPrevious && shouldRegenerate(result, sameDayPrevious)) {
-    const newThemes = [...themeNameSet(result.themeMoves)].filter(t => !themeNameSet(sameDayPrevious.theme_moves ?? []).has(t))
+  const when = timeframeLabel(timeframe, windowDays)
+  const resetsDaily = timeframe === 'daily'
+  const stockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[timeframe]
+
+  const comparablePrevious = previous && (!resetsDaily || previous.market_date === todayMarketDate()) ? previous : null
+  if (comparablePrevious && shouldRegenerate(result, comparablePrevious, resetsDaily, stockPct)) {
+    const newThemes = [...significantThemeNames(result.themeMoves, stockPct)].filter(t => !significantThemeNames(comparablePrevious.theme_moves ?? [], stockPct).has(t))
     if (newThemes.length > 0) {
       return `New activity in ${newThemes.join(', ')} since your last check. Want an updated explanation?`
     }
-    const newSymbols = [...significantMoverSymbols(result.movers)].filter(s => !significantMoverSymbols(sameDayPrevious.movers ?? []).has(s))
+    const newSymbols = [...significantMoverSymbols(result.movers, stockPct)].filter(s => !significantMoverSymbols(comparablePrevious.movers ?? [], stockPct).has(s))
     if (newSymbols.length > 0) {
       return `${newSymbols.join(', ')} just moved. Want an updated explanation?`
     }
     return `Your portfolio's move has changed since your last check. Want an updated explanation?`
   }
 
-  const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT)
+  const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= stockPct)
   const dominant = significantMovers.length === 1 && significantMovers[0].contributionPct >= DOMINANT_MOVER_CONTRIBUTION_PCT
     ? significantMovers[0]
     : null
 
   if (dominant) {
-    return `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} today. Want to know why?`
+    return `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} ${when}. Want to know why?`
   }
   if (result.themeMoves.length > 0) {
     const primaryTheme = [...result.themeMoves].sort((a, b) => Math.abs(b.avgPercentChange) - Math.abs(a.avgPercentChange))[0]
-    return `Your ${primaryTheme.theme} holdings moved ${primaryTheme.direction} ${Math.abs(primaryTheme.avgPercentChange).toFixed(2)}% today. Want to know why?`
+    return `Your ${primaryTheme.theme} holdings moved ${primaryTheme.direction} ${Math.abs(primaryTheme.avgPercentChange).toFixed(2)}% ${when}. Want to know why?`
   }
   if (significantMovers.length >= 2) {
-    return `${significantMovers.length} items in your portfolio moved substantially today. Want to know why?`
+    return `${significantMovers.length} items in your portfolio moved substantially ${when}. Want to know why?`
   }
   const direction = result.dayChangeDollars >= 0 ? 'up' : 'down'
-  return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% today. Want to know why?`
+  return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}. Want to know why?`
+}
+
+/** The Home page card's one-line hook for the daily portfolio-wide slot —
+ *  kept as the exact literal wrapper it's always been (`buildPortfolioTeaser`
+ *  with `timeframe: 'daily'` reproduces its output byte-for-byte); see
+ *  `buildSlotTeaser` for the carousel's other slots. */
+export function buildTeaser(result: MoversResult, previous?: PortfolioExplanationRow | null): string | null {
+  return buildPortfolioTeaser(result, 'daily', 1, previous)
+}
+
+/** Narrows a whole-portfolio MoversResult down to just one slot's own
+ *  story — same shape, so every downstream step (shouldRegenerate, the
+ *  hasMajorMove branch, prompt building, storage, the teaser) treats every
+ *  scope uniformly. Assumes (for 'stock'/'sector') that `scopeKey` already
+ *  appears in `result.movers`/`result.themeMoves` — true for any slot
+ *  produced by `computeCandidateSlots`, since slots are derived from this
+ *  same computeMovers/computeMoversForWindow output. */
+export function scopeMoversResult(result: MoversResult, slot: PortfolioInsightSlot): MoversResult {
+  if (slot.scope === 'portfolio') return result
+
+  if (slot.scope === 'stock') {
+    const mover = result.movers.find(m => m.symbol === slot.scopeKey)
+    return {
+      movers: mover ? [mover] : [],
+      themeMoves: [],
+      hasMajorMove: !!mover,
+      isBroadMarketMove: false,
+      dayChangeDollars: mover?.dollarChange ?? 0,
+      dayChangePercent: mover?.percentChange ?? 0,
+    }
+  }
+
+  const theme = result.themeMoves.find(t => t.theme === slot.scopeKey)
+  const members = result.movers.filter(m => m.theme === slot.scopeKey)
+  return {
+    movers: members,
+    themeMoves: theme ? [theme] : [],
+    hasMajorMove: !!theme,
+    isBroadMarketMove: false,
+    dayChangeDollars: Math.round(members.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100,
+    dayChangePercent: theme?.avgPercentChange ?? 0,
+  }
+}
+
+/** The Portfolio Pulse carousel's one-line hook for any slot — the
+ *  scope-aware counterpart to `buildTeaser` (which remains the exact
+ *  DAILY_PORTFOLIO_SLOT case: `buildSlotTeaser(DAILY_PORTFOLIO_SLOT, result,
+ *  previous) === buildTeaser(result, previous)`). Narrows `fullResult` to
+ *  the slot's own story via `scopeMoversResult` first. */
+export function buildSlotTeaser(slot: PortfolioInsightSlot, fullResult: MoversResult, previous?: PortfolioExplanationRow | null): string | null {
+  const scoped = scopeMoversResult(fullResult, slot)
+  if (!scoped.hasMajorMove) return null
+
+  if (slot.scope === 'portfolio') return buildPortfolioTeaser(scoped, slot.timeframe, slot.windowDays, previous)
+
+  const when = timeframeLabel(slot.timeframe, slot.windowDays)
+  const resetsDaily = slot.timeframe === 'daily'
+  const comparablePrevious = previous && (!resetsDaily || previous.market_date === todayMarketDate()) ? previous : null
+  const stale = comparablePrevious && shouldRegenerate(scoped, comparablePrevious, resetsDaily, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[slot.timeframe])
+
+  if (slot.scope === 'stock') {
+    const mover = scoped.movers[0]
+    if (!mover) return null
+    return stale
+      ? `${mover.symbol} just moved again ${when}. Want an updated explanation?`
+      : `${mover.symbol} moved ${fmtPercent(mover.percentChange)} ${when}. Want to know why?`
+  }
+
+  const theme = scoped.themeMoves[0]
+  if (!theme) return null
+  return stale
+    ? `Your ${theme.theme} holdings kept moving ${when}. Want an updated explanation?`
+    : `Your ${theme.theme} holdings moved ${theme.direction} ${Math.abs(theme.avgPercentChange).toFixed(2)}% ${when}. Want to know why?`
+}
+
+/** Non-calendar windows scanned for the "notable move" catch-all in
+ *  computeCandidateSlots — filling the gap when a slow-playing-out move
+ *  (e.g. a stock up over 60 days on news that took a while to land) doesn't
+ *  line up with any of the fixed daily/weekly/monthly/yearly buckets. */
+export const CUSTOM_WINDOW_DAYS = [14, 45, 60, 90, 120, 180, 270]
+
+function deriveSlotsFromResult(result: MoversResult, timeframe: PortfolioExplanationTimeframe, windowDays: number): PortfolioInsightSlot[] {
+  const stockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[timeframe]
+  const portfolioPct = MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME[timeframe]
+  const slots: PortfolioInsightSlot[] = []
+  if (Math.abs(result.dayChangePercent) >= portfolioPct) {
+    slots.push({ scope: 'portfolio', scopeKey: '', timeframe, windowDays })
+  }
+  for (const m of result.movers) {
+    if (Math.abs(m.percentChange) >= stockPct) slots.push({ scope: 'stock', scopeKey: m.symbol, timeframe, windowDays })
+  }
+  for (const t of result.themeMoves) {
+    if (Math.abs(t.avgPercentChange) >= stockPct) slots.push({ scope: 'sector', scopeKey: t.theme, timeframe, windowDays })
+  }
+  return slots
+}
+
+/** Every currently-relevant Portfolio Pulse carousel slot, across all three
+ *  scopes (stock/sector/portfolio) and every timeframe (daily/weekly/
+ *  monthly/yearly, plus a "notable move" catch-all over CUSTOM_WINDOW_DAYS)
+ *  — the carousel renders exactly this list, nothing when it's empty,
+ *  auto-advancing through whichever insights are live right now.
+ *  `priceHistory` should cover at least a year back (see
+ *  getTickerPriceHistory) so every pass below has what it needs from one
+ *  shared fetch. */
+export function computeCandidateSlots(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>): PortfolioInsightSlot[] {
+  const daily = computeMovers(assets, netWorth)
+  const weekly = computeMoversForWindow(assets, netWorth, priceHistory, 7, 'weekly')
+  const monthly = computeMoversForWindow(assets, netWorth, priceHistory, 30, 'monthly')
+  const yearly = computeMoversForWindow(assets, netWorth, priceHistory, 365, 'yearly')
+
+  const slots = [
+    ...deriveSlotsFromResult(daily, 'daily', 1),
+    ...deriveSlotsFromResult(weekly, 'weekly', 7),
+    ...deriveSlotsFromResult(monthly, 'monthly', 30),
+    ...deriveSlotsFromResult(yearly, 'yearly', 365),
+  ]
+
+  // "Notable move" catch-all: a stock/sector whose move over some
+  // non-calendar window stands out even though it doesn't cross the bar at
+  // any fixed calendar bucket above. Skips anything already covered by a
+  // slot above, and keeps at most the two most extreme finds (by
+  // magnitude, deduped per symbol/theme) so the carousel doesn't fill up
+  // with near-duplicate long-window variants of the same story.
+  const covered = new Set(slots.filter(s => s.scope !== 'portfolio').map(s => `${s.scope}:${s.scopeKey}`))
+  const customStockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.custom
+  const found = new Map<string, { slot: PortfolioInsightSlot; magnitude: number }>()
+  for (const windowDays of CUSTOM_WINDOW_DAYS) {
+    const windowResult = computeMoversForWindow(assets, netWorth, priceHistory, windowDays, 'custom')
+    for (const m of windowResult.movers) {
+      const key = `stock:${m.symbol}`
+      if (covered.has(key) || Math.abs(m.percentChange) < customStockPct) continue
+      const existing = found.get(key)
+      if (!existing || Math.abs(m.percentChange) > existing.magnitude) {
+        found.set(key, { slot: { scope: 'stock', scopeKey: m.symbol, timeframe: 'custom', windowDays }, magnitude: Math.abs(m.percentChange) })
+      }
+    }
+    for (const t of windowResult.themeMoves) {
+      const key = `sector:${t.theme}`
+      if (covered.has(key) || Math.abs(t.avgPercentChange) < customStockPct) continue
+      const existing = found.get(key)
+      if (!existing || Math.abs(t.avgPercentChange) > existing.magnitude) {
+        found.set(key, { slot: { scope: 'sector', scopeKey: t.theme, timeframe: 'custom', windowDays }, magnitude: Math.abs(t.avgPercentChange) })
+      }
+    }
+  }
+  const topCustom = [...found.values()].sort((a, b) => b.magnitude - a.magnitude).slice(0, 2).map(c => c.slot)
+
+  return [...slots, ...topCustom]
 }
 
 /** `timeWord` defaults to 'daily' so the exported constant below (still
@@ -584,40 +753,6 @@ export async function fetchMarketHeadlines(finnhubApiKey: string): Promise<Portf
   }
 }
 
-/** Narrows a whole-portfolio MoversResult down to just one slot's own
- *  story — same shape, so every downstream step (shouldRegenerate, the
- *  hasMajorMove branch, prompt building, storage) treats every scope
- *  uniformly. Assumes (for 'stock'/'sector') that `scopeKey` already
- *  appears in `result.movers`/`result.themeMoves` — true for any slot
- *  produced by the carousel's own candidate-slot detection, since slots are
- *  derived from this same computeMovers/computeMoversForWindow output. */
-function scopeMoversResult(result: MoversResult, slot: PortfolioInsightSlot): MoversResult {
-  if (slot.scope === 'portfolio') return result
-
-  if (slot.scope === 'stock') {
-    const mover = result.movers.find(m => m.symbol === slot.scopeKey)
-    return {
-      movers: mover ? [mover] : [],
-      themeMoves: [],
-      hasMajorMove: !!mover,
-      isBroadMarketMove: false,
-      dayChangeDollars: mover?.dollarChange ?? 0,
-      dayChangePercent: mover?.percentChange ?? 0,
-    }
-  }
-
-  const theme = result.themeMoves.find(t => t.theme === slot.scopeKey)
-  const members = result.movers.filter(m => m.theme === slot.scopeKey)
-  return {
-    movers: members,
-    themeMoves: theme ? [theme] : [],
-    hasMajorMove: !!theme,
-    isBroadMarketMove: false,
-    dayChangeDollars: Math.round(members.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100,
-    dayChangePercent: theme?.avgPercentChange ?? 0,
-  }
-}
-
 /** Slot-specific wording for the LLM prompt — '' (all defaults) for
  *  DAILY_PORTFOLIO_SLOT so that slot's prompt text is byte-for-byte
  *  unchanged from before this file supported other slots. */
@@ -662,7 +797,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
   const existing = await getPortfolioExplanation(slot.scope, slot.scopeKey, slot.timeframe)
   // shouldRegenerate always returns true when `existing` is null, so this
   // branch is only reachable with a non-null row to fall back to.
-  if (!force && existing && !shouldRegenerate(result, existing, slot.timeframe === 'daily')) {
+  if (!force && existing && !shouldRegenerate(result, existing, slot.timeframe === 'daily', MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[slot.timeframe])) {
     return existing
   }
 

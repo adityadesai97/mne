@@ -12,7 +12,7 @@ import { config } from '@/store/config'
 import { MODEL_FOR_PROVIDER } from '@/lib/llm'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
-import { generatePortfolioExplanation, DAILY_PORTFOLIO_SLOT, EXPLANATION_TRIGGER_QUESTION, stripSources } from '@/lib/portfolioExplanation'
+import { generatePortfolioExplanation, explanationTriggerQuestion, stripSources, type PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -373,10 +373,10 @@ interface Props {
   /** Called once the resume request above has been consumed (loaded or
    *  failed) so the caller can clear it. */
   onResumeHandled?: () => void
-  /** Set by the Home page portfolio explanation teaser to open the panel
-   *  and have it fetch/generate the explanation itself as a fresh
+  /** Set by the Portfolio Pulse carousel to open the panel and have it
+   *  fetch/generate the clicked card's own explanation as a fresh
    *  conversation (there's nothing to resume — see commandBarBridge.ts). */
-  startExplanationRequest?: boolean
+  startExplanationRequest?: PortfolioInsightSlot | null
   /** Called once the explanation request above has been consumed. */
   onExplanationRequestHandled?: () => void
 }
@@ -572,24 +572,26 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     }
   }, [])
 
-  // Opening from the Home page portfolio explanation teaser: there's no
-  // conversation to resume, just a fresh one to start. Shows the seeded
-  // question immediately (reusing the normal `loading` thinking indicator)
-  // while generatePortfolioExplanation runs — which itself decides whether
-  // to reuse the cached explanation or actually call the LLM (see
-  // CLAUDE.md) — then appends the reply and persists as usual.
+  // Opening from a Portfolio Pulse carousel card: there's no conversation to
+  // resume, just a fresh one to start for the clicked slot. Shows the
+  // seeded question immediately (reusing the normal `loading` thinking
+  // indicator) while generatePortfolioExplanation runs — which itself
+  // decides whether to reuse that slot's cached explanation or actually
+  // call the LLM (see CLAUDE.md) — then appends the reply and persists as
+  // usual.
   useEffect(() => {
     if (!open || !startExplanationRequest) return
+    const slot = startExplanationRequest
     let cancelled = false
     ;(async () => {
       conversationIdRef.current = null
       conversationOriginRef.current = 'portfolio_explanation'
-      const userMessage: DisplayMessage = { id: nextId(), role: 'user', content: EXPLANATION_TRIGGER_QUESTION }
+      const userMessage: DisplayMessage = { id: nextId(), role: 'user', content: explanationTriggerQuestion(slot) }
       setDisplayMessages([userMessage])
       setIsExpanded(true)
       setLoading(true)
       try {
-        const row = await generatePortfolioExplanation(DAILY_PORTFOLIO_SLOT)
+        const row = await generatePortfolioExplanation(slot)
         if (cancelled) return
         const usage = (row.input_tokens || row.output_tokens)
           ? { inputTokens: row.input_tokens ?? 0, outputTokens: row.output_tokens ?? 0 }
