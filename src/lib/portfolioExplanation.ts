@@ -206,19 +206,50 @@ export function todayMarketDate(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+/** The set of holdings crossing the individual-mover bar — the "stock
+ *  level" for staleness/change comparisons below. Works the same whether
+ *  fed a fresh MoversResult.movers or a stored row's movers, since both
+ *  are PortfolioExplanationMover[]. */
+function significantMoverSymbols(movers: PortfolioExplanationMover[]): Set<string> {
+  return new Set(movers.filter(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT).map(m => m.symbol))
+}
+
+function themeNameSet(themeMoves: { theme: string }[]): Set<string> {
+  return new Set(themeMoves.map(t => t.theme))
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
 /** Whether it's worth spending another LLM call given what's already
- *  stored: the stored explanation is from a prior market day (reset every
- *  market open, see CLAUDE.md), or today's swing has moved meaningfully
- *  past what's already reflected (or flipped sign), per
- *  REGENERATION_HYSTERESIS_PCT. A `force` regenerate bypasses this
- *  entirely (see generatePortfolioExplanation). */
-export function shouldRegenerate(current: { dayChangePercent: number }, last: PortfolioExplanationRow | null): boolean {
+ *  stored — checked at three independent levels, any one of which is
+ *  enough on its own (see CLAUDE.md):
+ *  - market day: the stored explanation is from a prior market session
+ *    (reset every market open) regardless of how the numbers compare.
+ *  - portfolio: today's aggregate swing has moved meaningfully past what's
+ *    stored, or flipped sign (REGENERATION_HYSTERESIS_PCT).
+ *  - stock / sector: the *set* of individually-significant movers, or of
+ *    flagged theme moves, differs from what's stored — a new holding or
+ *    sector joining the story (or one dropping out of it) is a change
+ *    even if the aggregate swing happens to look similar.
+ *  A `force` regenerate bypasses this entirely (see
+ *  generatePortfolioExplanation). */
+export function shouldRegenerate(current: MoversResult, last: PortfolioExplanationRow | null): boolean {
   if (!last) return true
   if (last.market_date !== todayMarketDate()) return true
+
   const prevPct = Number(last.day_change_percent ?? 0)
   const currPct = current.dayChangePercent
   const signFlipped = prevPct !== 0 && currPct !== 0 && Math.sign(prevPct) !== Math.sign(currPct)
-  return signFlipped || Math.abs(currPct - prevPct) >= REGENERATION_HYSTERESIS_PCT
+  if (signFlipped || Math.abs(currPct - prevPct) >= REGENERATION_HYSTERESIS_PCT) return true
+
+  if (!setsEqual(significantMoverSymbols(current.movers), significantMoverSymbols(last.movers ?? []))) return true
+  if (!setsEqual(themeNameSet(current.themeMoves), themeNameSet(last.theme_moves ?? []))) return true
+
+  return false
 }
 
 function fmtDollars(n: number): string {
@@ -238,17 +269,36 @@ export function buildStaticNoMoveSummary(dayChangeDollars: number, dayChangePerc
   return `No major moves today — your portfolio was ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}), within normal day-to-day movement.`
 }
 
-/** The Home page card's one-line hook — entirely deterministic (no LLM,
- *  no news calls), built straight from computeMovers' output so the card
- *  costs nothing to render on every page load. Returns null when there's
- *  nothing worth surfacing (computeMovers.hasMajorMove is false), in which
- *  case the card renders nothing at all. Picks whichever framing fits the
- *  shape of today's move:
+/** The Home page card's one-line hook — entirely deterministic (no LLM
+ *  call; one cheap DB read for `previous` so it can tell "new" from
+ *  "unchanged"), built straight from computeMovers' output. Returns null
+ *  when there's nothing worth surfacing (computeMovers.hasMajorMove is
+ *  false), in which case the card renders nothing at all.
+ *
+ *  When `previous` is the same market day's explanation and is now stale
+ *  (shouldRegenerate), the wording calls out specifically what's new
+ *  since it was generated — a new sector, a new mover, or (if neither)
+ *  just the changed swing — rather than repeating a generic line that
+ *  might describe the same story the user already read. Otherwise (first
+ *  time today, or nothing's changed) picks whichever generic framing fits:
  *  - one holding dominates the swing → name it directly ("CRM moved …")
  *  - several holdings individually crossed the per-stock bar → count them
  *  - otherwise it's the aggregate swing carrying the story on its own */
-export function buildTeaser(result: MoversResult): string | null {
+export function buildTeaser(result: MoversResult, previous?: PortfolioExplanationRow | null): string | null {
   if (!result.hasMajorMove) return null
+
+  const sameDayPrevious = previous && previous.market_date === todayMarketDate() ? previous : null
+  if (sameDayPrevious && shouldRegenerate(result, sameDayPrevious)) {
+    const newThemes = [...themeNameSet(result.themeMoves)].filter(t => !themeNameSet(sameDayPrevious.theme_moves ?? []).has(t))
+    if (newThemes.length > 0) {
+      return `New activity in ${newThemes.join(', ')} since your last check. Want an updated explanation?`
+    }
+    const newSymbols = [...significantMoverSymbols(result.movers)].filter(s => !significantMoverSymbols(sameDayPrevious.movers ?? []).has(s))
+    if (newSymbols.length > 0) {
+      return `${newSymbols.join(', ')} just moved. Want an updated explanation?`
+    }
+    return `Your portfolio's move has changed since your last check. Want an updated explanation?`
+  }
 
   const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= MAJOR_MOVE_STOCK_PCT)
   const dominant = significantMovers.length === 1 && significantMovers[0].contributionPct >= DOMINANT_MOVER_CONTRIBUTION_PCT
@@ -271,7 +321,8 @@ Rules:
 - Write 2-4 sentences, no preamble, no markdown.
 - Mention specific ticker symbols and theme names by name where relevant (so the app can highlight them) — don't paraphrase them away.
 - If headlines are provided for a mover or the market, briefly weave in the likely cause; if none are provided for something, just report the numbers.
-- Distinguish company-specific moves from theme-wide or broad-market moves when the facts show that pattern.`
+- Distinguish company-specific moves from theme-wide or broad-market moves when the facts show that pattern.
+- If an earlier update from today is given, this is a refresh of it, not a brand new answer: keep whatever from it is still relevant (don't silently drop a still-current position or theme just because it isn't repeated below), and clearly work in what's new. Don't just concatenate the two — write one coherent update. If something from the earlier update is no longer reflected in today's facts below, drop it.`
 
 export function buildExplanationUserPrompt(
   movers: PortfolioExplanationMover[],
@@ -279,8 +330,14 @@ export function buildExplanationUserPrompt(
   dayChangePercent: number,
   themeMoves: PortfolioExplanationThemeMove[],
   marketHeadlines: PortfolioExplanationHeadline[],
+  previousSummary?: string,
 ): string {
   const lines: string[] = []
+  if (previousSummary) {
+    lines.push(`Earlier update from today: "${previousSummary}"`)
+    lines.push('')
+    lines.push('Current facts (may supersede parts of the earlier update):')
+  }
   lines.push(`Portfolio day change: ${fmtDollars(dayChangeDollars)} (${fmtPercent(dayChangePercent)}).`)
 
   lines.push('Movers:')
@@ -326,6 +383,15 @@ export function appendSources(summary: string, movers: PortfolioExplanationMover
   }
   if (lines.length === 0) return summary
   return `${summary}\n\nSources:\n${lines.join('\n')}`
+}
+
+/** The inverse of appendSources — strips the "Sources" list back off
+ *  before feeding a stored summary to the LLM as prior-context (its links
+ *  are deterministic and get rebuilt fresh from the current headline set
+ *  regardless; there's no reason to spend tokens re-showing them, and the
+ *  model was never the one that wrote them in the first place). */
+export function stripSources(summary: string): string {
+  return summary.split(/\n\nSources:\n/)[0]
 }
 
 function trimHeadlines(raw: any[], limit: number): PortfolioExplanationHeadline[] {
@@ -415,7 +481,14 @@ export async function generatePortfolioExplanation(options: { force?: boolean } 
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))
 
-  const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines)
+  // Carry the still-relevant parts of an earlier update from today forward
+  // rather than replacing it outright (see CLAUDE.md) — only within the
+  // same market day; a prior day's story has nothing to do with today's.
+  const previousSummary = existing && existing.has_major_moves && existing.market_date === marketDate
+    ? stripSources(existing.summary)
+    : undefined
+
+  const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines, previousSummary)
   const client = createLLMClient(config.llmProvider, config.activeApiKey)
   const model = MODEL_FOR_PROVIDER[config.llmProvider]
   const response = await client.chat.completions.create({

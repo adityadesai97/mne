@@ -1,6 +1,12 @@
 import {
-  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, appendSources,
+  computeMovers, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, appendSources, stripSources,
 } from '../lib/portfolioExplanation'
+
+// shouldRegenerate takes a full MoversResult — a minimal one for tests that
+// only care about the portfolio-level (aggregate %) check.
+function moversResult(dayChangePercent: number, overrides: Partial<ReturnType<typeof computeMovers>> = {}) {
+  return { movers: [], dayChangeDollars: 0, dayChangePercent, hasMajorMove: true, isBroadMarketMove: false, themeMoves: [], ...overrides }
+}
 
 function stockAsset(opts: {
   symbol: string
@@ -78,27 +84,49 @@ test('no broad market move with too few distinct holdings', () => {
 })
 
 test('shouldRegenerate is true with no prior explanation', () => {
-  expect(shouldRegenerate({ dayChangePercent: 1.2 }, null)).toBe(true)
+  expect(shouldRegenerate(moversResult(1.2), null)).toBe(true)
 })
 
-test('shouldRegenerate is false for a small change since the last generation, same market day', () => {
-  const last = { day_change_percent: 1.0, market_date: todayMarketDate() } as any
-  expect(shouldRegenerate({ dayChangePercent: 1.2 }, last)).toBe(false)
+test('shouldRegenerate is false when nothing has changed at any level, same market day', () => {
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate(), movers: [], theme_moves: [] } as any
+  expect(shouldRegenerate(moversResult(1.2), last)).toBe(false)
 })
 
-test('shouldRegenerate is true once the swing moves past the hysteresis band', () => {
-  const last = { day_change_percent: 1.0, market_date: todayMarketDate() } as any
-  expect(shouldRegenerate({ dayChangePercent: 2.0 }, last)).toBe(true)
+test('shouldRegenerate is true once the aggregate swing moves past the hysteresis band', () => {
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate(), movers: [], theme_moves: [] } as any
+  expect(shouldRegenerate(moversResult(2.0), last)).toBe(true)
 })
 
 test('shouldRegenerate is true on a sign flip', () => {
-  const last = { day_change_percent: 0.5, market_date: todayMarketDate() } as any
-  expect(shouldRegenerate({ dayChangePercent: -0.5 }, last)).toBe(true)
+  const last = { day_change_percent: 0.5, market_date: todayMarketDate(), movers: [], theme_moves: [] } as any
+  expect(shouldRegenerate(moversResult(-0.5), last)).toBe(true)
 })
 
 test('shouldRegenerate is true once a new market day has started, even with an unchanged swing', () => {
-  const last = { day_change_percent: 1.2, market_date: '2020-01-01' } as any
-  expect(shouldRegenerate({ dayChangePercent: 1.2 }, last)).toBe(true)
+  const last = { day_change_percent: 1.2, market_date: '2020-01-01', movers: [], theme_moves: [] } as any
+  expect(shouldRegenerate(moversResult(1.2), last)).toBe(true)
+})
+
+test('shouldRegenerate is true when a new stock-level mover joins, even with the aggregate swing unchanged', () => {
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate(), movers: [], theme_moves: [] } as any
+  const current = moversResult(1.0, { movers: [{ symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 8, contributionPct: 100, headlines: [] }] })
+  expect(shouldRegenerate(current, last)).toBe(true)
+})
+
+test('shouldRegenerate is false when the same significant movers/themes are still the ones driving it', () => {
+  const movers = [{ symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 8, contributionPct: 100, headlines: [] }]
+  const themeMoves = [{ theme: 'Semiconductors', direction: 'up' as const, avgPercentChange: 6, memberSymbols: ['NVDA', 'AMD', 'AVGO'] }]
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate(), movers, theme_moves: themeMoves } as any
+  const current = moversResult(1.0, { movers, themeMoves })
+  expect(shouldRegenerate(current, last)).toBe(false)
+})
+
+test('shouldRegenerate is true when a new sector joins the story, even with the aggregate swing unchanged', () => {
+  const last = { day_change_percent: 1.0, market_date: todayMarketDate(), movers: [], theme_moves: [] } as any
+  const current = moversResult(1.0, {
+    themeMoves: [{ theme: 'Semiconductors', direction: 'up' as const, avgPercentChange: 5, memberSymbols: ['NVDA', 'AMD', 'AVGO'] }],
+  })
+  expect(shouldRegenerate(current, last)).toBe(true)
 })
 
 test('buildStaticNoMoveSummary reports a flat day with no dollar figure', () => {
@@ -131,6 +159,13 @@ test('buildExplanationUserPrompt includes theme and market sections when present
   expect(prompt).toContain('Fed holds rates')
 })
 
+test('buildExplanationUserPrompt prepends the previous update when carrying it forward', () => {
+  const movers = [{ symbol: 'NVDA', name: 'Nvidia', dollarChange: 100, percentChange: 10, contributionPct: 100, headlines: [] }]
+  const prompt = buildExplanationUserPrompt(movers as any, 100, 0.5, [], [], 'Earlier today NVDA rallied on strong earnings.')
+  expect(prompt).toContain('Earlier update from today: "Earlier today NVDA rallied on strong earnings."')
+  expect(prompt.indexOf('Earlier update')).toBeLessThan(prompt.indexOf('Portfolio day change'))
+})
+
 test('buildTeaser returns null when there is no major move', () => {
   const result = computeMovers([stockAsset({ symbol: 'KO', currentPrice: 100.05, previousClose: 100, shares: 10 })], 1_000_000)
   expect(buildTeaser(result)).toBeNull()
@@ -161,6 +196,57 @@ test('buildTeaser falls back to the aggregate swing when no single holding cross
   const result = computeMovers(assets, 100_000)
   expect(result.movers.every(m => Math.abs(m.percentChange) < 5)).toBe(true)
   expect(buildTeaser(result)).toMatch(/^Your portfolio went up \d+\.\d\d% today\. Want to know why\?$/)
+})
+
+test('buildTeaser calls out a newly-flagged sector when a same-day previous explanation exists', () => {
+  const assets = [
+    stockAsset({ symbol: 'NVDA', currentPrice: 106, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AMD', currentPrice: 105, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+    stockAsset({ symbol: 'AVGO', currentPrice: 107, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
+  ]
+  const result = computeMovers(assets, 1_000_000)
+  const previous = { market_date: todayMarketDate(), day_change_percent: result.dayChangePercent, movers: [], theme_moves: [] } as any
+  expect(buildTeaser(result, previous)).toBe('New activity in Semiconductors since your last check. Want an updated explanation?')
+})
+
+test('buildTeaser calls out a newly-significant mover when no new sector is involved', () => {
+  const assets = [stockAsset({ symbol: 'CRM', currentPrice: 108, previousClose: 100, shares: 100 })]
+  const result = computeMovers(assets, 100_000)
+  const previous = { market_date: todayMarketDate(), day_change_percent: 0, movers: [], theme_moves: [] } as any
+  expect(buildTeaser(result, previous)).toBe('CRM just moved. Want an updated explanation?')
+})
+
+test('buildTeaser falls back to a generic "changed" line when only the aggregate swing moved', () => {
+  const assets = Array.from({ length: 20 }, (_, i) => stockAsset({ symbol: `T${i}`, currentPrice: 102, previousClose: 100, shares: 1000 }))
+  const result = computeMovers(assets, 100_000)
+  const previous = { market_date: todayMarketDate(), day_change_percent: 0, movers: [], theme_moves: [] } as any
+  expect(buildTeaser(result, previous)).toBe("Your portfolio's move has changed since your last check. Want an updated explanation?")
+})
+
+test('buildTeaser uses the plain generic framing when nothing has changed since the previous explanation', () => {
+  const assets = [stockAsset({ symbol: 'CRM', currentPrice: 108, previousClose: 100, shares: 100 })]
+  const result = computeMovers(assets, 100_000)
+  const previous = {
+    market_date: todayMarketDate(),
+    day_change_percent: result.dayChangePercent,
+    movers: result.movers,
+    theme_moves: result.themeMoves,
+  } as any
+  expect(buildTeaser(result, previous)).toBe('CRM moved +8.00% today. Want to know why?')
+})
+
+test('buildTeaser ignores a previous explanation from an earlier market day', () => {
+  const assets = [stockAsset({ symbol: 'CRM', currentPrice: 108, previousClose: 100, shares: 100 })]
+  const result = computeMovers(assets, 100_000)
+  const previous = { market_date: '2020-01-01', day_change_percent: 0, movers: [], theme_moves: [] } as any
+  expect(buildTeaser(result, previous)).toBe('CRM moved +8.00% today. Want to know why?')
+})
+
+test('stripSources removes the appended Sources block', () => {
+  const withSources = appendSources('Portfolio rose today.', [
+    { symbol: 'NVDA', name: 'Nvidia', dollarChange: 1, percentChange: 1, contributionPct: 1, headlines: [{ title: 'x', source: 'y', url: 'https://example.com', datetime: 0 }] } as any,
+  ], [])
+  expect(stripSources(withSources)).toBe('Portfolio rose today.')
 })
 
 test('appendSources leaves the summary unchanged when there is nothing to cite', () => {
