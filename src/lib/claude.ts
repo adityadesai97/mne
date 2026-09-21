@@ -57,6 +57,77 @@ async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<voi
   } catch { /* best effort */ }
 }
 
+// Both endpoints are on Finnhub's free tier (same key already used for
+// quotes/profiles/news elsewhere in this file). Per-symbol failures (bad
+// ticker, transient rate limit) are collected rather than thrown, so one
+// bad symbol in a batch doesn't blank out the rest.
+async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: any[]; errors: Array<{ symbol: string; message: string }> }> {
+  if (!config.finnhubApiKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
+  const token = config.finnhubApiKey
+  const results: any[] = []
+  const errors: Array<{ symbol: string; message: string }> = []
+
+  for (const symbol of symbols) {
+    try {
+      const [metricRes, recRes] = await Promise.all([
+        fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${token}`),
+        fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${token}`),
+      ])
+      if (!metricRes.ok) throw new Error(`Basic financials lookup failed (${metricRes.status})`)
+      const metricJson = await metricRes.json()
+      const m = metricJson?.metric ?? {}
+      if (!metricJson?.metric) throw new Error('No fundamentals data returned — check the symbol.')
+
+      let latestRecommendation: any = null
+      if (recRes.ok) {
+        const recJson = await recRes.json()
+        if (Array.isArray(recJson) && recJson.length > 0) {
+          latestRecommendation = recJson
+            .slice()
+            .sort((a: any, b: any) => String(b.period ?? '').localeCompare(String(a.period ?? '')))[0]
+        }
+      }
+
+      results.push({
+        symbol,
+        asOf: new Date().toISOString(),
+        valuation: {
+          peTTM: m.peBasicExclExtraTTM ?? m.peNormalizedAnnual ?? null,
+          pbAnnual: m.pbAnnual ?? null,
+          psTTM: m.psTTM ?? null,
+          fiftyTwoWeekHigh: m['52WeekHigh'] ?? null,
+          fiftyTwoWeekLow: m['52WeekLow'] ?? null,
+          beta: m.beta ?? null,
+        },
+        profitability: {
+          netProfitMarginTTM: m.netProfitMarginTTM ?? null,
+          roeTTM: m.roeTTM ?? null,
+          roaTTM: m.roaTTM ?? null,
+          epsGrowth5Y: m.epsGrowth5Y ?? null,
+          revenueGrowth5Y: m.revenueGrowth5Y ?? null,
+          dividendYieldIndicatedAnnual: m.dividendYieldIndicatedAnnual ?? null,
+          currentRatioAnnual: m.currentRatioAnnual ?? null,
+          longTermDebtEquityAnnual: m['longTermDebt/equityAnnual'] ?? null,
+        },
+        analystRecommendations: latestRecommendation
+          ? {
+              period: latestRecommendation.period,
+              strongBuy: latestRecommendation.strongBuy,
+              buy: latestRecommendation.buy,
+              hold: latestRecommendation.hold,
+              sell: latestRecommendation.sell,
+              strongSell: latestRecommendation.strongSell,
+            }
+          : null,
+      })
+    } catch (error: any) {
+      errors.push({ symbol, message: String(error?.message ?? 'Lookup failed') })
+    }
+  }
+
+  return { results, errors }
+}
+
 function isSaleUtterance(text: string): boolean {
   // Strip "sold-to-cover" / "sold to cover" (RSU tax withholding) before checking,
   // otherwise RSU entry prompts falsely trigger the sale-proceeds clarification.
@@ -1266,6 +1337,18 @@ async function executeReadTool(
     return computeRsuVestingSchedule(context.assets, input)
   }
 
+  if (toolName === 'get_company_fundamentals') {
+    const symbols = Array.from(new Set(asStringArray(input?.symbols).map((symbol) => normalizeSymbol(symbol)).filter(Boolean))).slice(0, 5)
+    if (symbols.length === 0) throw new Error('At least one symbol is required.')
+    const { results, errors } = await fetchCompanyFundamentals(symbols)
+    return {
+      companies: results,
+      errors,
+      source: 'Finnhub (free tier)',
+      disclaimer: 'Raw fundamentals and analyst-sentiment data for context only — not investment advice.',
+    }
+  }
+
   throw new Error(`Unsupported read tool: ${toolName}`)
 }
 
@@ -1283,6 +1366,7 @@ const READ_TOOL_FRIENDLY_LABEL: Record<string, string> = {
   simulate_portfolio_actions: 'Simulated the scenario you asked about',
   recommend_actions_for_goal: 'Worked out recommendations for your goal',
   get_rsu_vesting_schedule: 'Worked out your RSU vesting schedule',
+  get_company_fundamentals: 'Looked up company fundamentals',
 }
 
 function friendlyReadToolLabel(toolName: string): string {
@@ -1331,6 +1415,11 @@ function summarizeReadToolResult(toolName: string, result: any): string {
     const grants = Array.isArray(result?.grants) ? result.grants.length : 0
     const total = toNumber(result?.totalSharesVestingInWindow, 0)
     return `${grants} grant(s), ${total} share(s) vesting ${result?.fromDate ?? ''} → ${result?.toDate ?? ''}`
+  }
+  if (toolName === 'get_company_fundamentals') {
+    const companies = Array.isArray(result?.companies) ? result.companies.length : 0
+    const errors = Array.isArray(result?.errors) ? result.errors.length : 0
+    return `${companies} compan(y/ies)${errors > 0 ? `, ${errors} error(s)` : ''}`
   }
   return clipText(result, 160)
 }
@@ -1631,6 +1720,20 @@ const tools = [
           from_date: { type: 'string', description: "ISO date YYYY-MM-DD, window start. Defaults to today." },
           to_date: { type: 'string', description: 'ISO date YYYY-MM-DD, window end. Defaults to 30 days after from_date.' },
         },
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_company_fundamentals',
+      description: 'Fetch company fundamentals (valuation and profitability metrics) and the latest analyst recommendation trend (strong buy/buy/hold/sell/strong sell counts) for one or more ticker symbols, via Finnhub\'s free-tier basic-financials and recommendation-trends endpoints. Use this to answer questions about a stock\'s valuation, margins, growth, or analyst sentiment. This returns raw data only — never state or imply a buy/sell/hold recommendation of your own based on it; report the numbers and let the user draw their own conclusion.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbols: { type: 'array', items: { type: 'string' }, description: 'Ticker symbols, e.g. ["AAPL", "MSFT"]. Up to 5 per call.' },
+        },
+        required: ['symbols'],
       },
     },
   },
@@ -1975,6 +2078,7 @@ const READ_TOOL_NAMES = new Set([
   'simulate_portfolio_actions',
   'recommend_actions_for_goal',
   'get_rsu_vesting_schedule',
+  'get_company_fundamentals',
 ])
 
 const WRITE_TOOL_NAMES = new Set([

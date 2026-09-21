@@ -133,6 +133,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `simulate_portfolio_actions` — hypothetical what-if scenarios
 - `recommend_actions_for_goal` — goal-based recommendations
 - `get_rsu_vesting_schedule` — shares vesting between two dates, per grant (discrete installment math, not a smooth-curve estimate)
+- `get_company_fundamentals` — valuation/profitability metrics + latest analyst recommendation trend for up to 5 symbols, via Finnhub's free-tier `stock/metric` and `stock/recommendation` endpoints (same `finnhub_api_key` used elsewhere, no new provider). Returns raw data only — the tool description explicitly tells the model never to state its own buy/sell/hold call from it, matching `recommend_actions_for_goal`'s existing "educational guidance only" framing rather than opening a stock-picking-advice surface.
 
 **Navigation tool** (no confirmation):
 - `navigate_to` — routes to a page
