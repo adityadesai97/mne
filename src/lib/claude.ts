@@ -57,10 +57,40 @@ async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<voi
   } catch { /* best effort */ }
 }
 
-// Both endpoints are on Finnhub's free tier (same key already used for
-// quotes/profiles/news elsewhere in this file). Per-symbol failures (bad
-// ticker, transient rate limit) are collected rather than thrown, so one
-// bad symbol in a batch doesn't blank out the rest.
+// Capex has no dedicated Finnhub field — it only shows up as a line item
+// inside the SEC "as reported" cash flow statement (stock/financials-reported),
+// under whichever XBRL concept the filer happened to use. Checked against a
+// real filing (AAPL FY2025 10-K): reported as
+// us-gaap_PaymentsToAcquirePropertyPlantAndEquipment. The other patterns below
+// are the next most common capex concepts across filers, checked in order;
+// falls back to a label-text match for anything not covered by a known concept.
+const CAPEX_CONCEPT_PATTERNS = [
+  /paymentstoacquirepropertyplantandequipment/i,
+  /paymentsforcapitalimprovements/i,
+  /paymentstoacquireproductiveassets/i,
+  /paymentstoacquiremachineryandequipment/i,
+  /paymentstoacquireotherpropertyplantandequipment/i,
+]
+
+function findCapexLineItem(cfLines: unknown): { concept: string; label: string; value: number } | null {
+  if (!Array.isArray(cfLines)) return null
+  for (const pattern of CAPEX_CONCEPT_PATTERNS) {
+    const match = cfLines.find((line: any) => pattern.test(String(line?.concept ?? '')))
+    if (match) return match
+  }
+  return cfLines.find((line: any) => {
+    const label = String(line?.label ?? '').toLowerCase()
+    return label.includes('capital expenditure')
+      || (label.includes('property') && (label.includes('plant') || label.includes('equipment')) && (label.includes('purchase') || label.includes('payment') || label.includes('acquisition')))
+  }) ?? null
+}
+
+// All three endpoints are on Finnhub's free tier (same key already used for
+// quotes/profiles/news elsewhere in this file) — confirmed against a live
+// free-tier key, including stock/financials-reported (stock/financials with
+// statement=cf is NOT free and is deliberately not used here). Per-symbol
+// failures (bad ticker, transient rate limit) are collected rather than
+// thrown, so one bad symbol in a batch doesn't blank out the rest.
 async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: any[]; errors: Array<{ symbol: string; message: string }> }> {
   if (!config.finnhubApiKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
   const token = config.finnhubApiKey
@@ -69,9 +99,10 @@ async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: a
 
   for (const symbol of symbols) {
     try {
-      const [metricRes, recRes] = await Promise.all([
+      const [metricRes, recRes, financialsRes] = await Promise.all([
         fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${token}`),
         fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${token}`),
+        fetch(`https://finnhub.io/api/v1/stock/financials-reported?symbol=${symbol}&freq=annual&token=${token}`),
       ])
       if (!metricRes.ok) throw new Error(`Basic financials lookup failed (${metricRes.status})`)
       const metricJson = await metricRes.json()
@@ -86,6 +117,24 @@ async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: a
             .slice()
             .sort((a: any, b: any) => String(b.period ?? '').localeCompare(String(a.period ?? '')))[0]
         }
+      }
+
+      let capitalExpenditures: any = null
+      if (financialsRes.ok) {
+        try {
+          const financialsJson = await financialsRes.json()
+          const latestReport = Array.isArray(financialsJson?.data) ? financialsJson.data[0] : null
+          const capexLine = findCapexLineItem(latestReport?.report?.cf)
+          if (capexLine) {
+            capitalExpenditures = {
+              value: toNumber(capexLine.value, 0),
+              fiscalYear: latestReport?.year ?? null,
+              periodEndDate: latestReport?.endDate ? String(latestReport.endDate).slice(0, 10) : null,
+              form: latestReport?.form ?? null,
+              sourceLabel: capexLine.label ?? null,
+            }
+          }
+        } catch { /* best effort — leave capitalExpenditures null */ }
       }
 
       results.push({
@@ -109,6 +158,11 @@ async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: a
           currentRatioAnnual: m.currentRatioAnnual ?? null,
           longTermDebtEquityAnnual: m['longTermDebt/equityAnnual'] ?? null,
         },
+        // Most recent fiscal-year figure from the SEC "as reported" cash flow
+        // statement — not a Finnhub metric, so it's null when the filer used
+        // an XBRL concept CAPEX_CONCEPT_PATTERNS doesn't recognize, or the
+        // company has no 10-K on file (e.g. non-US filers).
+        capitalExpenditures,
         analystRecommendations: latestRecommendation
           ? {
               period: latestRecommendation.period,
@@ -1727,7 +1781,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_company_fundamentals',
-      description: 'Fetch company fundamentals (valuation and profitability metrics) and the latest analyst recommendation trend (strong buy/buy/hold/sell/strong sell counts) for one or more ticker symbols, via Finnhub\'s free-tier basic-financials and recommendation-trends endpoints. Use this to answer questions about a stock\'s valuation, margins, growth, or analyst sentiment. This returns raw data only — never state or imply a buy/sell/hold recommendation of your own based on it; report the numbers and let the user draw their own conclusion.',
+      description: 'Fetch company fundamentals (valuation and profitability metrics), the most recent fiscal-year capital expenditures (from the SEC "as reported" cash flow statement — may be null if not found in the filing), and the latest analyst recommendation trend (strong buy/buy/hold/sell/strong sell counts) for one or more ticker symbols, via Finnhub\'s free-tier endpoints. Use this to answer questions about a stock\'s valuation, margins, growth, capex, or analyst sentiment. This returns raw data only — never state or imply a buy/sell/hold recommendation of your own based on it; report the numbers and let the user draw their own conclusion.',
       parameters: {
         type: 'object' as const,
         properties: {
