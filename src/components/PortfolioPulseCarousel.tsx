@@ -162,7 +162,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
       {...revealUp(0.02)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="md:col-span-4 md:self-start bg-card shadow-card rounded-2xl p-5"
+      className="md:col-span-6 bg-card shadow-card rounded-2xl p-5"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
@@ -182,9 +182,6 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
           </div>
         )}
       </div>
-      {/* md:self-start keeps this card sized to its own content — without
-          it, a CSS Grid item stretches to match the height of whatever
-          taller card (e.g. Allocation) ends up sharing its row. */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
