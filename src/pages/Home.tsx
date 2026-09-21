@@ -20,6 +20,7 @@ import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -659,6 +660,13 @@ export default function Home() {
             {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
+
+        {/* PORTFOLIO PULSE — placed after Allocation/P&L (not right below the
+            Net Worth hero) so the grid's auto-placement fills the 2x2 gap
+            beside the hero with those two cards first, same as without this
+            card; a col-span-6 item any earlier pushes the placement cursor
+            past that gap and leaves it permanently empty. */}
+        <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />
 
         {/* DAILY MOVERS */}
         {dailyMovers.length > 0 && (
