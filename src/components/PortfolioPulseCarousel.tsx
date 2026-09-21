@@ -162,9 +162,9 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
       {...revealUp(0.02)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="md:col-span-4 md:self-start bg-card shadow-card rounded-2xl p-5"
+      className="md:col-span-2 md:row-span-2 bg-card shadow-card rounded-2xl p-5 flex flex-col"
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
         {cards.length > 1 && (
           <div className="flex items-center gap-1.5 shrink-0" role="tablist" aria-label="Portfolio Pulse insights">
@@ -182,12 +182,17 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
           </div>
         )}
       </div>
+      {/* This card row-spans to match the Net Worth hero beside it (see
+          Home.tsx) so the two sit flush together with no gap — the teaser
+          is vertically centered in the leftover height rather than pinned
+          under the header, so it reads as a deliberate, calm panel instead
+          of a short card floating at the top of a tall, empty box. */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         onPointerDown={pauseAutoplayTemporarily}
         onTouchStart={pauseAutoplayTemporarily}
-        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+        className="flex-1 flex items-center overflow-x-auto snap-x snap-mandatory no-scrollbar"
       >
         {cards.map((c) => (
           <button
