@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
 import { Sparkles, ArrowRight } from 'lucide-react'
 import {
   computeMovers,
@@ -15,6 +15,8 @@ import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
 
 const AUTOPLAY_MS = 6500
+// How long a manual swipe/scroll suppresses autoplay before it resumes.
+const RESUME_AUTOPLAY_MS = 5000
 // Covers the longest fixed timeframe (yearly, 365d) plus the longest
 // notable-move scan window (270d, see CUSTOM_WINDOW_DAYS in
 // portfolioExplanation.ts), with a little slack.
@@ -38,12 +40,22 @@ function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string
  *  deterministic teaser (buildSlotTeaser: no LLM call) that opens a command
  *  bar session on click, which fetches/generates that one slot's actual
  *  explanation — see CommandBar.tsx's handling of `startExplanationRequest`.
- *  Renders nothing when there's nothing to show. */
+ *  Renders nothing when there's nothing to show.
+ *
+ *  Cards sit in a native horizontally-scrolling, scroll-snapped strip
+ *  (rather than a framer-motion drag gesture) so a swipe/trackpad scroll
+ *  moves between them directly — the browser's own "a scroll cancels the
+ *  following click" behavior means each card's own click handler never
+ *  needs to guess whether a gesture was a tap or a swipe. Autoplay and the
+ *  dot indicators drive the same scroll position that a manual swipe does,
+ *  so all three stay in sync. */
 export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; netWorth: number }) {
   const [priceHistory, setPriceHistory] = useState<Map<string, TickerPricePoint[]> | null>(null)
   const [previousBySlot, setPreviousBySlot] = useState<Map<string, PortfolioExplanationRow | null>>(new Map())
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const tickerIds = useMemo(
     () => [...new Set(assets.filter((a: any) => a.asset_type === 'Stock' && a.ticker?.id).map((a: any) => a.ticker.id as string))],
@@ -114,57 +126,84 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     return () => clearInterval(id)
   }, [cards.length, paused])
 
-  if (cards.length === 0) return null
+  useEffect(() => () => { if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current) }, [])
 
-  const current = cards[index % cards.length]
+  // Drives the scroll position from `index` — an autoplay tick or a dot
+  // click both just change `index`, and this is what actually moves the
+  // strip. The threshold check keeps this from fighting handleScroll below
+  // while the position it computed is already where we want to be.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || cards.length === 0) return
+    const target = index * el.clientWidth
+    if (Math.abs(el.scrollLeft - target) > 2) el.scrollTo({ left: target, behavior: 'smooth' })
+  }, [index, cards.length])
+
+  // The other direction: a manual swipe/trackpad scroll updates `index` to
+  // match wherever the strip actually landed, which keeps the dots and any
+  // future autoplay tick in sync with what the user did by hand.
+  function handleScroll() {
+    const el = scrollRef.current
+    if (!el || el.clientWidth === 0) return
+    const newIndex = Math.round(el.scrollLeft / el.clientWidth)
+    setIndex(i => (i === newIndex ? i : newIndex))
+  }
+
+  function pauseAutoplayTemporarily() {
+    setPaused(true)
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
+    resumeTimerRef.current = setTimeout(() => setPaused(false), RESUME_AUTOPLAY_MS)
+  }
+
+  if (cards.length === 0) return null
 
   return (
     <motion.div
       {...revealUp(0.02)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      onClick={() => openPortfolioExplanationInCommandBar(current.slot)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPortfolioExplanationInCommandBar(current.slot) }
-      }}
-      title="Ask about this in the command bar"
-      className="md:col-span-6 bg-card shadow-card rounded-2xl p-5 cursor-pointer"
+      className="md:col-span-4 bg-card shadow-card rounded-2xl p-5"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
         {cards.length > 1 && (
-          <div className="flex items-center gap-1 shrink-0" role="tablist" aria-label="Portfolio Pulse insights">
+          <div className="flex items-center gap-1.5 shrink-0" role="tablist" aria-label="Portfolio Pulse insights">
             {cards.map((c, i) => (
               <button
                 key={slotKey(c.slot)}
                 type="button"
                 role="tab"
-                aria-selected={i === index % cards.length}
+                aria-selected={i === index}
                 aria-label={`Show insight ${i + 1} of ${cards.length}`}
-                onClick={(e) => { e.stopPropagation(); setIndex(i) }}
-                className={`h-1.5 rounded-full transition-all ${i === index % cards.length ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`}
+                onClick={() => { pauseAutoplayTemporarily(); setIndex(i) }}
+                className={`shrink-0 rounded-full transition-all ${i === index ? 'h-2 w-2 bg-primary' : 'h-1.5 w-1.5 bg-muted-foreground/30'}`}
               />
             ))}
           </div>
         )}
       </div>
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={slotKey(current.slot)}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.25 }}
-          className="text-sm text-foreground leading-relaxed inline-flex items-center gap-1.5 flex-wrap"
-        >
-          <span>{current.teaser}</span>
-          <ArrowRight size={14} className="text-muted-foreground shrink-0" aria-hidden="true" />
-        </motion.p>
-      </AnimatePresence>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        onPointerDown={pauseAutoplayTemporarily}
+        onTouchStart={pauseAutoplayTemporarily}
+        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+      >
+        {cards.map((c) => (
+          <button
+            key={slotKey(c.slot)}
+            type="button"
+            onClick={() => openPortfolioExplanationInCommandBar(c.slot)}
+            title="Ask about this in the command bar"
+            className="w-full shrink-0 snap-center text-left cursor-pointer"
+          >
+            <p className="text-sm text-foreground leading-relaxed break-words">
+              {c.teaser}{' '}
+              <ArrowRight size={14} className="inline align-text-bottom text-muted-foreground" aria-hidden="true" />
+            </p>
+          </button>
+        ))}
+      </div>
     </motion.div>
   )
 }
