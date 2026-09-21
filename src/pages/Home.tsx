@@ -20,7 +20,6 @@ import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
-import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -599,8 +598,6 @@ export default function Home() {
             </div>
           )}
         </motion.div>
-
-        <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />
 
         {/* ALLOCATION */}
         <motion.div
