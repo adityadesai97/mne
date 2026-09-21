@@ -1204,7 +1204,7 @@ function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[80%] whitespace-pre-wrap break-words">
+        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[80%] whitespace-pre-wrap break-words selection:bg-primary-foreground selection:text-primary">
           {message.content}
         </span>
       </div>
