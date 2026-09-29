@@ -1,4 +1,5 @@
 import {
+  trimToLastSentence,
   computeMovers, computeMoversForWindow, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
   explanationTriggerQuestion, DAILY_PORTFOLIO_SLOT, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME, MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME,
   computeCandidateSlots, buildSlotTeaser, scopeMoversResult, CUSTOM_WINDOW_DAYS,
@@ -193,14 +194,14 @@ test('buildTeaser names a single dominant mover directly', () => {
   expect(buildTeaser(result)).toBe('CRM moved +8.00% today. Want to know why?')
 })
 
-test('buildTeaser names a flagged sector on the first check of the day, before falling back to a plain count', () => {
+test('buildTeaser leads with the portfolio and names the flagged sector as context', () => {
   const assets = [
     stockAsset({ symbol: 'NVDA', currentPrice: 104, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
     stockAsset({ symbol: 'AMD', currentPrice: 103, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
     stockAsset({ symbol: 'AVGO', currentPrice: 106, previousClose: 100, shares: 10, themes: ['Semiconductors'] }),
   ]
   const result = computeMovers(assets, 1_000_000)
-  expect(buildTeaser(result)).toBe('Your Semiconductors holdings moved up 4.33% today. Want to know why?')
+  expect(buildTeaser(result)).toMatch(/^Your portfolio went up [\d.]+% today, with Semiconductors moving the most\. Want to know why\?$/)
 })
 
 test('buildTeaser counts multiple significant movers when no single one dominates', () => {
@@ -388,12 +389,12 @@ test('buildSlotTeaser returns null for a stock-scope slot whose mover no longer 
   expect(buildSlotTeaser(slot, result)).toBeNull()
 })
 
-test('computeCandidateSlots surfaces both a daily and weekly slot for the same stock when each crosses its own bar', () => {
+test('computeCandidateSlots collapses a stock crossing its bar at several timeframes into one slot (the shortest)', () => {
   const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 110, previousClose: 100, shares: 10, tickerId: 't-nvda' })]
   const priceHistory = new Map<string, TickerPricePoint[]>([['t-nvda', [{ date: daysAgo(7), price: 95 }]]])
   const slots = computeCandidateSlots(assets, 1_000_000, priceHistory)
   expect(slots).toContainEqual({ scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 })
-  expect(slots).toContainEqual({ scope: 'stock', scopeKey: 'NVDA', timeframe: 'weekly', windowDays: 7 })
+  expect(slots.filter(s => s.scope === 'stock' && s.scopeKey === 'NVDA')).toHaveLength(1)
 })
 
 test('computeCandidateSlots finds a notable custom-window move not covered by any fixed timeframe', () => {
@@ -411,4 +412,9 @@ test('computeCandidateSlots finds a notable custom-window move not covered by an
   const customSlot = slots.find(s => s.scope === 'stock' && s.scopeKey === 'NVDA' && s.timeframe === 'custom')
   expect(customSlot).toBeDefined()
   expect(CUSTOM_WINDOW_DAYS).toContain(customSlot!.windowDays)
+})
+
+test('trimToLastSentence drops a dangling fragment only when the reply hit its token cap', () => {
+  expect(trimToLastSentence('First sentence. Second sentence. Third cut of', 'length')).toBe('First sentence. Second sentence.')
+  expect(trimToLastSentence('Complete reply without a period', 'stop')).toBe('Complete reply without a period')
 })

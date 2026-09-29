@@ -18,7 +18,7 @@ export interface NormalizedUsage {
   outputTokens: number
 }
 export interface NormalizedResponse {
-  choices: [{ message: { content: string | null; tool_calls?: NormalizedToolCall[] } }]
+  choices: [{ message: { content: string | null; tool_calls?: NormalizedToolCall[] }; finish_reason?: string | null }]
   usage?: NormalizedUsage
 }
 
@@ -103,7 +103,7 @@ function toNormalizedResponse(response: Anthropic.Message): NormalizedResponse {
   const usage = response.usage
     ? { inputTokens: response.usage.input_tokens ?? 0, outputTokens: response.usage.output_tokens ?? 0 }
     : undefined
-  return { choices: [{ message: { content: text, tool_calls: toolCalls.length ? toolCalls : undefined } }], usage }
+  return { choices: [{ message: { content: text, tool_calls: toolCalls.length ? toolCalls : undefined }, finish_reason: response.stop_reason === 'max_tokens' ? 'length' : response.stop_reason }], usage }
 }
 
 // ── Claude adapter ─────────────────────────────────────────────────────────
@@ -195,6 +195,7 @@ class GroqAdapter {
         // not by concatenating chunks in arrival order.
         const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string }>()
         let usage: NormalizedUsage | undefined
+        let finishReason: string | null = null
 
         for await (const chunk of stream) {
           // The usage-only trailing chunk has an empty `choices` array (no
@@ -203,6 +204,7 @@ class GroqAdapter {
           if (chunk.usage) {
             usage = { inputTokens: chunk.usage.prompt_tokens ?? 0, outputTokens: chunk.usage.completion_tokens ?? 0 }
           }
+          if (chunk.choices[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason
           const delta = chunk.choices[0]?.delta
           if (!delta) continue
           if (delta.content) {
@@ -223,7 +225,7 @@ class GroqAdapter {
           type: 'function' as const,
           function: { name: tc.name, arguments: tc.arguments },
         }))
-        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined } }], usage }
+        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined }, finish_reason: finishReason }], usage }
       },
     },
   }

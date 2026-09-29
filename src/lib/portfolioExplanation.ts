@@ -485,7 +485,12 @@ function buildPortfolioTeaser(
   }
   if (result.themeMoves.length > 0) {
     const primaryTheme = [...result.themeMoves].sort((a, b) => Math.abs(b.avgPercentChange) - Math.abs(a.avgPercentChange))[0]
-    return `Your ${primaryTheme.theme} holdings moved ${primaryTheme.direction} ${Math.abs(primaryTheme.avgPercentChange).toFixed(2)}% ${when}. Want to know why?`
+    // This card opens the *portfolio-wide* question, so lead with the
+    // portfolio and only name the sector as context — a "Your X holdings
+    // moved…" opener reads as a sector card and the tap seemed to open the
+    // wrong session. Sector moves get their own card.
+    const dir = result.dayChangeDollars >= 0 ? 'up' : 'down'
+    return `Your portfolio went ${dir} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}, with ${primaryTheme.theme} moving the most. Want to know why?`
   }
   if (significantMovers.length >= 2) {
     return `${significantMovers.length} items in your portfolio moved substantially ${when}. Want to know why?`
@@ -640,18 +645,39 @@ export function computeCandidateSlots(assets: any[], netWorth: number, priceHist
   }
   const topCustom = [...found.values()].sort((a, b) => b.magnitude - a.magnitude).slice(0, 2).map(c => c.slot)
 
-  return [...slots, ...topCustom]
+  // One card per subject (a given stock, sector, or the portfolio itself):
+  // the same subject crossing its bar at several timeframes would otherwise
+  // show up as near-identical duplicate cards. Order above is daily →
+  // weekly → monthly → yearly → custom, so the first hit is the shortest
+  // (most current) timeframe.
+  const seen = new Set<string>()
+  return [...slots, ...topCustom].filter(s => {
+    const key = `${s.scope}:${s.scopeKey}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /** `timeWord` defaults to 'daily' so the exported constant below (still
  *  used wherever a slot isn't threaded through) reads exactly as before. */
+/** If the model hit its token cap, drop the dangling fragment so the reply
+ *  ends on a full sentence rather than mid-thought. */
+export function trimToLastSentence(text: string, finishReason?: string | null): string {
+  if (!text || (finishReason !== 'length' && finishReason !== 'max_tokens')) return text
+  const idx = Math.max(text.lastIndexOf('. '), text.lastIndexOf('.\n'), /[.!?]$/.test(text) ? text.length - 1 : -1)
+  return idx > 0 ? text.slice(0, idx + 1) : text
+}
+
 export function explanationSystemPrompt(timeWord: string = 'daily'): string {
   return `You explain a user's investment portfolio's ${timeWord} performance in plain English.
 Rules:
 - Use ONLY the facts given below. Never invent a cause, headline, or number.
 - Write 2-4 sentences, no preamble, no markdown.
 - Mention specific ticker symbols and theme names by name where relevant (so the app can highlight them) — don't paraphrase them away.
-- If headlines are provided for a mover or the market, briefly weave in the likely cause; if none are provided for something, just report the numbers.
+- If headlines are provided for a mover or the market, briefly weave in the likely cause. If none are provided for something, say plainly that no news was found for it and report the numbers — never imply or guess a cause.
+- The reader may not know every holding: when you mention a company or fund, say what it is in a few words (e.g. "CleanSpark, a bitcoin miner"), using only the name/theme given below.
+- Lead with the current state of the move in plain terms; avoid "flipped"/"reversal from the earlier reading" phrasing unless it actually helps the reader understand.
 - Distinguish company-specific moves from theme-wide or broad-market moves when the facts show that pattern.
 - If an earlier update covering the same period is given, this is a refresh of it, not a brand new answer: keep whatever from it is still relevant (don't silently drop a still-current position or theme just because it isn't repeated below), and clearly work in what's new. Don't just concatenate the two — write one coherent update. If something from the earlier update is no longer reflected in the facts below, drop it.`
 }
@@ -726,9 +752,9 @@ function trimHeadlines(raw: any[], limit: number): PortfolioExplanationHeadline[
 /** Best-effort per-mover company news — only ever called for the (≤5)
  *  actual movers, never the rest of the portfolio, and only when there's a
  *  major move to explain in the first place. */
-export async function fetchMoverHeadlines(symbols: string[], finnhubApiKey: string): Promise<Map<string, PortfolioExplanationHeadline[]>> {
+export async function fetchMoverHeadlines(symbols: string[], finnhubApiKey: string, windowDays: number = 7): Promise<Map<string, PortfolioExplanationHeadline[]>> {
   const today = new Date().toISOString().split('T')[0]
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const weekAgo = new Date(Date.now() - Math.max(7, Math.min(windowDays, 30)) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const result = new Map<string, PortfolioExplanationHeadline[]>()
   await Promise.all(symbols.map(async (symbol) => {
     try {
@@ -827,7 +853,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   const finnhubKey = config.finnhubApiKey
   const [headlinesBySymbol, marketHeadlines] = await Promise.all([
-    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
+    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
     finnhubKey && result.isBroadMarketMove ? fetchMarketHeadlines(finnhubKey) : Promise.resolve([]),
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))
@@ -847,7 +873,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
   const model = MODEL_FOR_PROVIDER[config.llmProvider]
   const response = await client.chat.completions.create({
     model,
-    max_tokens: 220,
+    max_tokens: 600,
     messages: [
       { role: 'system', content: explanationSystemPrompt(timeWord) },
       { role: 'user', content: prompt },
@@ -857,7 +883,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
   // No links appended here — see stripSources' docstring. The caller
   // (CommandBar.tsx) renders movers/theme_moves/market_headlines as
   // interactive highlights + a market-context list instead.
-  const summary = response.choices[0]?.message?.content?.trim() || buildStaticNoMoveSummary(result.dayChangeDollars, result.dayChangePercent)
+  const summary = trimToLastSentence(response.choices[0]?.message?.content?.trim() ?? '', response.choices[0]?.finish_reason) || buildStaticNoMoveSummary(result.dayChangeDollars, result.dayChangePercent)
   const inputTokens = response.usage?.inputTokens ?? null
   const outputTokens = response.usage?.outputTokens ?? null
 

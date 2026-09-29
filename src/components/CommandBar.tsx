@@ -1332,7 +1332,7 @@ function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onD
         placeholder="What was wrong, or how could this be better?"
         value={text}
         onChange={e => setText(e.target.value)}
-        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-base md:text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
       {attachment && (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">

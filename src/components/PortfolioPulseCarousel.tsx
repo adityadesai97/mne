@@ -151,6 +151,10 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
 
   function pauseAutoplayTemporarily() {
     setPaused(true)
+    // Stop any in-flight smooth scroll so a tap lands on the card the user
+    // is looking at, not the neighbour it's animating toward.
+    const el = scrollRef.current
+    if (el) el.scrollTo({ left: el.scrollLeft, behavior: 'auto' })
     if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
     resumeTimerRef.current = setTimeout(() => setPaused(false), RESUME_AUTOPLAY_MS)
   }
