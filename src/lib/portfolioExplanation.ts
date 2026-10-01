@@ -21,7 +21,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { computeDailyChange, computeShareCount, computeTotalNetWorth } from './portfolio'
+import { computeDailyChange, computeShareCount, computeTotalNetWorth, isTickerAsset } from './portfolio'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import { config } from '@/store/config'
 
@@ -138,7 +138,7 @@ function tickerThemeNames(asset: any): string[] {
 function computeSymbolMoves(assets: any[]): SymbolMove[] {
   const bySymbol = new Map<string, SymbolMove>()
   for (const asset of assets) {
-    if (asset.asset_type !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     if (!symbol) continue
     const shares = computeShareCount(asset)
@@ -219,7 +219,7 @@ function findPriceApproxNDaysAgo(history: TickerPricePoint[], days: number): num
 function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, TickerPricePoint[]>, days: number): SymbolMove[] {
   const bySymbol = new Map<string, SymbolMove>()
   for (const asset of assets) {
-    if (asset.asset_type !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     const tickerId = asset.ticker?.id
     if (!symbol || !tickerId) continue
@@ -749,14 +749,53 @@ function trimHeadlines(raw: any[], limit: number): PortfolioExplanationHeadline[
     .map(a => ({ title: String(a.headline), source: String(a.source ?? ''), url: String(a.url ?? ''), datetime: Number(a.datetime ?? 0) }))
 }
 
+/** Keeps only news items whose headline/summary names the coin — by its full
+ *  name ("Bitcoin") or its ticker as a standalone uppercase word ("BTC"),
+ *  so a short symbol like "ETH" doesn't match inside "method". Exported for
+ *  tests. */
+export function filterNewsForCoin(raw: any[], symbol: string, name: string): any[] {
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const nameRe = name && name.toUpperCase() !== symbol.toUpperCase()
+    ? new RegExp(`\\b${escape(name)}\\b`, 'i')
+    : null
+  const symbolRe = new RegExp(`\\b${escape(symbol.toUpperCase())}\\b`)
+  return raw.filter(item => {
+    const text = `${item?.headline ?? ''} ${item?.summary ?? ''}`
+    return symbolRe.test(text) || (nameRe?.test(text) ?? false)
+  })
+}
+
 /** Best-effort per-mover company news — only ever called for the (≤5)
  *  actual movers, never the rest of the portfolio, and only when there's a
  *  major move to explain in the first place. */
-export async function fetchMoverHeadlines(symbols: string[], finnhubApiKey: string, windowDays: number = 7): Promise<Map<string, PortfolioExplanationHeadline[]>> {
+export async function fetchMoverHeadlines(
+  symbols: string[],
+  finnhubApiKey: string,
+  windowDays: number = 7,
+  cryptoNames: Map<string, string> = new Map(),
+): Promise<Map<string, PortfolioExplanationHeadline[]>> {
   const today = new Date().toISOString().split('T')[0]
   const weekAgo = new Date(Date.now() - Math.max(7, Math.min(windowDays, 30)) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const result = new Map<string, PortfolioExplanationHeadline[]>()
-  await Promise.all(symbols.map(async (symbol) => {
+
+  // Finnhub has no per-coin news — company-news is keyed by stock symbol and
+  // a coin's symbol could match an unrelated stock. Crypto movers instead get
+  // the general crypto news feed filtered down to items that actually name
+  // the coin (one fetch shared across every crypto mover).
+  const cryptoSymbols = symbols.filter(symbol => cryptoNames.has(symbol))
+  if (cryptoSymbols.length > 0) {
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/news?category=crypto&token=${finnhubApiKey}`)
+      const raw = await res.json()
+      if (Array.isArray(raw)) {
+        for (const symbol of cryptoSymbols) {
+          result.set(symbol, trimHeadlines(filterNewsForCoin(raw, symbol, cryptoNames.get(symbol) ?? symbol), 2))
+        }
+      }
+    } catch { /* best-effort — a missing headline just means no citation for that mover */ }
+  }
+
+  await Promise.all(symbols.filter(symbol => !cryptoNames.has(symbol)).map(async (symbol) => {
     try {
       const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${weekAgo}&to=${today}&token=${finnhubApiKey}`)
       const raw = await res.json()
@@ -810,7 +849,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
     fullResult = computeMovers(assets, netWorth)
   } else {
     const tickerIds = [...new Set(
-      assets.filter((a: any) => a.asset_type === 'Stock' && a.ticker?.id).map((a: any) => a.ticker.id as string),
+      assets.filter((a: any) => isTickerAsset(a) && a.ticker?.id).map((a: any) => a.ticker.id as string),
     )]
     // A little slack past windowDays so a ticker's oldest-available row
     // still counts as "the anchor" even if it landed a day or two late.
@@ -852,8 +891,17 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
   }
 
   const finnhubKey = config.finnhubApiKey
+  // symbol → coin name for held crypto, so news can be matched by name.
+  const cryptoNames = new Map<string, string>()
+  for (const asset of assets) {
+    // CoinGecko ids are slugs of the coin's name ('bitcoin', 'wrapped-bitcoin'),
+    // which makes them a usable name to match headlines against.
+    if (asset.asset_type === 'Crypto' && asset.ticker?.symbol) {
+      cryptoNames.set(asset.ticker.symbol, String(asset.ticker.coingecko_id ?? asset.ticker.symbol).replace(/-/g, ' '))
+    }
+  }
   const [headlinesBySymbol, marketHeadlines] = await Promise.all([
-    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
+    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays, cryptoNames) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
     finnhubKey && result.isBroadMarketMove ? fetchMarketHeadlines(finnhubKey) : Promise.resolve([]),
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase'
+import { isTickerAsset } from '../portfolio'
 
 // Backfill one snapshot per unique stock purchase_date using current prices × shares held on that date.
 // Skips dates that already have a snapshot or are in the future.
@@ -32,7 +33,7 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
     // Value on this date = sum of (shares in each stock purchased on or before this date) × current price
     let value = 0
     for (const asset of assets) {
-      if (asset.asset_type !== 'Stock') continue
+      if (!isTickerAsset(asset)) continue
       const price = asset.ticker?.current_price
       if (!price) continue
       const shares = (asset.stock_subtypes ?? [])

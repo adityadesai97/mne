@@ -3,14 +3,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
-import { Briefcase, Landmark, Banknote, Shield, Wallet, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount } from '@/lib/portfolio'
+import { Briefcase, Landmark, Banknote, Shield, Wallet, Bitcoin, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset } from '@/lib/portfolio'
 import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
 function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
-  if (asset.asset_type === 'Stock') {
+  if (isTickerAsset(asset)) {
     if (asset.ticker?.logo) {
       // Opaque white backing regardless of the tile's own color — a logo
       // that IS that color (which it usually is, since the tile's color was
@@ -28,7 +28,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
     // rather than an intentional choice.
     return (
       <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-        <ChartNoAxesCombined size={19} style={{ color: accent }} />
+        {asset.asset_type === 'Crypto' ? <Bitcoin size={19} style={{ color: accent }} /> : <ChartNoAxesCombined size={19} style={{ color: accent }} />}
       </div>
     )
   }
@@ -54,7 +54,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
  *  symbol), just on a smaller neutral chip instead of a full block-color
  *  tile — keeping that layout's calmer, lower-chrome row look. */
 function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
-  if (asset.asset_type === 'Stock') {
+  if (isTickerAsset(asset)) {
     if (asset.ticker?.logo) {
       return (
         <img
@@ -66,7 +66,7 @@ function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
     }
     return (
       <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
-        <ChartNoAxesCombined size={16} style={{ color: accent }} />
+        {asset.asset_type === 'Crypto' ? <Bitcoin size={16} style={{ color: accent }} /> : <ChartNoAxesCombined size={16} style={{ color: accent }} />}
       </div>
     )
   }
@@ -103,7 +103,7 @@ function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
  * grid tile, just as a small tint instead of a full-tile background.
  */
 export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
-  const isStock = asset.asset_type === 'Stock'
+  const isStock = isTickerAsset(asset)
   const isTradable = isTradableFixedIncome(asset)
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
@@ -153,7 +153,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                   <p className="text-muted-foreground text-xs truncate">
                     {/* Share count comes from owned lots, not the quote, so it's
                         worth printing even while the price itself is pending. */}
-                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount)} shares` : ''}{isTradable ? ` · ${fmtShares(unitCount)} units` : ''}
+                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} ${asset.asset_type === 'Crypto' ? 'coins' : 'shares'}` : ''}{isTradable ? ` · ${fmtShares(unitCount)} units` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -227,7 +227,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                 <>
                   <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount)} shares</span>
+                    <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
                     {/* Direction is carried by the arrow icon + sign, not by a
                         green/red hue — a hue picked to signal gain/loss could
                         easily collide with (or vanish into) the tile's own
@@ -261,6 +261,6 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
 }
 
-function fmtShares(n: number) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
+function fmtShares(n: number, maximumFractionDigits = 2) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits }).format(n)
 }

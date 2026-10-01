@@ -3,6 +3,7 @@
 // "Stock" swatch means the same thing everywhere in the app.
 export const TYPE_COLORS: Record<string, string> = {
   Stock: '#3B82F6',
+  Crypto: '#F97316',
   Cash: '#10B981',
   '401k': '#F59E0B',
   'Fixed Income': '#8B5CF6',

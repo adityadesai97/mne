@@ -1,6 +1,6 @@
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeDailyChange,
-  isTradableFixedIncome, computeFixedIncomeLotCount, computeFixedIncomeCostBasis, computeFixedIncomeExpectedReturn,
+  isTickerAsset, isTradableFixedIncome, computeFixedIncomeLotCount, computeFixedIncomeCostBasis, computeFixedIncomeExpectedReturn,
 } from '../lib/portfolio'
 
 const mockStockAsset = {
@@ -175,4 +175,41 @@ test('expected return is null when not tradable, missing lots, or missing face_v
   expect(computeFixedIncomeExpectedReturn({ ...mockTBillAsset, fixed_income_lots: [] })).toBeNull()
   expect(computeFixedIncomeExpectedReturn({ ...mockTBillAsset, face_value: null })).toBeNull()
   expect(computeFixedIncomeExpectedReturn({ ...mockTBillAsset, maturity_date: null })).toBeNull()
+})
+
+const mockCryptoAsset = {
+  asset_type: 'Crypto',
+  price: null,
+  ticker: { current_price: 60000.5, previous_close: 50000 },
+  stock_subtypes: [{
+    transactions: [
+      { count: '0.5', cost_price: '40000' },
+      { count: '0.25000001', cost_price: '50000' },
+    ],
+    rsu_grants: [],
+  }],
+} as any
+
+test('isTickerAsset covers stocks and crypto but not other asset types', () => {
+  expect(isTickerAsset({ asset_type: 'Stock' })).toBe(true)
+  expect(isTickerAsset({ asset_type: 'Crypto' })).toBe(true)
+  expect(isTickerAsset({ asset_type: 'Cash' })).toBe(false)
+  expect(isTickerAsset({ asset_type: 'Fixed Income' })).toBe(false)
+})
+
+test('crypto asset value is fractional units x live price', () => {
+  // 0.75000001 coins x 60000.5
+  expect(computeAssetValue(mockCryptoAsset)).toBe(45000.38)
+})
+
+test('crypto cost basis, unrealized gain and daily change work like a stock position', () => {
+  expect(computeCostBasis(mockCryptoAsset)).toBe(32500)
+  expect(computeUnrealizedGain(mockCryptoAsset)).toBeCloseTo(45000.38 - 32500, 2)
+  const change = computeDailyChange(mockCryptoAsset)
+  expect(change?.percentChange).toBeCloseTo(20.001, 2)
+  expect(change?.dollarChange).toBeCloseTo(0.75000001 * 10000.5, 1)
+})
+
+test('a crypto asset with no price yet is valued at 0, not NaN', () => {
+  expect(computeAssetValue({ ...mockCryptoAsset, ticker: { current_price: null } })).toBe(0)
 })

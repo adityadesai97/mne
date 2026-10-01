@@ -14,6 +14,7 @@ export async function loadApiKeys(): Promise<{
   groqApiKey: string
   llmProvider: LLMProvider
   finnhubApiKey: string
+  coingeckoApiKey: string
 } | null> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) return null
@@ -31,6 +32,7 @@ export async function loadApiKeys(): Promise<{
     groqApiKey: data.groq_api_key ?? '',
     llmProvider: (VALID_PROVIDERS.includes(data.llm_provider as LLMProvider) ? data.llm_provider : 'claude') as LLMProvider,
     finnhubApiKey: data.finnhub_api_key,
+    coingeckoApiKey: data.coingecko_api_key ?? '',
   }
 }
 
@@ -96,4 +98,13 @@ export async function syncFinnhubKey() {
     .from('user_settings')
     .upsert({ user_id: user.id, finnhub_api_key: key }, { onConflict: 'user_id' })
   if (error) throw error
+  // Optional CoinGecko key rides along — separate upsert so a database that
+  // hasn't applied the coingecko_api_key migration yet can't break the
+  // required Finnhub sync above.
+  const coingeckoKey = config.coingeckoApiKey
+  if (coingeckoKey) {
+    await getSupabaseClient()
+      .from('user_settings')
+      .upsert({ user_id: user.id, coingecko_api_key: coingeckoKey }, { onConflict: 'user_id' })
+  }
 }

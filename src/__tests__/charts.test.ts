@@ -312,3 +312,17 @@ describe('computeThemeDistribution', () => {
     expect(result[0].name).toBe('Uncategorized')
   })
 })
+
+test('crypto assets count toward allocation, P&L and theme distribution like stocks', () => {
+  const crypto = {
+    name: 'BTC',
+    asset_type: 'Crypto',
+    price: null,
+    ticker: { current_price: 100, ticker_themes: [{ theme: { name: 'Crypto' } }] },
+    stock_subtypes: [{ subtype: 'Market', transactions: [{ count: '2', cost_price: '60', capital_gains_status: 'Short Term' }], rsu_grants: [] }],
+  } as any
+  expect(groupByAssetType([crypto], new Set(['Market']))).toEqual([{ type: 'Crypto', value: 200 }])
+  expect(computeUnrealizedPnLByPosition([crypto])).toEqual([{ name: 'BTC', gain: 80 }])
+  expect(computeThemeDistribution([crypto])).toEqual([{ name: 'Crypto', value: 200 }])
+  expect(computeCapitalGainsExposure([crypto])).toMatchObject({ shortTerm: 80 })
+})

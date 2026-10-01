@@ -13,7 +13,7 @@ import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@/lib/db/fixedIncomeLots'
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
-  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount,
+  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { revealUp } from '@/lib/motionPresets'
@@ -234,7 +234,7 @@ export default function AssetDetail() {
     )
   }
 
-  const isStock = asset.asset_type === 'Stock'
+  const isStock = isTickerAsset(asset)
   const isFixedIncome = asset.asset_type === 'Fixed Income'
   const isTradable = isTradableFixedIncome(asset)
   const fixedIncomeLots = asset.fixed_income_lots ?? []
@@ -459,7 +459,7 @@ export default function AssetDetail() {
                 {isStock && asset.ticker && !noPriceData && (
                   <p className="text-sm mt-1 flex items-center gap-1.5">
                     <span className="text-muted-foreground">{asset.ticker.symbol}</span>
-                    <span className={hiddenValueClass(hideValues, `font-medium tabular-nums ${tickerPriceChangeClass}`)}>${tickerPrice.toFixed(2)}</span>
+                    <span className={hiddenValueClass(hideValues, `font-medium tabular-nums ${tickerPriceChangeClass}`)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>
                   </p>
                 )}
                 {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
@@ -488,7 +488,7 @@ export default function AssetDetail() {
                       <p className="text-3xl font-bold tabular-nums font-syne">
                         <span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>
                         {isStock && (
-                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount)} shares</span>
+                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
                         )}
                         {isTradable && (
                           <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(lotUnits)} units</span>
@@ -598,8 +598,8 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
 }
 
-function fmtShares(n: number) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
+function fmtShares(n: number, maximumFractionDigits = 2) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits }).format(n)
 }
 
 function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {

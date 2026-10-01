@@ -7,7 +7,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
-import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange } from '@/lib/portfolio'
+import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
@@ -291,7 +291,7 @@ export default function Home() {
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
   // equal to the sum of the individual P/L numbers the user sees elsewhere.
-  const stockAssets = assets.filter((asset) => asset.asset_type === 'Stock')
+  const stockAssets = assets.filter((asset) => isTickerAsset(asset))
   const stockTotalCost = stockAssets.reduce((sum, asset) => sum + computeCostBasis(asset), 0)
   const stockGainLoss = stockAssets.reduce((sum, asset) => sum + computeUnrealizedGain(asset), 0)
   const stockGainLossPercent = stockTotalCost > 0 ? (stockGainLoss / stockTotalCost) * 100 : 0

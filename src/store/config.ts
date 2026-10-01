@@ -5,6 +5,7 @@ const KEYS = {
   groqApiKey: 'mne_groq_api_key',
   llmProvider: 'mne_llm_provider',
   finnhubApiKey: 'mne_finnhub_api_key',
+  coingeckoApiKey: 'mne_coingecko_api_key',
   needsSignIn: 'mne_needs_signin',
   theme: 'mne_theme',
   assetView: 'mne_asset_view',
@@ -27,6 +28,9 @@ export const config = {
     return this.claudeApiKey
   },
   get finnhubApiKey() { return localStorage.getItem(KEYS.finnhubApiKey) ?? '' },
+  // Optional — crypto pricing works keyless, a CoinGecko Demo key just lifts
+  // the (much tighter) keyless rate limit.
+  get coingeckoApiKey() { return localStorage.getItem(KEYS.coingeckoApiKey) ?? '' },
   get needsSignIn() { return localStorage.getItem(KEYS.needsSignIn) === 'true' },
   get isConfigured() {
     return !!(this.activeApiKey && this.finnhubApiKey && !this.needsSignIn)
@@ -36,16 +40,18 @@ export const config = {
     groqApiKey?: string
     llmProvider?: LLMProvider
     finnhubApiKey?: string
+    coingeckoApiKey?: string
   }) {
     if (data.claudeApiKey !== undefined) localStorage.setItem(KEYS.claudeApiKey, data.claudeApiKey)
     if (data.groqApiKey !== undefined) localStorage.setItem(KEYS.groqApiKey, data.groqApiKey)
     if (data.llmProvider !== undefined) localStorage.setItem(KEYS.llmProvider, data.llmProvider)
     if (data.finnhubApiKey !== undefined) localStorage.setItem(KEYS.finnhubApiKey, data.finnhubApiKey)
+    if (data.coingeckoApiKey !== undefined) localStorage.setItem(KEYS.coingeckoApiKey, data.coingeckoApiKey)
   },
   setLLMProvider(provider: LLMProvider) { localStorage.setItem(KEYS.llmProvider, provider) },
   markSignedOut() {
     localStorage.setItem(KEYS.needsSignIn, 'true')
-    ;[KEYS.claudeApiKey, KEYS.groqApiKey, KEYS.llmProvider, KEYS.finnhubApiKey]
+    ;[KEYS.claudeApiKey, KEYS.groqApiKey, KEYS.llmProvider, KEYS.finnhubApiKey, KEYS.coingeckoApiKey]
       .forEach(k => localStorage.removeItem(k))
     LEGACY_PROVIDER_KEYS.forEach(k => localStorage.removeItem(k))
     LEGACY_CONNECTION_KEYS.forEach(k => localStorage.removeItem(k))

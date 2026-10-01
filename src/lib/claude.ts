@@ -9,7 +9,8 @@ import { findOrCreateLocation } from './db/locations'
 import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
 import { computeThemeDistribution, computeRsuVestEvents, rsuVestedSharesAsOf } from './charts'
 import type { RsuVestingFrequency } from './charts'
-import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
+import { ensureCryptoTicker } from './db/cryptoTickers'
+import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
 
@@ -350,7 +351,7 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
 
   const holdingMap = new Map<string, HoldingSummary>()
   for (const asset of assets ?? []) {
-    const isStock = String(asset?.asset_type ?? '') === 'Stock'
+    const isStock = isTickerAsset(asset)
     if (!isStock) continue
 
     const symbol = normalizeSymbol(asset?.ticker?.symbol)
@@ -464,10 +465,10 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
 
   const totalNetWorth = computeTotalNetWorth(assets as any)
   const totalStockValue = (assets ?? [])
-    .filter((asset: any) => String(asset?.asset_type ?? '') === 'Stock')
+    .filter((asset: any) => isTickerAsset(asset))
     .reduce((sum: number, asset: any) => sum + computeAssetValue(asset), 0)
   const totalCashLikeValue = (assets ?? [])
-    .filter((asset: any) => String(asset?.asset_type ?? '') !== 'Stock')
+    .filter((asset: any) => !isTickerAsset(asset))
     .reduce((sum: number, asset: any) => sum + computeAssetValue(asset), 0)
 
   return {
@@ -557,11 +558,11 @@ type PositionRow = {
 function buildPositionRows(assets: any[]): PositionRow[] {
   return (assets ?? []).map((asset: any) => {
     const assetType = String(asset?.asset_type ?? '')
-    const symbol = assetType === 'Stock' ? normalizeSymbol(asset?.ticker?.symbol) || null : null
+    const symbol = isTickerAsset({ asset_type: assetType }) ? normalizeSymbol(asset?.ticker?.symbol) || null : null
     const location = String(asset?.location?.name ?? 'Unknown')
     const accountType = String(asset?.location?.account_type ?? '')
 
-    if (assetType !== 'Stock') {
+    if (!isTickerAsset({ asset_type: assetType })) {
       // Non-stock assets (Cash, 401k, Fixed Income, HSA, etc.) have no cost basis —
       // P&L is a stock-only concept and must never be reported for them.
       // computeAssetValue (not a raw asset.price read) so a tradable Fixed
@@ -644,7 +645,7 @@ type TransactionRow = {
 function buildTransactionRows(assets: any[]): TransactionRow[] {
   const rows: TransactionRow[] = []
   for (const asset of assets ?? []) {
-    if (String(asset?.asset_type ?? '') !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = normalizeSymbol(asset?.ticker?.symbol)
     if (!symbol) continue
     const assetName = String(asset?.name ?? '')
@@ -712,7 +713,7 @@ function buildExposureBreakdown(assets: any[], dimension: ExposureDimension, inc
 
   const map: Record<string, number> = {}
   for (const asset of assets ?? []) {
-    const isStock = String(asset?.asset_type ?? '') === 'Stock'
+    const isStock = isTickerAsset(asset)
     if (!isStock && !includeCash && (dimension === 'ticker' || dimension === 'location')) continue
     const value = computeAssetValue(asset)
     if (value <= 0) continue
@@ -743,7 +744,7 @@ function buildTaxLotAnalysis(assets: any[], input: any) {
     .filter((row) => symbolsFilter.size === 0 || symbolsFilter.has(row.symbol))
     .map((row) => {
       const asset = (assets ?? []).find((candidate: any) =>
-        String(candidate?.asset_type ?? '') === 'Stock' &&
+        isTickerAsset(candidate) &&
         normalizeSymbol(candidate?.ticker?.symbol) === row.symbol &&
         String(candidate?.name ?? '') === row.assetName &&
         String(candidate?.location?.name ?? 'Unknown') === row.location,
@@ -825,7 +826,7 @@ function buildSimulationState(assets: any[]) {
 
   for (const asset of assets ?? []) {
     const assetType = String(asset?.asset_type ?? '')
-    if (assetType !== 'Stock') {
+    if (!isTickerAsset({ asset_type: assetType })) {
       cashLikeValue += computeAssetValue(asset)
       continue
     }
@@ -1198,7 +1199,7 @@ export function computeRsuVestingSchedule(assets: any[], input: any) {
 
   const grants: any[] = []
   for (const asset of assets ?? []) {
-    if (String(asset?.asset_type ?? '') !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = normalizeSymbol(asset?.ticker?.symbol)
     if (symbolsFilter.size > 0 && (!symbol || !symbolsFilter.has(symbol))) continue
     for (const st of asset?.stock_subtypes ?? []) {
@@ -1248,8 +1249,8 @@ async function executeReadTool(
 ) {
   if (toolName === 'get_portfolio_summary') {
     const positions = buildPositionRows(context.assets)
-    const stockPositions = positions.filter((row) => row.assetType === 'Stock')
-    const cashLikePositions = positions.filter((row) => row.assetType !== 'Stock')
+    const stockPositions = positions.filter((row) => isTickerAsset({ asset_type: row.assetType }))
+    const cashLikePositions = positions.filter((row) => !isTickerAsset({ asset_type: row.assetType }))
     const totalNetWorth = computeTotalNetWorth(context.assets)
     const totalStockValue = stockPositions.reduce((sum, row) => sum + row.marketValue, 0)
     const totalCashLikeValue = cashLikePositions.reduce((sum, row) => sum + row.marketValue, 0)
@@ -1394,7 +1395,21 @@ async function executeReadTool(
   if (toolName === 'get_company_fundamentals') {
     const symbols = Array.from(new Set(asStringArray(input?.symbols).map((symbol) => normalizeSymbol(symbol)).filter(Boolean))).slice(0, 5)
     if (symbols.length === 0) throw new Error('At least one symbol is required.')
-    const { results, errors } = await fetchCompanyFundamentals(symbols)
+    // Fundamentals/analyst data are stock concepts — Finnhub has none for
+    // coins, so crypto symbols are reported back as an error rather than
+    // sent upstream (where a coin symbol could match an unrelated stock).
+    const { data: cryptoRows } = await getSupabaseClient().from('tickers')
+      .select('symbol').eq('kind', 'crypto').in('symbol', symbols)
+    const cryptoSymbols = new Set((cryptoRows ?? []).map((row: any) => normalizeSymbol(row.symbol)))
+    const stockSymbols = symbols.filter((symbol) => !cryptoSymbols.has(symbol))
+    const cryptoErrors = symbols
+      .filter((symbol) => cryptoSymbols.has(symbol))
+      .map((symbol) => ({ symbol, message: 'Fundamentals are not available for cryptocurrencies.' }))
+    const fetched = stockSymbols.length > 0
+      ? await fetchCompanyFundamentals(stockSymbols)
+      : { results: [], errors: [] as Array<{ symbol: string; message: string }> }
+    const results = fetched.results
+    const errors = [...fetched.errors, ...cryptoErrors]
     return {
       companies: results,
       errors,
@@ -1492,7 +1507,7 @@ function buildCompactAssetContext(assets: any[]): any[] {
         ? { name: asset.location.name, account_type: asset.location.account_type }
         : undefined,
     }
-    if (String(asset.asset_type ?? '') !== 'Stock') {
+    if (!isTickerAsset(asset)) {
       if (isTradableFixedIncome(asset)) {
         // No live price for Bond/T-Bill — surface lots directly so the model
         // can reason about units/cost/return without a read-tool round trip.
@@ -1585,6 +1600,7 @@ For sell_shares, require the source account/location name. For lot selection, re
 - multi-lot: lots[] with purchase_date + count for each lot
 If lot details are missing, ask a follow-up question.
 When the user provides 2 or more stock purchases and all details are present, use add_stock_transactions with a transactions array.
+Cryptocurrency holdings (BTC, ETH, SOL, ...) use add_stock_transaction / add_stock_transactions with asset_class 'Crypto' — same fields (symbol, count, cost_price, purchase_date, location_name, account_type); count may be fractional. Crypto is always Market subtype, priced via CoinGecko; it has no RSU/ESPP and no company fundamentals (get_company_fundamentals is stock-only). Use account_type Investment for an exchange/wallet unless the user says otherwise.
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
 If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
@@ -1795,12 +1811,13 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_stock_transaction',
-      description: 'Add shares of a stock to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically.',
+      description: 'Add shares of a stock, or coins of a cryptocurrency (asset_class Crypto), to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically.',
       parameters: {
         type: 'object' as const,
         properties: {
-          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-          count: { type: 'number', description: 'Number of shares' },
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL, or the coin symbol e.g. BTC when asset_class is Crypto' },
+          asset_class: { type: 'string', enum: ['Stock', 'Crypto'], description: 'Default Stock. Use Crypto for cryptocurrency holdings (BTC, ETH, SOL, ...); crypto is always subtype Market (no RSU/ESPP) and count may be fractional (up to 8 decimals).' },
+          count: { type: 'number', description: 'Number of shares (or coins, for Crypto)' },
           cost_price: { type: 'number', description: 'Price per share at purchase' },
           purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
           subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market. Use RSU whenever the user describes shares vesting/vested, even if they never say "RSU" or "grant" — this makes grant_date required below.' },
@@ -1819,7 +1836,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_stock_transactions',
-      description: 'Add multiple stock transactions at once. Use this when the user provides 2 or more stock purchases in one request.',
+      description: 'Add multiple stock or crypto transactions at once. Use this when the user provides 2 or more stock/crypto purchases in one request.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1828,8 +1845,9 @@ const tools = [
             items: {
               type: 'object',
               properties: {
-                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
-                count: { type: 'number', description: 'Number of shares' },
+                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL, or the coin symbol e.g. BTC when asset_class is Crypto' },
+                asset_class: { type: 'string', enum: ['Stock', 'Crypto'], description: 'Default Stock. Use Crypto for cryptocurrency holdings (BTC, ETH, SOL, ...); crypto is always subtype Market (no RSU/ESPP) and count may be fractional (up to 8 decimals).' },
+                count: { type: 'number', description: 'Number of shares (or coins, for Crypto)' },
                 cost_price: { type: 'number', description: 'Price per share at purchase' },
                 purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
                 subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market. Use RSU whenever the user describes shares vesting/vested, even if they never say "RSU" or "grant" — this makes grant_date required below.' },
@@ -2221,7 +2239,7 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       return cols
     }
     const txRow = (tx: any, withGrantDate: boolean) => {
-      const base = [String(tx?.symbol ?? '').toUpperCase() || '-', numberToText(tx?.count)]
+      const base = [`${String(tx?.symbol ?? '').toUpperCase() || '-'}${tx?.asset_class === 'Crypto' ? ' (Crypto)' : ''}`, numberToText(tx?.count)]
       if (hasSoldAtVest) base.push(numberToText(tx?.sold_at_vest ?? 0))
       base.push(moneyToText(tx?.cost_price), dateToText(tx?.purchase_date))
       if (withGrantDate) base.push(dateToText(tx?.grant_date))
@@ -2437,6 +2455,9 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
     if (String(input.subtype ?? '').toUpperCase() === 'RSU' && !isValidIsoDate(input.grant_date)) {
       return `Grant date is required to add an RSU transaction. Provide the grant_date (YYYY-MM-DD) of the existing grant.`
     }
+    if (input.asset_class === 'Crypto' && input.subtype && String(input.subtype) !== 'Market') {
+      return 'Crypto holdings are always Market lots — RSU/ESPP subtypes only apply to stocks'
+    }
   }
 
   if (toolName === 'add_stock_transactions') {
@@ -2451,6 +2472,9 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
       if (new Date(tx.purchase_date) > new Date()) return `Transaction ${i + 1}: purchase date cannot be in the future`
       if (String(tx.subtype ?? '').toUpperCase() === 'RSU' && !isValidIsoDate(tx.grant_date)) {
         return `Transaction ${i + 1}: grant date is required to add an RSU transaction. Provide the grant_date (YYYY-MM-DD) of the existing grant.`
+      }
+      if (tx.asset_class === 'Crypto' && tx.subtype && String(tx.subtype) !== 'Market') {
+        return `Transaction ${i + 1}: crypto holdings are always Market lots — RSU/ESPP subtypes only apply to stocks`
       }
     }
   }
@@ -2539,7 +2563,7 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const gainStatus = date < oneYearAgo ? 'Long Term' : 'Short Term'
       const subtype = input.subtype || 'Market'
       const grantSuffix = subtype === 'RSU' && input.grant_date ? `, grant ${formatDateMDY(input.grant_date)}` : ''
-      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${formatDateMDY(input.purchase_date)} (${gainStatus}, ${subtype}${grantSuffix})`
+      return `Add ${input.count} ${input.symbol.toUpperCase()} ${input.asset_class === 'Crypto' ? 'coins' : 'shares'} at $${input.cost_price}/${input.asset_class === 'Crypto' ? 'coin' : 'share'} purchased on ${formatDateMDY(input.purchase_date)} (${gainStatus}, ${subtype}${grantSuffix})`
     }
     case 'add_stock_transactions': {
       const transactions = Array.isArray(input.transactions) ? input.transactions : []
@@ -2776,23 +2800,37 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
 
   if (toolName === 'add_stock_transaction') {
     const symbol = input.symbol.toUpperCase()
-    const subtype = input.subtype || 'Market'
+    const isCrypto = input.asset_class === 'Crypto'
+    const subtype = isCrypto ? 'Market' : (input.subtype || 'Market')
 
-    // 1. Find or create ticker
-    const { data: existingTicker } = await supabase.from('tickers')
-      .select('id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+    // 1. Find or create ticker. Crypto resolves its CoinGecko coin, price,
+    // history and theme itself (ensureCryptoTicker); stocks fall through to
+    // the Finnhub-priced path below.
     let tickerId: string
-    if (existingTicker) {
-      tickerId = existingTicker.id
+    let existingTicker: { id: string } | null = null
+    if (isCrypto) {
+      const crypto = await ensureCryptoTicker(userId, symbol)
+      tickerId = crypto.id
+      existingTicker = crypto.isNew ? null : { id: crypto.id }
     } else {
-      const { data, error } = await supabase.from('tickers')
-        .insert({ user_id: userId, symbol }).select('id').single()
-      if (error) throw new Error(`Failed to create ticker: ${error.message}`)
-      tickerId = data.id
+      const { data: foundTicker } = await supabase.from('tickers')
+        .select('id, kind').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+      if (foundTicker?.kind === 'crypto') {
+        throw new Error(`${symbol} is already tracked as a cryptocurrency — use asset_class "Crypto" for it.`)
+      }
+      existingTicker = foundTicker
+      if (foundTicker) {
+        tickerId = foundTicker.id
+      } else {
+        const { data, error } = await supabase.from('tickers')
+          .insert({ user_id: userId, symbol }).select('id').single()
+        if (error) throw new Error(`Failed to create ticker: ${error.message}`)
+        tickerId = data.id
+      }
     }
 
     // Fetch live price if ticker is new (best effort, don't block on failure)
-    if (!existingTicker) {
+    if (!existingTicker && !isCrypto) {
       await fetchAndStorePrice(tickerId, symbol)
       try {
         await autoAssignThemesForTickerIfEnabled({ userId, tickerId, symbol, skipIfAlreadyTagged: true })
@@ -2812,8 +2850,8 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     } else {
       const { data, error } = await supabase.from('assets').insert({
         user_id: userId,
-        name: input.asset_name || `${symbol} Stock`,
-        asset_type: 'Stock',
+        name: input.asset_name || (isCrypto ? symbol : `${symbol} Stock`),
+        asset_type: isCrypto ? 'Crypto' : 'Stock',
         location_id: locationId,
         ownership: input.ownership || 'Individual',
         ticker_id: tickerId,
@@ -3009,7 +3047,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       .select('id, name, location:locations(name)')
       .eq('user_id', userId)
       .eq('ticker_id', ticker.id)
-      .eq('asset_type', 'Stock')
+      .in('asset_type', ['Stock', 'Crypto'])
     if (assetsErr) throw new Error(`Failed to fetch stock assets: ${assetsErr.message}`)
     if (!stockAssets || stockAssets.length === 0) throw new Error(`No stock asset found for ${symbol}`)
 
@@ -3110,7 +3148,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('ticker_id', ticker.id)
-      .eq('asset_type', 'Stock')
+      .in('asset_type', ['Stock', 'Crypto'])
     if (remainingCountError) throw new Error(`Failed to refresh ticker ownership: ${remainingCountError.message}`)
 
     const shouldBeWatchlistOnly = (remainingStockAssetCount ?? 0) === 0
@@ -3148,7 +3186,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       }
 
       const destinationAsset = destinationAssets[0] as any
-      if (destinationAsset.asset_type === 'Stock') {
+      if (isTickerAsset(destinationAsset)) {
         throw new Error('Destination for proceeds transfer must be a non-stock asset (e.g. 401k, Cash, HSA)')
       }
 
