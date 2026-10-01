@@ -418,3 +418,21 @@ test('trimToLastSentence drops a dangling fragment only when the reply hit its t
   expect(trimToLastSentence('First sentence. Second sentence. Third cut of', 'length')).toBe('First sentence. Second sentence.')
   expect(trimToLastSentence('Complete reply without a period', 'stop')).toBe('Complete reply without a period')
 })
+
+test('crypto is held to a higher major-move bar than stocks', () => {
+  const crypto = (symbol: string, currentPrice: number) => ({ ...stockAsset({ symbol, currentPrice, previousClose: 100, shares: 1 }), asset_type: 'Crypto' })
+  // +7%: past the 5% stock bar, under the crypto bar (2x = 10%).
+  const stockOnly = [stockAsset({ symbol: 'NVDA', currentPrice: 107, previousClose: 100, shares: 1 })]
+  const cryptoOnly = [crypto('BTC', 107)]
+  const stockSlots = computeCandidateSlots(stockOnly, 1_000_000, new Map())
+  const cryptoSlots = computeCandidateSlots(cryptoOnly, 1_000_000, new Map())
+  expect(stockSlots.some(s => s.scope === 'stock' && s.scopeKey === 'NVDA')).toBe(true)
+  expect(cryptoSlots.some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(false)
+  expect(computeMovers(cryptoOnly, 1_000_000).hasMajorMove).toBe(false)
+
+  // +12%: over the crypto bar too.
+  const bigCrypto = [crypto('BTC', 112)]
+  expect(computeMovers(bigCrypto, 1_000_000).hasMajorMove).toBe(true)
+  expect(computeMovers(bigCrypto, 1_000_000).movers[0].crypto).toBe(true)
+  expect(computeCandidateSlots(bigCrypto, 1_000_000, new Map()).some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(true)
+})

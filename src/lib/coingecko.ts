@@ -24,6 +24,32 @@ export interface CoinSearchResult {
   logo: string | null
 }
 
+/** A failed CoinGecko request, with a message written for the end user —
+ *  these surface verbatim in the command bar, the Watchlist add form, and
+ *  toasts, and the common cause for an existing account (no key set, shared
+ *  keyless rate limit exhausted) has a fix the message can name. */
+export class CoinGeckoError extends Error {
+  status: number
+  rateLimited: boolean
+  constructor(status: number, hasKey: boolean) {
+    const rateLimited = status === 429
+    let message: string
+    if (rateLimited && !hasKey) {
+      message = "CoinGecko's free keyless rate limit was hit. Add a free CoinGecko key in Settings → Update API keys (optional field), then try again."
+    } else if (rateLimited) {
+      message = 'CoinGecko rate limit hit — wait a minute and try again.'
+    } else if ((status === 401 || status === 403) && hasKey) {
+      message = 'CoinGecko rejected your API key — check it in Settings → Update API keys.'
+    } else {
+      message = `CoinGecko request failed (${status}).`
+    }
+    super(message)
+    this.name = 'CoinGeckoError'
+    this.status = status
+    this.rateLimited = rateLimited
+  }
+}
+
 function buildUrl(path: string, params: Record<string, string>, apiKey?: string): string {
   const qs = new URLSearchParams(params)
   if (apiKey) qs.set('x_cg_demo_api_key', apiKey)
@@ -52,7 +78,7 @@ export async function fetchCryptoQuotes(ids: string[], apiKey?: string): Promise
     vs_currencies: 'usd',
     include_24hr_change: 'true',
   }, apiKey))
-  if (!res.ok) throw new Error(`CoinGecko price request failed (${res.status})`)
+  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
   const body = await res.json() as Record<string, { usd?: number; usd_24h_change?: number }>
   for (const id of unique) {
     const entry = body?.[id]
@@ -88,7 +114,7 @@ export function pickCoinForSymbol(
 
 export async function searchCoinBySymbol(symbol: string, apiKey?: string): Promise<CoinSearchResult | null> {
   const res = await fetch(buildUrl('/search', { query: symbol.trim() }, apiKey))
-  if (!res.ok) throw new Error(`CoinGecko search failed (${res.status})`)
+  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
   const body = await res.json()
   return pickCoinForSymbol(symbol, Array.isArray(body?.coins) ? body.coins : [])
 }
@@ -102,7 +128,7 @@ export async function fetchCoinDailyHistory(id: string, days = 365, apiKey?: str
     days: String(days),
     interval: 'daily',
   }, apiKey))
-  if (!res.ok) throw new Error(`CoinGecko history request failed (${res.status})`)
+  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
   const body = await res.json()
   const byDate = new Map<string, number>()
   for (const point of Array.isArray(body?.prices) ? body.prices : []) {

@@ -426,7 +426,7 @@ create index if not exists llm_usage_log_user_feature_created_idx
 
 -- RLS
 alter table public.allowed_emails enable row level security;
-alter table public.admin_users enable row level security;
+alter table if exists public.admin_users enable row level security;
 alter table public.locations enable row level security;
 alter table public.tickers enable row level security;
 alter table public.themes enable row level security;

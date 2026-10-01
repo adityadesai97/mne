@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '../supabase'
 import { recordTickerPriceSnapshots } from './tickerPriceHistory'
-import { fetchCryptoQuotes } from '../coingecko'
+import { CoinGeckoError, fetchCryptoQuotes } from '../coingecko'
+import { showAppAlert } from '../appAlerts'
 import { config } from '@/store/config'
 
 export async function getAllTickers() {
@@ -52,6 +53,10 @@ export async function updateTickerPrice(symbol: string, price: number, previousC
   if (error) throw error
 }
 
+// One toast per page load, not one per refresh (pull-to-refresh, pages that
+// each call this) — resets on a real reload like priceRefresh's promise.
+let warnedCryptoRateLimit = false
+
 export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
   const tickers = await getAllTickers()
   const allTickers = (tickers ?? []).filter((t: any) => t.symbol)
@@ -81,7 +86,16 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
           pricePoints.push({ tickerId: ticker.id, price: quote.price })
         } catch { /* best-effort per ticker */ }
       }))
-    } catch { /* best-effort — a failed/rate-limited CoinGecko call keeps last prices */ }
+    } catch (error) {
+      // Best-effort — a failed/rate-limited CoinGecko call keeps last prices.
+      // But an existing account that never set a CoinGecko key would
+      // otherwise just see crypto prices silently go stale, so say so once
+      // per page load when the cause is the keyless rate limit.
+      if (error instanceof CoinGeckoError && error.rateLimited && !config.coingeckoApiKey && !warnedCryptoRateLimit) {
+        warnedCryptoRateLimit = true
+        showAppAlert('Crypto prices couldn\'t refresh (CoinGecko keyless rate limit). Add a free CoinGecko key in Settings to fix this.', { variant: 'error', durationMs: 6000 })
+      }
+    }
   }
   try {
     await recordTickerPriceSnapshots(pricePoints)

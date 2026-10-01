@@ -1,4 +1,4 @@
-import { derivePreviousClose, fetchCryptoQuotes, fetchCoinDailyHistory, pickCoinForSymbol, searchCoinBySymbol } from '../lib/coingecko'
+import { CoinGeckoError, derivePreviousClose, fetchCryptoQuotes, fetchCoinDailyHistory, pickCoinForSymbol, searchCoinBySymbol } from '../lib/coingecko'
 import { filterNewsForCoin } from '../lib/portfolioExplanation'
 
 afterEach(() => {
@@ -53,7 +53,7 @@ test('fetchCryptoQuotes skips the network for an empty id list and throws on a f
   expect(fetchMock).not.toHaveBeenCalled()
 
   stubFetch({}, false)
-  await expect(fetchCryptoQuotes(['bitcoin'])).rejects.toThrow(/429/)
+  await expect(fetchCryptoQuotes(['bitcoin'])).rejects.toThrow(/keyless rate limit/)
 })
 
 test('pickCoinForSymbol prefers the best market-cap rank among exact symbol matches', () => {
@@ -107,4 +107,18 @@ test('filterNewsForCoin matches by coin name or standalone ticker only', () => {
   ])
   // "ETH" must not match inside "method"; lowercase "eth" isn't a ticker mention either
   expect(filterNewsForCoin(news, 'ETH', 'ethereum').map(n => n.headline)).toEqual(['Banks eye ethereum ETFs'])
+})
+
+test('CoinGeckoError tells a keyless user to add a key, and a keyed user to wait', () => {
+  const keyless = new CoinGeckoError(429, false)
+  expect(keyless.rateLimited).toBe(true)
+  expect(keyless.message).toMatch(/Settings/)
+  const keyed = new CoinGeckoError(429, true)
+  expect(keyed.message).toMatch(/wait a minute/)
+  expect(keyed.message).not.toMatch(/Add a free CoinGecko key/)
+})
+
+test('CoinGeckoError flags a rejected key only when one was sent', () => {
+  expect(new CoinGeckoError(401, true).message).toMatch(/rejected your API key/)
+  expect(new CoinGeckoError(403, false).message).toBe('CoinGecko request failed (403).')
 })

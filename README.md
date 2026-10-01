@@ -31,6 +31,7 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 | Google OAuth client | For sign-in via Supabase Auth. Create one in [Google Cloud Console](https://console.cloud.google.com). |
 | AI provider key | Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or Groq ([console.groq.com/keys](https://console.groq.com/keys)). Entered in-app on first sign-in. |
 | Finnhub API key | For stock price quotes. Free tier at [finnhub.io/dashboard](https://finnhub.io/dashboard). Entered in-app on first sign-in. |
+| CoinGecko API key *(optional)* | Only for cryptocurrency holdings. Crypto prices work without a key, but CoinGecko's keyless rate limit is tight and shared; a free Demo key ([coingecko.com/en/api/pricing](https://www.coingecko.com/en/api/pricing)) avoids it and is what crypto price alerts use. Add it any time in Settings → Update API keys. |
 
 #### 0. Clone the repo
 

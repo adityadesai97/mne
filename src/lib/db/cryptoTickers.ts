@@ -4,6 +4,13 @@ import { fetchCoinDailyHistory, fetchCryptoQuotes, searchCoinBySymbol } from '..
 import { backfillTickerPriceHistory } from './tickerPriceHistory'
 import { addTickerTheme, getOrCreateTheme } from './themes'
 
+// A database that predates the crypto migration has no tickers.kind /
+// coingecko_id columns; PostgREST's "column not found" text means nothing to
+// a user, so name the actual fix instead.
+function missingMigrationError() {
+  return new Error('Crypto support needs a one-time database update (migration 20260921000000_add_crypto_asset_type). Run the upgrade script, or apply that migration, then try again.')
+}
+
 /**
  * Finds or creates the crypto ticker for a symbol (e.g. 'BTC'), resolving the
  * CoinGecko coin id on first sight, then fetches its logo, an initial quote,
@@ -21,8 +28,9 @@ export async function ensureCryptoTicker(
   const supabase = getSupabaseClient()
   const symbol = rawSymbol.trim().toUpperCase()
 
-  const { data: existing } = await supabase.from('tickers')
+  const { data: existing, error: lookupError } = await supabase.from('tickers')
     .select('id, kind, coingecko_id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+  if (lookupError && /kind|coingecko_id/i.test(lookupError.message ?? '')) throw missingMigrationError()
   if (existing?.kind === 'crypto' && existing.coingecko_id) return { id: existing.id, isNew: false }
   if (existing && existing.kind !== 'crypto') {
     throw new Error(`${symbol} is already tracked as a stock ticker, so it can't also be a crypto asset.`)
@@ -40,12 +48,14 @@ export async function ensureCryptoTicker(
   let tickerId: string
   if (existing) {
     const { error } = await supabase.from('tickers').update(fields).eq('id', existing.id)
+    if (error && /kind|coingecko_id/i.test(error.message ?? '')) throw missingMigrationError()
     if (error) throw new Error(`Failed to update ticker: ${error.message}`)
     tickerId = existing.id
   } else {
     const { data, error } = await supabase.from('tickers')
       .insert({ user_id: userId, symbol, watchlist_only: options.watchlistOnly ?? false, ...fields })
       .select('id').single()
+    if (error && /kind|coingecko_id/i.test(error.message ?? '')) throw missingMigrationError()
     if (error) throw new Error(`Failed to create ticker: ${error.message}`)
     tickerId = data.id
   }
