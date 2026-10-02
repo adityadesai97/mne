@@ -1,4 +1,7 @@
-import { buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule } from '../lib/claude'
+import {
+  buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule,
+  locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation,
+} from '../lib/claude'
 
 test('system prompt includes portfolio context instruction', () => {
   const prompt = buildSystemPrompt([])
@@ -145,4 +148,45 @@ test('defaults to a 30-day window from today when dates are omitted', () => {
   const from = new Date(result.fromDate)
   const to = new Date(result.toDate)
   expect(Math.round((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000))).toBe(30)
+})
+
+test('system prompt forbids assuming a crypto exchange and forbids asking + writing in one response', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toMatch(/never guess, default, or "assume"/)
+  expect(prompt).toMatch(/do NOT assume Coinbase/)
+  expect(prompt).toMatch(/never call a write tool in that same response/)
+})
+
+test('locationMentionedByUser matches loosely on wording but not on a name never said', () => {
+  expect(locationMentionedByUser('Coinbase', 'I bought it on coinbase pro')).toBe(true)
+  expect(locationMentionedByUser('Fidelity Investments', 'in my Fidelity account')).toBe(true)
+  expect(locationMentionedByUser('Coinbase', 'I bought QNT coin: 5.9784 at 164.882 on 9/27/26')).toBe(false)
+  expect(locationMentionedByUser('', 'anything')).toBe(false)
+  expect(locationMentionedByUser('FX', 'fx')).toBe(false) // too short to be meaningful
+})
+
+test('a crypto purchase with an exchange the user never named is flagged (the reported QNT case)', () => {
+  const userText = 'I bought QNT coin: 5.9784 at 164.882 on 9/27/26 and 15.7033 at 253.253 on 9/29/26'
+  const tools = [{
+    name: 'add_stock_transactions',
+    input: {
+      transactions: [
+        { symbol: 'QNT', asset_class: 'Crypto', count: 5.9784, cost_price: 164.882, purchase_date: '2026-09-27', location_name: 'Coinbase', account_type: 'Investment' },
+        { symbol: 'QNT', asset_class: 'Crypto', count: 15.7033, cost_price: 253.253, purchase_date: '2026-09-29', location_name: 'Coinbase', account_type: 'Investment' },
+      ],
+    },
+  }]
+  expect(findCryptoPurchasesWithUnstatedLocation(tools, userText)).toEqual(['QNT'])
+  // Once the user answers across the conversation, the same call passes.
+  expect(findCryptoPurchasesWithUnstatedLocation(tools, `${userText}\nCoinbase`)).toEqual([])
+})
+
+test('the exchange guard only applies to crypto and handles the single-transaction tool', () => {
+  const stock = { name: 'add_stock_transaction', input: { symbol: 'AAPL', asset_class: 'Stock', location_name: 'Fidelity' } }
+  const stockDefault = { name: 'add_stock_transaction', input: { symbol: 'AAPL', location_name: 'Fidelity' } }
+  const crypto = { name: 'add_stock_transaction', input: { symbol: 'btc', asset_class: 'Crypto', location_name: 'Kraken' } }
+  const other = { name: 'add_cash_asset', input: { name: 'Savings', location_name: 'Chase' } }
+  expect(findCryptoPurchasesWithUnstatedLocation([stock, stockDefault, other], 'bought apple')).toEqual([])
+  expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc')).toEqual(['BTC'])
+  expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc on kraken')).toEqual([])
 })

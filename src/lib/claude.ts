@@ -1600,7 +1600,9 @@ For sell_shares, require the source account/location name. For lot selection, re
 - multi-lot: lots[] with purchase_date + count for each lot
 If lot details are missing, ask a follow-up question.
 When the user provides 2 or more stock purchases and all details are present, use add_stock_transactions with a transactions array.
-Cryptocurrency holdings (BTC, ETH, SOL, ...) use add_stock_transaction / add_stock_transactions with asset_class 'Crypto' — same fields (symbol, count, cost_price, purchase_date, location_name, account_type); count may be fractional. Crypto is always Market subtype, priced via CoinGecko; it has no RSU/ESPP and no company fundamentals (get_company_fundamentals is stock-only). Use account_type Investment for an exchange/wallet unless the user says otherwise.
+Cryptocurrency holdings (BTC, ETH, SOL, ...) use add_stock_transaction / add_stock_transactions with asset_class 'Crypto' — same fields (symbol, count, cost_price, purchase_date, location_name, account_type); count may be fractional. Crypto is always Market subtype, priced via CoinGecko; it has no RSU/ESPP and no company fundamentals (get_company_fundamentals is stock-only).
+  For crypto, location_name is the exchange or wallet the coins were bought on / are held in (Coinbase, Kraken, Ledger, ...) and it is REQUIRED. It must come from the user (or an attached document) — never guess, default, or "assume" one (do NOT assume Coinbase). If it isn't stated, ask which exchange or wallet and wait. account_type is Investment for an exchange or wallet.
+When you need to ask the user a follow-up question, reply with the question ONLY — never call a write tool in that same response, and never proceed on an assumed answer. Wait for their reply.
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
 If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
@@ -3513,6 +3515,45 @@ async function executeMockNotification(type: string, userId: string): Promise<vo
   }
 }
 
+/** True when any meaningful word of `location` (e.g. "Coinbase", "Fidelity
+ *  Investments" -> "fidelity") appears in `userText`. Deliberately loose on
+ *  wording so "Fidelity" typed by the user still matches a model-normalized
+ *  "Fidelity Investments", but strict about a name the user never said. */
+export function locationMentionedByUser(location: unknown, userText: string): boolean {
+  const words = String(location ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 3)
+  if (words.length === 0) return false
+  const haystack = userText.toLowerCase()
+  return words.some((word) => haystack.includes(word))
+}
+
+/** Crypto purchases whose exchange/wallet the user never actually named.
+ *  The model is told never to assume one, but when it asks "which exchange?"
+ *  and calls the write tool with a made-up one in the same response, the
+ *  made-up value would otherwise win (the confirmation is built from the tool
+ *  call alone). Returns the affected symbols, empty when every crypto
+ *  transaction's location was stated. */
+export function findCryptoPurchasesWithUnstatedLocation(
+  writeTools: { name: string; input: any }[],
+  userText: string,
+): string[] {
+  const symbols: string[] = []
+  for (const tool of writeTools) {
+    const transactions = tool.name === 'add_stock_transaction'
+      ? [tool.input]
+      : tool.name === 'add_stock_transactions' && Array.isArray(tool.input?.transactions)
+        ? tool.input.transactions
+        : []
+    for (const tx of transactions) {
+      if (tx?.asset_class !== 'Crypto') continue
+      if (!locationMentionedByUser(tx?.location_name, userText)) {
+        const symbol = String(tx?.symbol ?? '').toUpperCase()
+        if (symbol && !symbols.includes(symbol)) symbols.push(symbol)
+      }
+    }
+  }
+  return symbols
+}
+
 export async function runCommand(messages: Message[], attachment?: FileAttachment, streamCallbacks?: StreamCallbacks): Promise<any> {
   const lastUserContent = messages.findLast(m => m.role === 'user')?.content ?? ''
   const traceSteps: AgentTraceStep[] = []
@@ -3823,6 +3864,22 @@ ${JSON.stringify(expandedContext, null, 2)}`
   if (writeTools.length === 0) {
     const text = extractTextFromResponse(response)
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
+  }
+
+  // Don't let a model-invented exchange/wallet reach the confirmation: for
+  // crypto, the location must have been said by the user. Skipped when a file
+  // is attached, since a statement/CSV can legitimately identify it (and an
+  // image can't be text-checked here).
+  if (!attachment) {
+    const userText = messages.filter((message) => message.role === 'user').map((message) => message.content).join('\n')
+    const unstated = findCryptoPurchasesWithUnstatedLocation(writeTools, userText)
+    if (unstated.length > 0) {
+      addTrace('Needs an exchange or wallet before adding crypto', unstated.join(', '))
+      return withTrace({
+        type: 'text',
+        message: `Which exchange or wallet ${unstated.length === 1 ? `holds your ${unstated[0]}` : `holds your ${unstated.join(', ')}`}? (e.g. Coinbase, Kraken, Ledger.) I need it to record the purchase and I won't guess one.`,
+      })
+    }
   }
 
   const buildWriteConfirmation = (name: string, input: any) => {
