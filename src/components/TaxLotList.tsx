@@ -30,6 +30,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   onDeleteGrant?: (grantId: string, transactionIds: string[]) => Promise<void>
 }) {
   const [hideValues] = useHideValues()
+  const isCrypto = ticker?.kind === 'crypto'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   // Subtype sections (Market/ESPP/RSU) and RSU grant blocks start collapsed
@@ -105,7 +106,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Shares</label>
               <input
                 type="number"
-                step="0.01"
+                step={isCrypto ? "any" : "0.01"}
                 value={editValues.count}
                 onChange={e => setEditValues(v => ({ ...v, count: e.target.value }))}
                 className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
@@ -115,7 +116,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Cost/share</label>
               <input
                 type="number"
-                step="0.01"
+                step={isCrypto ? "any" : "0.01"}
                 value={editValues.cost_price}
                 onChange={e => setEditValues(v => ({ ...v, cost_price: e.target.value }))}
                 className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
@@ -145,7 +146,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Sold at vest</label>
               <input
                 type="number"
-                step="0.01"
+                step={isCrypto ? "any" : "0.01"}
                 min="0"
                 value={editValues.sold_at_vest}
                 onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))}
@@ -176,7 +177,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
             <div>
               <p className="text-xs font-medium">{formatDateMDY(t.purchase_date)}</p>
               <p className="text-[11px] text-muted-foreground">
-                {shares.toFixed(shares % 1 === 0 ? 0 : 4)} shares @ <span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span>
+                {isCrypto ? fmtCoins(shares) : shares.toFixed(shares % 1 === 0 ? 0 : 4)} {isCrypto ? 'coins' : 'shares'} @ <span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span>
                 {soldAtVest > 0 && <span className="text-muted-foreground/70"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
               </p>
             </div>
@@ -310,7 +311,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
                               <div>
                                 <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
-                                <p className="text-[11px] text-muted-foreground tabular-nums">{fmtShares(summary.shares)} shares</p>
+                                <p className="text-[11px] text-muted-foreground tabular-nums">{isCrypto ? `${fmtCoins(summary.shares)} coins` : `${fmtShares(summary.shares)} shares`}</p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-xs font-medium tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
@@ -519,7 +520,16 @@ function Metric({ label, value, className = '', hidden = false }: { label: strin
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(Number(n))
+  // Sub-dollar prices (e.g. a $0.00001 meme coin) need more than 2 decimals
+  // to show anything but $0.00.
+  const abs = Math.abs(Number(n))
+  const maximumFractionDigits = abs > 0 && abs < 1 ? 8 : 2
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits }).format(Number(n))
+}
+
+// Crypto quantities are tracked to 8 decimal places (satoshi precision).
+function fmtCoins(n: number) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(n)
 }
 
 function fmtShares(n: number) {

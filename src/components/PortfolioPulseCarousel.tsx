@@ -11,6 +11,7 @@ import {
 import { getTickerPriceHistory, type TickerPricePoint } from '@/lib/db/tickerPriceHistory'
 import { getPortfolioExplanation, type PortfolioExplanationRow } from '@/lib/db/portfolioExplanations'
 import { openPortfolioExplanationInCommandBar } from '@/lib/commandBarBridge'
+import { isTickerAsset } from '@/lib/portfolio'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
 
@@ -58,7 +59,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const tickerIds = useMemo(
-    () => [...new Set(assets.filter((a: any) => a.asset_type === 'Stock' && a.ticker?.id).map((a: any) => a.ticker.id as string))],
+    () => [...new Set(assets.filter((a: any) => isTickerAsset(a) && a.ticker?.id).map((a: any) => a.ticker.id as string))],
     [assets],
   )
   const tickerIdsKey = tickerIds.join(',')

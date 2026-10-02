@@ -23,6 +23,15 @@ export type AssetTyped = {
   fixed_income_lots?: FixedIncomeLot[] | null
 }
 
+// Stock and Crypto share the same ticker-plus-tax-lots model (shares/units ×
+// tickers.current_price, cost basis per lot, mark-to-market P&L); only how the
+// ticker is priced differs (Finnhub vs CoinGecko — see tickers.kind). Anything
+// that's about "a position valued off a live ticker price" should key off this
+// rather than asset_type === 'Stock'.
+export function isTickerAsset(asset: { asset_type?: string | null }): boolean {
+  return asset.asset_type === 'Stock' || asset.asset_type === 'Crypto'
+}
+
 // Bond and T-Bill are tradable Fixed Income subtypes — bought in lots (like
 // stock tax lots) rather than tracked as a single flat balance. CD and
 // Deposit are plain accounts (assets.price) since they can't be traded.
@@ -45,7 +54,7 @@ export function computeFixedIncomeCostBasis(asset: AssetTyped): number {
 }
 
 export function computeAssetValue(asset: AssetTyped): number {
-  if (asset.asset_type === 'Stock') {
+  if (isTickerAsset(asset)) {
     if (asset.ticker?.current_price == null) return 0
     const price = asset.ticker.current_price
     const shares = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
@@ -69,12 +78,12 @@ export function computeShareCount(asset: AssetTyped): number {
     .reduce((sum, t) => sum + netCount(t), 0) ?? 0
 }
 
-// P&L is a stock-only concept — non-stock assets (Cash, 401k, Fixed Income, HSA, etc.)
+// P&L is a ticker-asset (stock/crypto) concept — other assets (Cash, 401k, Fixed Income, HSA, etc.)
 // have no cost basis and must never contribute a gain/loss figure. A tradable
 // Fixed Income lot's projected return is computeFixedIncomeExpectedReturn,
 // a held-to-maturity figure, not a mark-to-market gain/loss.
 export function computeUnrealizedGain(asset: AssetTyped): number {
-  if (asset.asset_type !== 'Stock') return 0
+  if (!isTickerAsset(asset)) return 0
   return computeAssetValue(asset) - computeCostBasis(asset)
 }
 
@@ -91,7 +100,7 @@ export type DailyChange = { dollarChange: number; percentChange: number }
 // compute a change (non-stock asset, no shares held, or previous_close not
 // yet populated by a price refresh).
 export function computeDailyChange(asset: AssetTyped): DailyChange | null {
-  if (asset.asset_type !== 'Stock') return null
+  if (!isTickerAsset(asset)) return null
   const currentPrice = asset.ticker?.current_price
   const previousClose = asset.ticker?.previous_close
   if (currentPrice == null || previousClose == null || previousClose === 0) return null

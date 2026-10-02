@@ -25,6 +25,25 @@ export async function recordTickerPriceSnapshots(prices: { tickerId: string; pri
   if (error) throw error
 }
 
+// Seeds historical daily prices (e.g. CoinGecko's 1-year daily history for a
+// newly-added crypto holding). Unlike recordTickerPriceSnapshots this never
+// overwrites an existing row — a day we already recorded ourselves wins over
+// a backfilled one — and skips today, which the live refresh owns.
+export async function backfillTickerPriceHistory(tickerId: string, points: TickerPricePoint[]): Promise<void> {
+  const supabase = getSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+  const today = new Date().toISOString().split('T')[0]
+  const rows = points
+    .filter(p => p.date < today)
+    .map(p => ({ user_id: user.id, ticker_id: tickerId, date: p.date, price: p.price }))
+  if (rows.length === 0) return
+  const { error } = await supabase
+    .from('ticker_price_history')
+    .upsert(rows, { onConflict: 'user_id,ticker_id,date', ignoreDuplicates: true })
+  if (error) throw error
+}
+
 // One batched query for every ticker the caller cares about, rather than
 // one round trip per ticker. Rows come back oldest-first per ticker so
 // callers can find "closest row at least N days old" by scanning forward.

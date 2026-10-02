@@ -1,5 +1,8 @@
 import { getSupabaseClient } from '../supabase'
 import { recordTickerPriceSnapshots } from './tickerPriceHistory'
+import { CoinGeckoError, fetchCryptoQuotes } from '../coingecko'
+import { showAppAlert } from '../appAlerts'
+import { config } from '@/store/config'
 
 export async function getAllTickers() {
   const { data, error } = await getSupabaseClient()
@@ -17,7 +20,7 @@ export async function deleteTicker(id: string) {
     .from('assets')
     .select('id', { count: 'exact', head: true })
     .eq('ticker_id', id)
-    .eq('asset_type', 'Stock')
+    .in('asset_type', ['Stock', 'Crypto'])
   if (countError) throw countError
   if ((count ?? 0) > 0) {
     throw new Error('Cannot delete an owned ticker')
@@ -50,9 +53,15 @@ export async function updateTickerPrice(symbol: string, price: number, previousC
   if (error) throw error
 }
 
+// One toast per page load, not one per refresh (pull-to-refresh, pages that
+// each call this) — resets on a real reload like priceRefresh's promise.
+let warnedCryptoRateLimit = false
+
 export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
   const tickers = await getAllTickers()
-  const stockTickers = (tickers ?? []).filter((t: any) => t.symbol)
+  const allTickers = (tickers ?? []).filter((t: any) => t.symbol)
+  const stockTickers = allTickers.filter((t: any) => t.kind !== 'crypto')
+  const cryptoTickers = allTickers.filter((t: any) => t.kind === 'crypto' && t.coingecko_id)
   const pricePoints: { tickerId: string; price: number }[] = []
   await Promise.all(stockTickers.map(async (ticker: any) => {
     try {
@@ -65,6 +74,29 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
       }
     } catch { /* best-effort per ticker */ }
   }))
+  if (cryptoTickers.length > 0) {
+    try {
+      // One batched CoinGecko call for every coin, however many are held.
+      const quotes = await fetchCryptoQuotes(cryptoTickers.map((t: any) => t.coingecko_id), config.coingeckoApiKey || undefined)
+      await Promise.all(cryptoTickers.map(async (ticker: any) => {
+        const quote = quotes.get(ticker.coingecko_id)
+        if (!quote) return
+        try {
+          await updateTickerPrice(ticker.symbol, quote.price, quote.previousClose)
+          pricePoints.push({ tickerId: ticker.id, price: quote.price })
+        } catch { /* best-effort per ticker */ }
+      }))
+    } catch (error) {
+      // Best-effort — a failed/rate-limited CoinGecko call keeps last prices.
+      // But an existing account that never set a CoinGecko key would
+      // otherwise just see crypto prices silently go stale, so say so once
+      // per page load when the cause is the keyless rate limit.
+      if (error instanceof CoinGeckoError && error.rateLimited && !config.coingeckoApiKey && !warnedCryptoRateLimit) {
+        warnedCryptoRateLimit = true
+        showAppAlert('Crypto prices couldn\'t refresh (CoinGecko keyless rate limit). Add a free CoinGecko key in Settings to fix this.', { variant: 'error', durationMs: 6000 })
+      }
+    }
+  }
   try {
     await recordTickerPriceSnapshots(pricePoints)
   } catch { /* best-effort — a missed daily snapshot just delays that ticker's history */ }

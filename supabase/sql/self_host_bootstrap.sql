@@ -36,6 +36,11 @@ create unique index if not exists tickers_user_id_symbol_key
 alter table public.tickers add column if not exists logo text;
 alter table public.tickers add column if not exists watchlist_only boolean not null default false;
 alter table public.tickers add column if not exists previous_close numeric(12,4);
+-- How a ticker is priced: 'stock' → Finnhub, 'crypto' → CoinGecko (via coingecko_id).
+alter table public.tickers add column if not exists kind text not null default 'stock';
+alter table public.tickers drop constraint if exists tickers_kind_check;
+alter table public.tickers add constraint tickers_kind_check check (kind in ('stock', 'crypto'));
+alter table public.tickers add column if not exists coingecko_id text;
 
 create table if not exists public.themes (
   id uuid primary key default gen_random_uuid(),
@@ -281,6 +286,7 @@ alter table public.user_settings add column if not exists vest_alerts_enabled bo
 alter table public.user_settings add column if not exists capital_gains_alerts_enabled boolean not null default true;
 alter table public.user_settings add column if not exists llm_provider text not null default 'claude';
 alter table public.user_settings add column if not exists groq_api_key text;
+alter table public.user_settings add column if not exists coingecko_api_key text;
 alter table public.user_settings drop column if exists tax_harvest_threshold;
 -- Was a toggle for the (now removed) background generation path; the
 -- feature is on-demand only now, so there's nothing to opt in/out of.
@@ -420,7 +426,7 @@ create index if not exists llm_usage_log_user_feature_created_idx
 
 -- RLS
 alter table public.allowed_emails enable row level security;
-alter table public.admin_users enable row level security;
+alter table if exists public.admin_users enable row level security;
 alter table public.locations enable row level security;
 alter table public.tickers enable row level security;
 alter table public.themes enable row level security;
@@ -432,6 +438,34 @@ alter table public.transactions enable row level security;
 alter table public.rsu_grants enable row level security;
 alter table public.fixed_income_lots enable row level security;
 alter table public.user_settings enable row level security;
+-- Crypto needs sub-cent prices and satoshi-level quantities; widen the
+-- original stock-oriented numeric precision (no-op when already widened).
+do $$
+declare
+  r record;
+begin
+  for r in
+    select * from (values
+      ('tickers', 'current_price', 18, 8),
+      ('tickers', 'previous_close', 18, 8),
+      ('ticker_price_history', 'price', 18, 8),
+      ('transactions', 'count', 20, 8),
+      ('transactions', 'cost_price', 18, 8)
+    ) as t(tbl, col, prec, scl)
+  loop
+    -- numeric_precision is null for an unbounded numeric column (already
+    -- wide enough — constraining it would be a regression, not a widening).
+    if exists (
+      select 1 from information_schema.columns c
+      where c.table_schema = 'public' and c.table_name = r.tbl and c.column_name = r.col
+        and c.numeric_precision is not null
+        and (c.numeric_precision < r.prec or c.numeric_scale < r.scl)
+    ) then
+      execute format('alter table public.%I alter column %I type numeric(%s,%s)', r.tbl, r.col, r.prec, r.scl);
+    end if;
+  end loop;
+end $$;
+
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
 alter table public.ticker_price_history enable row level security;

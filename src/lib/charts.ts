@@ -1,4 +1,4 @@
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, netCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, isTickerAsset, netCount } from './portfolio'
 import { formatDateMDY } from './dates'
 
 // ── Portfolio Allocation ──────────────────────────────────────
@@ -15,7 +15,7 @@ export function groupByAssetType(assets: any[], activeSubtypes: Set<string>) {
 }
 
 function filteredStockValue(asset: any, activeSubtypes: Set<string>): number {
-  if (asset.asset_type !== 'Stock') return asset.price ?? 0
+  if (!isTickerAsset(asset)) return asset.price ?? 0
   const lots = (asset.stock_subtypes ?? [])
     .filter((st: any) => activeSubtypes.has(st.subtype))
     .flatMap((st: any) => st.transactions ?? [])
@@ -45,7 +45,7 @@ export function groupByLocation(assets: any[]) {
 
 export function computeUnrealizedPnLByPosition(assets: any[]) {
   return assets
-    .filter(a => a.asset_type === 'Stock')
+    .filter(a => isTickerAsset(a))
     .map(a => ({ name: a.name, gain: computeUnrealizedGain(a) }))
     .filter(p => p.gain !== 0)
     .sort((a, b) => b.gain - a.gain)
@@ -57,7 +57,7 @@ export function computeCapitalGainsExposure(assets: any[]) {
   let shortTerm = 0
   let longTerm = 0
   for (const a of assets) {
-    if (a.asset_type !== 'Stock') continue
+    if (!isTickerAsset(a)) continue
     const price = a.ticker?.current_price ?? 0
     for (const st of a.stock_subtypes ?? []) {
       for (const t of st.transactions ?? []) {
@@ -75,7 +75,7 @@ export function computeCapitalGainsExposure(assets: any[]) {
 
 export function computeCostVsValue(assets: any[]) {
   return assets
-    .filter(a => a.asset_type === 'Stock' && computeCostBasis(a) > 0)
+    .filter(a => isTickerAsset(a) && computeCostBasis(a) > 0)
     .map(a => ({
       name: a.name,
       costBasis: computeCostBasis(a),
@@ -234,7 +234,7 @@ export function computeThemeDistribution(assets: any[], includeCash = false) {
   const map: Record<string, number> = {}
 
   for (const asset of assets) {
-    if (asset.asset_type === 'Stock') {
+    if (isTickerAsset(asset)) {
       const value = computeAssetValue(asset)
       if (value <= 0) continue
 

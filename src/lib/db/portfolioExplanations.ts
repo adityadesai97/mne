@@ -14,6 +14,9 @@ export interface PortfolioExplanationMover {
   percentChange: number
   contributionPct: number
   theme?: string
+  // True for a cryptocurrency holding — it's held to a higher major-move bar
+  // (CRYPTO_MOVE_BAR_MULTIPLIER). Absent on older rows and on stocks.
+  crypto?: boolean
   headlines: PortfolioExplanationHeadline[]
 }
 
@@ -22,6 +25,8 @@ export interface PortfolioExplanationThemeMove {
   direction: 'up' | 'down'
   avgPercentChange: number
   memberSymbols: string[]
+  // True when every member is crypto (held to the crypto move bar).
+  crypto?: boolean
 }
 
 // 'major_move'/'market_close' are historic values from when this used to be

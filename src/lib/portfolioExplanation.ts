@@ -21,7 +21,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { computeDailyChange, computeShareCount, computeTotalNetWorth } from './portfolio'
+import { computeDailyChange, computeShareCount, computeTotalNetWorth, isTickerAsset } from './portfolio'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import { config } from '@/store/config'
 
@@ -32,6 +32,16 @@ export const MAX_MOVERS = 5
 /** A single holding's own move big enough to call out regardless of its
  *  portfolio-level weight (mirrors the default price_alert_threshold). */
 export const MAJOR_MOVE_STOCK_PCT = 5
+/** Crypto routinely swings several times harder than equities, so its
+ *  per-holding/per-sector "major move" bar is this multiple of the stock bar
+ *  at every timeframe — otherwise a 5% daily bar would flag a coin nearly
+ *  every day and crowd the carousel. Stock bars are untouched. */
+export const CRYPTO_MOVE_BAR_MULTIPLIER = 2
+/** The effective major-move bar for a holding/theme: `stockPct`, scaled up
+ *  for crypto. */
+function moveBar(stockPct: number, crypto?: boolean): number {
+  return crypto ? stockPct * CRYPTO_MOVE_BAR_MULTIPLIER : stockPct
+}
 /** Aggregate portfolio swing big enough to count as a "major move" on its
  *  own, even with no single outsized holding. */
 export const MAJOR_MOVE_PORTFOLIO_PCT = 1
@@ -114,6 +124,7 @@ export interface SymbolMove {
   dollarChange: number
   percentChange: number
   themes: string[]
+  crypto?: boolean
 }
 
 export interface MoversResult {
@@ -138,7 +149,7 @@ function tickerThemeNames(asset: any): string[] {
 function computeSymbolMoves(assets: any[]): SymbolMove[] {
   const bySymbol = new Map<string, SymbolMove>()
   for (const asset of assets) {
-    if (asset.asset_type !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     if (!symbol) continue
     const shares = computeShareCount(asset)
@@ -157,6 +168,7 @@ function computeSymbolMoves(assets: any[]): SymbolMove[] {
       dollarChange: change.dollarChange,
       percentChange: change.percentChange,
       themes: tickerThemeNames(asset),
+      ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
     })
   }
   return [...bySymbol.values()]
@@ -185,6 +197,7 @@ function detectThemeMoves(symbolMoves: SymbolMove[]): PortfolioExplanationThemeM
       direction,
       avgPercentChange: Math.round(avgPercentChange * 100) / 100,
       memberSymbols: members.map(m => m.symbol),
+      ...(members.every(m => m.crypto) ? { crypto: true } : {}),
     })
   }
   return result
@@ -219,7 +232,7 @@ function findPriceApproxNDaysAgo(history: TickerPricePoint[], days: number): num
 function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, TickerPricePoint[]>, days: number): SymbolMove[] {
   const bySymbol = new Map<string, SymbolMove>()
   for (const asset of assets) {
-    if (asset.asset_type !== 'Stock') continue
+    if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     const tickerId = asset.ticker?.id
     if (!symbol || !tickerId) continue
@@ -244,6 +257,7 @@ function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, Ti
       dollarChange,
       percentChange,
       themes: tickerThemeNames(asset),
+      ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
     })
   }
   return [...bySymbol.values()]
@@ -308,11 +322,12 @@ function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: n
     percentChange: Math.round(move.percentChange * 100) / 100,
     contributionPct: totalAbsSwing > 0 ? Math.round((Math.abs(move.dollarChange) / totalAbsSwing) * 1000) / 10 : 0,
     ...(themeBySymbol.has(move.symbol) ? { theme: themeBySymbol.get(move.symbol) } : {}),
+    ...(move.crypto ? { crypto: true } : {}),
     headlines: [],
   }))
 
   const hasMajorMove =
-    movers.some(m => Math.abs(m.percentChange) >= stockPct) ||
+    movers.some(m => Math.abs(m.percentChange) >= moveBar(stockPct, m.crypto)) ||
     Math.abs(dayChangePercent) >= portfolioPct
 
   return { movers, dayChangeDollars, dayChangePercent, hasMajorMove, isBroadMarketMove, themeMoves }
@@ -360,15 +375,15 @@ export function todayMarketDate(): string {
  *  working with a weekly/monthly/yearly/custom MoversResult should pass the
  *  matching MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME entry instead. */
 function significantMoverSymbols(movers: PortfolioExplanationMover[], stockPct: number = MAJOR_MOVE_STOCK_PCT): Set<string> {
-  return new Set(movers.filter(m => Math.abs(m.percentChange) >= stockPct).map(m => m.symbol))
+  return new Set(movers.filter(m => Math.abs(m.percentChange) >= moveBar(stockPct, m.crypto)).map(m => m.symbol))
 }
 
 /** Same idea for theme moves — detectThemeMoves' own clustering condition
  *  isn't magnitude-aware (it only checks member agreement), so this is what
  *  keeps "did the flagged-theme set change" from firing on a theme whose
  *  average move is too small to matter at this timeframe. */
-function significantThemeNames(themeMoves: { theme: string; avgPercentChange: number }[], stockPct: number = MAJOR_MOVE_STOCK_PCT): Set<string> {
-  return new Set(themeMoves.filter(t => Math.abs(t.avgPercentChange) >= stockPct).map(t => t.theme))
+function significantThemeNames(themeMoves: { theme: string; avgPercentChange: number; crypto?: boolean }[], stockPct: number = MAJOR_MOVE_STOCK_PCT): Set<string> {
+  return new Set(themeMoves.filter(t => Math.abs(t.avgPercentChange) >= moveBar(stockPct, t.crypto)).map(t => t.theme))
 }
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -475,7 +490,7 @@ function buildPortfolioTeaser(
     return `Your portfolio's move has changed since your last check. Want an updated explanation?`
   }
 
-  const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= stockPct)
+  const significantMovers = result.movers.filter(m => Math.abs(m.percentChange) >= moveBar(stockPct, m.crypto))
   const dominant = significantMovers.length === 1 && significantMovers[0].contributionPct >= DOMINANT_MOVER_CONTRIBUTION_PCT
     ? significantMovers[0]
     : null
@@ -586,10 +601,10 @@ function deriveSlotsFromResult(result: MoversResult, timeframe: PortfolioExplana
     slots.push({ scope: 'portfolio', scopeKey: '', timeframe, windowDays })
   }
   for (const m of result.movers) {
-    if (Math.abs(m.percentChange) >= stockPct) slots.push({ scope: 'stock', scopeKey: m.symbol, timeframe, windowDays })
+    if (Math.abs(m.percentChange) >= moveBar(stockPct, m.crypto)) slots.push({ scope: 'stock', scopeKey: m.symbol, timeframe, windowDays })
   }
   for (const t of result.themeMoves) {
-    if (Math.abs(t.avgPercentChange) >= stockPct) slots.push({ scope: 'sector', scopeKey: t.theme, timeframe, windowDays })
+    if (Math.abs(t.avgPercentChange) >= moveBar(stockPct, t.crypto)) slots.push({ scope: 'sector', scopeKey: t.theme, timeframe, windowDays })
   }
   return slots
 }
@@ -628,7 +643,7 @@ export function computeCandidateSlots(assets: any[], netWorth: number, priceHist
     const windowResult = computeMoversForWindow(assets, netWorth, priceHistory, windowDays, 'custom')
     for (const m of windowResult.movers) {
       const key = `stock:${m.symbol}`
-      if (covered.has(key) || Math.abs(m.percentChange) < customStockPct) continue
+      if (covered.has(key) || Math.abs(m.percentChange) < moveBar(customStockPct, m.crypto)) continue
       const existing = found.get(key)
       if (!existing || Math.abs(m.percentChange) > existing.magnitude) {
         found.set(key, { slot: { scope: 'stock', scopeKey: m.symbol, timeframe: 'custom', windowDays }, magnitude: Math.abs(m.percentChange) })
@@ -636,7 +651,7 @@ export function computeCandidateSlots(assets: any[], netWorth: number, priceHist
     }
     for (const t of windowResult.themeMoves) {
       const key = `sector:${t.theme}`
-      if (covered.has(key) || Math.abs(t.avgPercentChange) < customStockPct) continue
+      if (covered.has(key) || Math.abs(t.avgPercentChange) < moveBar(customStockPct, t.crypto)) continue
       const existing = found.get(key)
       if (!existing || Math.abs(t.avgPercentChange) > existing.magnitude) {
         found.set(key, { slot: { scope: 'sector', scopeKey: t.theme, timeframe: 'custom', windowDays }, magnitude: Math.abs(t.avgPercentChange) })
@@ -749,14 +764,53 @@ function trimHeadlines(raw: any[], limit: number): PortfolioExplanationHeadline[
     .map(a => ({ title: String(a.headline), source: String(a.source ?? ''), url: String(a.url ?? ''), datetime: Number(a.datetime ?? 0) }))
 }
 
+/** Keeps only news items whose headline/summary names the coin — by its full
+ *  name ("Bitcoin") or its ticker as a standalone uppercase word ("BTC"),
+ *  so a short symbol like "ETH" doesn't match inside "method". Exported for
+ *  tests. */
+export function filterNewsForCoin(raw: any[], symbol: string, name: string): any[] {
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const nameRe = name && name.toUpperCase() !== symbol.toUpperCase()
+    ? new RegExp(`\\b${escape(name)}\\b`, 'i')
+    : null
+  const symbolRe = new RegExp(`\\b${escape(symbol.toUpperCase())}\\b`)
+  return raw.filter(item => {
+    const text = `${item?.headline ?? ''} ${item?.summary ?? ''}`
+    return symbolRe.test(text) || (nameRe?.test(text) ?? false)
+  })
+}
+
 /** Best-effort per-mover company news — only ever called for the (≤5)
  *  actual movers, never the rest of the portfolio, and only when there's a
  *  major move to explain in the first place. */
-export async function fetchMoverHeadlines(symbols: string[], finnhubApiKey: string, windowDays: number = 7): Promise<Map<string, PortfolioExplanationHeadline[]>> {
+export async function fetchMoverHeadlines(
+  symbols: string[],
+  finnhubApiKey: string,
+  windowDays: number = 7,
+  cryptoNames: Map<string, string> = new Map(),
+): Promise<Map<string, PortfolioExplanationHeadline[]>> {
   const today = new Date().toISOString().split('T')[0]
   const weekAgo = new Date(Date.now() - Math.max(7, Math.min(windowDays, 30)) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const result = new Map<string, PortfolioExplanationHeadline[]>()
-  await Promise.all(symbols.map(async (symbol) => {
+
+  // Finnhub has no per-coin news — company-news is keyed by stock symbol and
+  // a coin's symbol could match an unrelated stock. Crypto movers instead get
+  // the general crypto news feed filtered down to items that actually name
+  // the coin (one fetch shared across every crypto mover).
+  const cryptoSymbols = symbols.filter(symbol => cryptoNames.has(symbol))
+  if (cryptoSymbols.length > 0) {
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/news?category=crypto&token=${finnhubApiKey}`)
+      const raw = await res.json()
+      if (Array.isArray(raw)) {
+        for (const symbol of cryptoSymbols) {
+          result.set(symbol, trimHeadlines(filterNewsForCoin(raw, symbol, cryptoNames.get(symbol) ?? symbol), 2))
+        }
+      }
+    } catch { /* best-effort — a missing headline just means no citation for that mover */ }
+  }
+
+  await Promise.all(symbols.filter(symbol => !cryptoNames.has(symbol)).map(async (symbol) => {
     try {
       const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${weekAgo}&to=${today}&token=${finnhubApiKey}`)
       const raw = await res.json()
@@ -810,7 +864,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
     fullResult = computeMovers(assets, netWorth)
   } else {
     const tickerIds = [...new Set(
-      assets.filter((a: any) => a.asset_type === 'Stock' && a.ticker?.id).map((a: any) => a.ticker.id as string),
+      assets.filter((a: any) => isTickerAsset(a) && a.ticker?.id).map((a: any) => a.ticker.id as string),
     )]
     // A little slack past windowDays so a ticker's oldest-available row
     // still counts as "the anchor" even if it landed a day or two late.
@@ -852,8 +906,17 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
   }
 
   const finnhubKey = config.finnhubApiKey
+  // symbol → coin name for held crypto, so news can be matched by name.
+  const cryptoNames = new Map<string, string>()
+  for (const asset of assets) {
+    // CoinGecko ids are slugs of the coin's name ('bitcoin', 'wrapped-bitcoin'),
+    // which makes them a usable name to match headlines against.
+    if (asset.asset_type === 'Crypto' && asset.ticker?.symbol) {
+      cryptoNames.set(asset.ticker.symbol, String(asset.ticker.coingecko_id ?? asset.ticker.symbol).replace(/-/g, ' '))
+    }
+  }
   const [headlinesBySymbol, marketHeadlines] = await Promise.all([
-    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
+    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays, cryptoNames) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
     finnhubKey && result.isBroadMarketMove ? fetchMarketHeadlines(finnhubKey) : Promise.resolve([]),
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))
