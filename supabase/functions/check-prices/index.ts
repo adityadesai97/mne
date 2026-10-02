@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { fetchCryptoQuotes, type CryptoQuote } from './coingecko.ts'
 
 // Sub-dollar coins need more than 2 decimals to be readable.
 const fmtPrice = (n: number) => n.toFixed(n > 0 && n < 1 ? 6 : 2)
@@ -10,48 +11,50 @@ Deno.serve(async () => {
   )
 
   const { data: settings } = await supabase.from('user_settings').select('*')
+  const eligible = (settings ?? []).filter((userSettings: any) => userSettings.price_alerts_enabled !== false)
 
-  for (const userSettings of settings ?? []) {
-    if (userSettings.price_alerts_enabled === false) continue
+  const tickersByUser = new Map<string, any[]>()
+  for (const userSettings of eligible) {
     const { data: tickers } = await supabase
       .from('tickers')
       .select('*')
       .eq('user_id', userSettings.user_id)
       .not('current_price', 'is', null)
+    tickersByUser.set(userSettings.user_id, tickers ?? [])
+  }
 
-    // Crypto tickers are priced from CoinGecko in one batched call per user
-    // (the free tier is call-count limited, not coin-count limited), stock
-    // tickers from Finnhub one by one. Mirrors src/lib/coingecko.ts — edge
-    // functions can't import from src/.
-    const cryptoQuotes = new Map<string, { price: number; previousClose: number | null }>()
-    const cryptoIds = [...new Set((tickers ?? [])
+  // Crypto tickers are priced from CoinGecko, not Finnhub. CoinGecko's free
+  // tier is call-count limited (not coin-count limited) and, keyless, limited
+  // per IP — and every user's hourly call here comes from the same server IP.
+  // So users with their own key get their own batched call, and *every other
+  // user's coins are de-duplicated into one shared batch* (using the optional
+  // project-wide COINGECKO_API_KEY secret when set), instead of one request
+  // per user. Mirrors src/lib/coingecko.ts — edge functions can't import src/.
+  const cryptoIdsFor = (userId: string): string[] => [...new Set(
+    (tickersByUser.get(userId) ?? [])
       .filter((t: any) => t.kind === 'crypto' && t.coingecko_id)
-      .map((t: any) => t.coingecko_id as string))]
-    if (cryptoIds.length > 0) {
-      try {
-        const params = new URLSearchParams({
-          ids: cryptoIds.join(','),
-          vs_currencies: 'usd',
-          include_24hr_change: 'true',
-        })
-        if (userSettings.coingecko_api_key) params.set('x_cg_demo_api_key', userSettings.coingecko_api_key)
-        const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?${params.toString()}`)
-        if (cgRes.ok) {
-          const body = await cgRes.json()
-          for (const id of cryptoIds) {
-            const price = Number(body?.[id]?.usd)
-            if (!Number.isFinite(price) || price <= 0) continue
-            const pct = Number(body[id].usd_24h_change)
-            cryptoQuotes.set(id, {
-              price,
-              previousClose: Number.isFinite(pct) && pct > -100 ? price / (1 + pct / 100) : null,
-            })
-          }
-        }
-      } catch { /* best-effort — a failed CoinGecko call just skips crypto this run */ }
+      .map((t: any) => t.coingecko_id as string),
+  )]
+  const quotesByKeyedUser = new Map<string, Map<string, CryptoQuote>>()
+  const sharedIds = new Set<string>()
+  for (const userSettings of eligible) {
+    const ids = cryptoIdsFor(userSettings.user_id)
+    if (ids.length === 0) continue
+    if (userSettings.coingecko_api_key) {
+      quotesByKeyedUser.set(userSettings.user_id, await fetchCryptoQuotes(ids, userSettings.coingecko_api_key))
+    } else {
+      ids.forEach((id) => sharedIds.add(id))
     }
+  }
+  const sharedQuotes = sharedIds.size > 0
+    ? await fetchCryptoQuotes([...sharedIds], Deno.env.get('COINGECKO_API_KEY') || undefined)
+    : new Map<string, CryptoQuote>()
 
-    for (const ticker of tickers ?? []) {
+  for (const userSettings of eligible) {
+    const tickers = tickersByUser.get(userSettings.user_id) ?? []
+    const cryptoQuotes = quotesByKeyedUser.get(userSettings.user_id) ?? sharedQuotes
+
+    for (const ticker of tickers) {
       let newPrice: number | undefined
       let previousClose: number | null = null
       if (ticker.kind === 'crypto') {
