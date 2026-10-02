@@ -1612,8 +1612,8 @@ For sell_shares, require the source account/location name. For lot selection, re
 - multi-lot: lots[] with purchase_date + count for each lot
 If lot details are missing, ask a follow-up question.
 When the user provides 2 or more stock purchases and all details are present, use add_stock_transactions with a transactions array.
-Cryptocurrency holdings (BTC, ETH, SOL, ...) use add_stock_transaction / add_stock_transactions with asset_class 'Crypto' — same fields (symbol, count, cost_price, purchase_date, location_name, account_type); count may be fractional. Crypto is always Market subtype, priced via CoinGecko; it has no RSU/ESPP and no company fundamentals (get_company_fundamentals is stock-only).
-  For crypto, location_name is the exchange or wallet the coins were bought on / are held in (Coinbase, Kraken, Ledger, ...) and it is REQUIRED. It must come from the user (or an attached document) — never guess, default, or "assume" one (do NOT assume Coinbase). If it isn't stated, ask which exchange or wallet and wait. account_type is Investment for an exchange or wallet.
+Cryptocurrency holdings (BTC, ETH, SOL, QNT, ...) use add_crypto_transaction / add_crypto_transactions (2+ purchases, e.g. several lots) — NOT the stock tools. Fields: symbol, units (may be fractional), cost_per_unit (USD), purchase_date, location_name, optional ownership. There is no subtype, no account_type (crypto locations are always the Crypto account type), no RSU/ESPP, and no company fundamentals (get_company_fundamentals is stock-only). Say "units"/"coins" and "exchange or wallet", never "shares" or "brokerage", when talking about crypto.
+  For crypto, location_name is the exchange or wallet the coins were bought on / are held in (Coinbase, Kraken, Ledger, Robinhood, ...) and it is REQUIRED. It must come from the user (or an attached document) — never guess, default, or "assume" one (do NOT assume Coinbase). If it isn't stated, ask which exchange or wallet and wait.
 When you need to ask the user a follow-up question, reply with the question ONLY — never call a write tool in that same response, and never proceed on an assumed answer. Wait for their reply.
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
 If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
@@ -1825,13 +1825,12 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_stock_transaction',
-      description: 'Add shares of a stock, or coins of a cryptocurrency (asset_class Crypto), to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically.',
+      description: 'Add shares of a stock to the portfolio. Handles ticker, asset, subtype, and transaction creation automatically. Not for cryptocurrency — use add_crypto_transaction for coins.',
       parameters: {
         type: 'object' as const,
         properties: {
-          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL, or the coin symbol e.g. BTC when asset_class is Crypto' },
-          asset_class: { type: 'string', enum: ['Stock', 'Crypto'], description: 'Default Stock. Use Crypto for cryptocurrency holdings (BTC, ETH, SOL, ...); crypto is always subtype Market (no RSU/ESPP) and count may be fractional (up to 8 decimals).' },
-          count: { type: 'number', description: 'Number of shares (or coins, for Crypto)' },
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          count: { type: 'number', description: 'Number of shares' },
           cost_price: { type: 'number', description: 'Price per share at purchase' },
           purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
           subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market. Use RSU whenever the user describes shares vesting/vested, even if they never say "RSU" or "grant" — this makes grant_date required below.' },
@@ -1850,7 +1849,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'add_stock_transactions',
-      description: 'Add multiple stock or crypto transactions at once. Use this when the user provides 2 or more stock/crypto purchases in one request.',
+      description: 'Add multiple stock transactions at once. Use this when the user provides 2 or more stock purchases in one request. Not for cryptocurrency — use add_crypto_transactions for coins.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1859,9 +1858,8 @@ const tools = [
             items: {
               type: 'object',
               properties: {
-                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL, or the coin symbol e.g. BTC when asset_class is Crypto' },
-                asset_class: { type: 'string', enum: ['Stock', 'Crypto'], description: 'Default Stock. Use Crypto for cryptocurrency holdings (BTC, ETH, SOL, ...); crypto is always subtype Market (no RSU/ESPP) and count may be fractional (up to 8 decimals).' },
-                count: { type: 'number', description: 'Number of shares (or coins, for Crypto)' },
+                symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+                count: { type: 'number', description: 'Number of shares' },
                 cost_price: { type: 'number', description: 'Price per share at purchase' },
                 purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
                 subtype: { type: 'string', enum: ['Market', 'ESPP', 'RSU'], description: 'How shares were acquired, default Market. Use RSU whenever the user describes shares vesting/vested, even if they never say "RSU" or "grant" — this makes grant_date required below.' },
@@ -1873,6 +1871,55 @@ const tools = [
                 ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
               },
               required: ['symbol', 'count', 'cost_price', 'purchase_date', 'location_name', 'account_type'],
+            },
+          },
+        },
+        required: ['transactions'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_crypto_transaction',
+      description: 'Add a purchase of a cryptocurrency (BTC, ETH, SOL, QNT, ...) to the portfolio. Handles the coin, position and purchase lot automatically. Units may be fractional (up to 8 decimals). For stocks use add_stock_transaction.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Coin symbol e.g. BTC, ETH, QNT' },
+          units: { type: 'number', description: 'Number of coins/units bought (may be fractional)' },
+          cost_per_unit: { type: 'number', description: 'USD price per coin/unit at purchase' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          location_name: { type: 'string', description: 'The exchange or wallet the coins were bought on / are held in, e.g. Coinbase, Kraken, Ledger. Must come from the user — never guess.' },
+          asset_name: { type: 'string', description: 'Name for the position, defaults to the coin symbol' },
+          ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+        },
+        required: ['symbol', 'units', 'cost_per_unit', 'purchase_date', 'location_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_crypto_transactions',
+      description: 'Add multiple cryptocurrency purchases at once. Use this when the user provides 2 or more crypto purchases in one request (e.g. two lots of the same coin).',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          transactions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                symbol: { type: 'string', description: 'Coin symbol e.g. BTC, ETH, QNT' },
+                units: { type: 'number', description: 'Number of coins/units bought (may be fractional)' },
+                cost_per_unit: { type: 'number', description: 'USD price per coin/unit at purchase' },
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+                location_name: { type: 'string', description: 'The exchange or wallet the coins were bought on / are held in, e.g. Coinbase, Kraken, Ledger. Must come from the user — never guess.' },
+                asset_name: { type: 'string', description: 'Name for the position, defaults to the coin symbol' },
+                ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+              },
+              required: ['symbol', 'units', 'cost_per_unit', 'purchase_date', 'location_name'],
             },
           },
         },
@@ -2170,6 +2217,8 @@ const READ_TOOL_NAMES = new Set([
 const WRITE_TOOL_NAMES = new Set([
   'add_stock_transaction',
   'add_stock_transactions',
+  'add_crypto_transaction',
+  'add_crypto_transactions',
   'add_cash_asset',
   'add_cash_assets',
   'add_fixed_income_lot',
@@ -2236,7 +2285,7 @@ function mergePreviewSections(sections: ConfirmationPreviewSection[]): Confirmat
   return result
 }
 
-function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPreviewSection[] {
+export function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPreviewSection[] {
   if (toolName === 'add_stock_transaction' || toolName === 'add_stock_transactions') {
     const transactions = toolName === 'add_stock_transactions'
       ? (Array.isArray(input.transactions) ? input.transactions : [])
@@ -2253,7 +2302,7 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       return cols
     }
     const txRow = (tx: any, withGrantDate: boolean) => {
-      const base = [`${String(tx?.symbol ?? '').toUpperCase() || '-'}${tx?.asset_class === 'Crypto' ? ' (Crypto)' : ''}`, numberToText(tx?.count)]
+      const base = [String(tx?.symbol ?? '').toUpperCase() || '-', numberToText(tx?.count)]
       if (hasSoldAtVest) base.push(numberToText(tx?.sold_at_vest ?? 0))
       base.push(moneyToText(tx?.cost_price), dateToText(tx?.purchase_date))
       if (withGrantDate) base.push(dateToText(tx?.grant_date))
@@ -2290,6 +2339,32 @@ function buildPreviewSectionsFor(toolName: string, input: any): ConfirmationPrev
       sections.push({ title: 'Stock Transactions', groupKey: symbol, columns: columnsFor(false), rows: txs.map((tx) => txRow(tx, false)) })
     }
     return sections
+  }
+
+  if (toolName === 'add_crypto_transaction' || toolName === 'add_crypto_transactions') {
+    const transactions = toolName === 'add_crypto_transactions'
+      ? (Array.isArray(input.transactions) ? input.transactions : [])
+      : [input]
+    if (transactions.length === 0) return []
+    const bySymbol = new Map<string, any[]>()
+    for (const tx of transactions) {
+      const symbol = normalizeSymbol(tx?.symbol) || '-'
+      if (!bySymbol.has(symbol)) bySymbol.set(symbol, [])
+      bySymbol.get(symbol)!.push(tx)
+    }
+    return [...bySymbol].map(([symbol, txs]) => ({
+      title: 'Crypto Purchases',
+      groupKey: symbol,
+      columns: ['Coin', 'Units', 'Cost/Unit', 'Purchase Date', 'Exchange / Wallet', 'Account'],
+      rows: txs.map((tx) => [
+        symbol,
+        numberToText(tx?.units, 8),
+        cryptoPriceToText(tx?.cost_per_unit),
+        dateToText(tx?.purchase_date),
+        String(tx?.location_name ?? '').trim() || '-',
+        CRYPTO_ACCOUNT_TYPE,
+      ]),
+    }))
   }
 
   if (toolName === 'add_cash_asset' || toolName === 'add_cash_assets') {
@@ -2459,7 +2534,62 @@ function validateFixedIncomeLot(lot: any, label: string): string | null {
   return null
 }
 
-function validateWriteToolInput(toolName: string, input: any): string | null {
+/** Location (exchange/wallet) account type for crypto holdings — a real
+ *  account type of its own rather than Investment. */
+export const CRYPTO_ACCOUNT_TYPE = 'Crypto'
+
+/** Maps one add_crypto_transaction(s) entry onto the shared ticker-lot
+ *  storage path (the same one stocks use): coins are tracked as units in
+ *  Market lots, so storage stays shared while the command bar surface speaks
+ *  crypto (units, cost/unit, no subtype). */
+export function cryptoToStockTransactionInput(tx: any) {
+  return {
+    symbol: normalizeSymbol(tx?.symbol),
+    asset_class: 'Crypto',
+    count: tx?.units,
+    cost_price: tx?.cost_per_unit,
+    purchase_date: tx?.purchase_date,
+    location_name: tx?.location_name,
+    account_type: CRYPTO_ACCOUNT_TYPE,
+    ...(tx?.ownership ? { ownership: tx.ownership } : {}),
+    ...(tx?.asset_name ? { asset_name: tx.asset_name } : {}),
+  }
+}
+
+function validateCryptoTransaction(tx: any, label: string): string | null {
+  if (!tx?.symbol || !String(tx.symbol).trim()) return `${label}Coin symbol is required`
+  if (!Number.isFinite(Number(tx.units)) || Number(tx.units) <= 0) return `${label}Units must be a positive number`
+  if (!Number.isFinite(Number(tx.cost_per_unit)) || Number(tx.cost_per_unit) < 0) return `${label}Cost per unit must be a non-negative number`
+  if (!isValidIsoDate(tx.purchase_date)) return `${label}Invalid purchase date: "${tx.purchase_date}". Use YYYY-MM-DD format`
+  if (new Date(tx.purchase_date) > new Date()) return `${label}Purchase date cannot be in the future`
+  if (!tx.location_name || !String(tx.location_name).trim()) return `${label}Exchange or wallet is required`
+  return null
+}
+
+/** Price with as many decimals as the value needs, up to 8, never fewer than
+ *  2 — "$164.882" stays "$164.882" instead of rounding to "$164.88", and a
+ *  sub-cent coin price stays readable. */
+function cryptoPriceToText(value: unknown): string {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`
+}
+
+export function validateWriteToolInput(toolName: string, input: any): string | null {
+  if (toolName === 'add_crypto_transaction') {
+    const error = validateCryptoTransaction(input, '')
+    if (error) return error
+  }
+
+  if (toolName === 'add_crypto_transactions') {
+    const transactions = Array.isArray(input.transactions) ? input.transactions : []
+    if (transactions.length === 0) return 'At least one transaction is required'
+    for (let i = 0; i < transactions.length; i++) {
+      const error = validateCryptoTransaction(transactions[i], `Transaction ${i + 1}: `)
+      if (error) return error
+    }
+  }
+
   if (toolName === 'add_stock_transaction') {
     if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
     if (!Number.isFinite(Number(input.count)) || Number(input.count) <= 0) return 'Shares must be a positive number'
@@ -2568,7 +2698,7 @@ function validateWriteToolInput(toolName: string, input: any): string | null {
   return null
 }
 
-function confirmationMessageFor(toolName: string, input: any): string {
+export function confirmationMessageFor(toolName: string, input: any): string {
   switch (toolName) {
     case 'add_stock_transaction': {
       const date = new Date(input.purchase_date)
@@ -2577,11 +2707,17 @@ function confirmationMessageFor(toolName: string, input: any): string {
       const gainStatus = date < oneYearAgo ? 'Long Term' : 'Short Term'
       const subtype = input.subtype || 'Market'
       const grantSuffix = subtype === 'RSU' && input.grant_date ? `, grant ${formatDateMDY(input.grant_date)}` : ''
-      return `Add ${input.count} ${input.symbol.toUpperCase()} ${input.asset_class === 'Crypto' ? 'coins' : 'shares'} at $${input.cost_price}/${input.asset_class === 'Crypto' ? 'coin' : 'share'} purchased on ${formatDateMDY(input.purchase_date)} (${gainStatus}, ${subtype}${grantSuffix})`
+      return `Add ${input.count} ${input.symbol.toUpperCase()} shares at $${input.cost_price}/share purchased on ${formatDateMDY(input.purchase_date)} (${gainStatus}, ${subtype}${grantSuffix})`
     }
     case 'add_stock_transactions': {
       const transactions = Array.isArray(input.transactions) ? input.transactions : []
       return `Add ${transactions.length} stock transaction${transactions.length === 1 ? '' : 's'}`
+    }
+    case 'add_crypto_transaction':
+      return `Add ${numberToText(input.units, 8)} ${normalizeSymbol(input.symbol)} at ${cryptoPriceToText(input.cost_per_unit)}/unit purchased on ${formatDateMDY(input.purchase_date)} (${String(input.location_name ?? '').trim()})`
+    case 'add_crypto_transactions': {
+      const transactions = Array.isArray(input.transactions) ? input.transactions : []
+      return `Add ${transactions.length} crypto purchase${transactions.length === 1 ? '' : 's'}`
     }
     case 'add_cash_asset': {
       const typeSuffix = input.asset_type === 'Fixed Income' && input.fixed_income_subtype ? ` (${input.fixed_income_subtype})` : ''
@@ -2812,6 +2948,20 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     return
   }
 
+  if (toolName === 'add_crypto_transaction') {
+    await executeTool('add_stock_transaction', cryptoToStockTransactionInput(input), userId)
+    return
+  }
+
+  if (toolName === 'add_crypto_transactions') {
+    const transactions = Array.isArray(input.transactions) ? input.transactions : []
+    if (transactions.length === 0) throw new Error('transactions is required and must contain at least one item')
+    for (const tx of transactions) {
+      await executeTool('add_crypto_transaction', tx, userId)
+    }
+    return
+  }
+
   if (toolName === 'add_stock_transaction') {
     const symbol = input.symbol.toUpperCase()
     const isCrypto = input.asset_class === 'Crypto'
@@ -2830,7 +2980,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       const { data: foundTicker } = await supabase.from('tickers')
         .select('id, kind').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
       if (foundTicker?.kind === 'crypto') {
-        throw new Error(`${symbol} is already tracked as a cryptocurrency — use asset_class "Crypto" for it.`)
+        throw new Error(`${symbol} is already tracked as a cryptocurrency — use add_crypto_transaction for it.`)
       }
       existingTicker = foundTicker
       if (foundTicker) {
@@ -3550,13 +3700,12 @@ export function findCryptoPurchasesWithUnstatedLocation(
 ): string[] {
   const symbols: string[] = []
   for (const tool of writeTools) {
-    const transactions = tool.name === 'add_stock_transaction'
+    const transactions = tool.name === 'add_crypto_transaction'
       ? [tool.input]
-      : tool.name === 'add_stock_transactions' && Array.isArray(tool.input?.transactions)
+      : tool.name === 'add_crypto_transactions' && Array.isArray(tool.input?.transactions)
         ? tool.input.transactions
         : []
     for (const tx of transactions) {
-      if (tx?.asset_class !== 'Crypto') continue
       if (!locationMentionedByUser(tx?.location_name, userText)) {
         const symbol = String(tx?.symbol ?? '').toUpperCase()
         if (symbol && !symbols.includes(symbol)) symbols.push(symbol)
