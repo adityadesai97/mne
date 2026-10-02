@@ -40,3 +40,22 @@ export function subscribeToExplanationRequests(listener: StartExplanationListene
 export function openPortfolioExplanationInCommandBar(slot: PortfolioInsightSlot) {
   explanationListeners.forEach(listener => listener(slot))
 }
+
+// Same pattern again, for Portfolio Pulse event cards (an upcoming vest, a lot
+// turning long-term, …): they open the command bar with a question already
+// typed into the input — never auto-submitted, so the user reads it and
+// presses Enter themselves.
+type PrefillListener = (text: string) => void
+
+const prefillListeners = new Set<PrefillListener>()
+
+export function subscribeToPrefillRequests(listener: PrefillListener) {
+  prefillListeners.add(listener)
+  return () => {
+    prefillListeners.delete(listener)
+  }
+}
+
+export function openCommandBarWithPrompt(text: string) {
+  prefillListeners.forEach(listener => listener(text))
+}

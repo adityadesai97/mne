@@ -55,6 +55,21 @@ export const BROAD_MOVE_MAJORITY = 0.6
 /** A single mover dominant enough to name directly in the teaser/prompt
  *  rather than talking about "N holdings" in the abstract. */
 export const DOMINANT_MOVER_CONTRIBUTION_PCT = 50
+/** Most cards the Portfolio Pulse carousel shows at once. */
+export const MAX_PULSE_CARDS = 5
+/** A stock or sector card must move net worth by at least this much (percent
+ *  of net worth) — a 9% weekly move on a $200 position isn't worth a card. */
+export const MIN_CARD_NET_WORTH_PCT = 0.25
+/** A "since you bought it" return is something the user already knows about
+ *  (they just opened the position), so it has to clear a higher bar... */
+export const SINCE_BUY_BAR_MULTIPLIER = 1.5
+/** ...and the position must be at least this many days old. */
+export const SINCE_BUY_MIN_HOLD_DAYS = 3
+/** One holding accounting for at least this share of a portfolio swing is
+ *  called out by name in the portfolio teaser. */
+export const CONCENTRATED_SWING_PCT = 60
+/** A "reversal" tag needs the prior window's run to be at least this big. */
+export const REVERSAL_PRIOR_MOVE_PCT = 10
 
 /** A single Portfolio Pulse carousel card: one insight, independently
  *  generated/cached/regenerated. `scopeKey` is '' for scope 'portfolio',
@@ -129,6 +144,9 @@ export interface SymbolMove {
    *  position's return since purchase rather than the asset's move over the
    *  full window. */
   sinceBuy?: boolean
+  /** Whole days since the position's oldest lot was bought (undefined when
+   *  any lot has no purchase date). */
+  heldDays?: number
 }
 
 export interface MoversResult {
@@ -145,6 +163,32 @@ function tickerThemeNames(asset: any): string[] {
     .map((tt: any) => String(tt?.theme?.name ?? '').trim())
     .filter((name: string) => name.length > 0)
   return Array.from(new Set<string>(raw))
+}
+
+/** Whole days since an asset's *oldest* open lot was bought — how long the
+ *  position has existed. Undefined when there are no open lots or any open
+ *  lot has no purchase date (unknown age is treated as "held a long time"). */
+function positionHeldDays(asset: any): number | undefined {
+  const today = Date.parse(`${todayMarketDate()}T00:00:00Z`)
+  let oldest: number | undefined
+  let any = false
+  for (const st of asset.stock_subtypes ?? []) {
+    for (const t of st.transactions ?? []) {
+      if (netCount(t) <= 0) continue
+      any = true
+      const bought = typeof t.purchase_date === 'string' ? Date.parse(`${t.purchase_date.slice(0, 10)}T00:00:00Z`) : NaN
+      if (!Number.isFinite(bought)) return undefined
+      const days = Math.max(0, Math.floor((today - bought) / 86_400_000))
+      oldest = oldest === undefined ? days : Math.max(oldest, days)
+    }
+  }
+  return any ? oldest : undefined
+}
+
+/** Merges the same ticker held in two accounts: the position is as old as
+ *  its oldest lot, and unknown if either side is unknown. */
+function mergeHeldDays(a: number | undefined, b: number | undefined): number | undefined {
+  return a === undefined || b === undefined ? undefined : Math.max(a, b)
 }
 
 /** One entry per distinct stock symbol. The same ticker held in several
@@ -166,12 +210,16 @@ function computeSymbolMoves(assets: any[]): SymbolMove[] {
     // computeDailyChange's rounded per-asset figures).
     const dollarChange = Math.round(position.dollarChange * 100) / 100
 
+    const heldDays = positionHeldDays(asset)
     const existing = acc.get(symbol)
     if (existing) {
       existing.move.dollarChange += dollarChange
       existing.rawDollarChange += position.dollarChange
       existing.startValue += position.startValue
       existing.allBoughtToday = existing.allBoughtToday && position.allBoughtToday
+      const merged = mergeHeldDays(existing.move.heldDays, heldDays)
+      if (merged === undefined) delete existing.move.heldDays
+      else existing.move.heldDays = merged
       continue
     }
     acc.set(symbol, {
@@ -182,6 +230,7 @@ function computeSymbolMoves(assets: any[]): SymbolMove[] {
         percentChange: 0,
         themes: tickerThemeNames(asset),
         ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
+        ...(heldDays !== undefined ? { heldDays } : {}),
       },
       rawDollarChange: position.dollarChange,
       startValue: position.startValue,
@@ -271,7 +320,7 @@ function windowStartDate(days: number): string {
  *  a regression from this generalization. */
 function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, TickerPricePoint[]>, days: number): SymbolMove[] {
   const startDate = windowStartDate(days)
-  const acc = new Map<string, { move: SymbolMove; startValue: number; allLotsInWindow: boolean }>()
+  const acc = new Map<string, { move: SymbolMove; startValue: number; allLotsInWindow: boolean; heldDays: number | undefined }>()
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
@@ -306,11 +355,13 @@ function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, Ti
     if (startValue <= 0) continue
 
     const allLotsInWindow = !needsHistory
+    const heldDays = positionHeldDays(asset)
     const existing = acc.get(symbol)
     if (existing) {
       existing.move.dollarChange += dollarChange
       existing.startValue += startValue
       existing.allLotsInWindow = existing.allLotsInWindow && allLotsInWindow
+      existing.heldDays = mergeHeldDays(existing.heldDays, heldDays)
       continue
     }
     acc.set(symbol, {
@@ -324,12 +375,14 @@ function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, Ti
       },
       startValue,
       allLotsInWindow,
+      heldDays,
     })
   }
-  return [...acc.values()].map(({ move, startValue, allLotsInWindow }) => ({
+  return [...acc.values()].map(({ move, startValue, allLotsInWindow, heldDays }) => ({
     ...move,
     percentChange: (move.dollarChange / startValue) * 100,
     ...(allLotsInWindow ? { sinceBuy: true } : {}),
+    ...(heldDays !== undefined ? { heldDays } : {}),
   }))
 }
 
@@ -394,6 +447,7 @@ function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: n
     ...(themeBySymbol.has(move.symbol) ? { theme: themeBySymbol.get(move.symbol) } : {}),
     ...(move.crypto ? { crypto: true } : {}),
     ...(move.sinceBuy ? { sinceBuy: true } : {}),
+    ...(move.heldDays !== undefined ? { heldDays: move.heldDays } : {}),
     headlines: [],
   }))
 
@@ -571,6 +625,14 @@ function buildPortfolioTeaser(
       ? `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} since you bought it. Want to know why?`
       : `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} ${when}. Want to know why?`
   }
+  // When a single holding accounts for most of the swing, say so — that's
+  // concentration the user may not have noticed. (Skipped at ~100%: a
+  // one-holding portfolio's swing is trivially that holding's.)
+  const top = result.movers[0]
+  const concentration = top && top.contributionPct >= CONCENTRATED_SWING_PCT && top.contributionPct < 99.5
+    ? ` ${top.symbol} accounts for ${Math.round(top.contributionPct)}% of the swing.`
+    : ''
+
   if (result.themeMoves.length > 0) {
     const primaryTheme = [...result.themeMoves].sort((a, b) => Math.abs(b.avgPercentChange) - Math.abs(a.avgPercentChange))[0]
     // This card opens the *portfolio-wide* question, so lead with the
@@ -578,13 +640,13 @@ function buildPortfolioTeaser(
     // moved…" opener reads as a sector card and the tap seemed to open the
     // wrong session. Sector moves get their own card.
     const dir = result.dayChangeDollars >= 0 ? 'up' : 'down'
-    return `Your portfolio went ${dir} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}, with ${primaryTheme.theme} moving the most. Want to know why?`
+    return `Your portfolio went ${dir} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}, with ${primaryTheme.theme} moving the most.${concentration} Want to know why?`
   }
   if (significantMovers.length >= 2) {
-    return `${significantMovers.length} items in your portfolio moved substantially ${when}. Want to know why?`
+    return `${significantMovers.length} items in your portfolio moved substantially ${when}.${concentration} Want to know why?`
   }
   const direction = result.dayChangeDollars >= 0 ? 'up' : 'down'
-  return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}. Want to know why?`
+  return `Your portfolio went ${direction} ${Math.abs(result.dayChangePercent).toFixed(2)}% ${when}.${concentration} Want to know why?`
 }
 
 /** The Home page card's one-line hook for the daily portfolio-wide slot —
@@ -668,72 +730,162 @@ export function buildSlotTeaser(slot: PortfolioInsightSlot, fullResult: MoversRe
  *  line up with any of the fixed daily/weekly/monthly/yearly buckets. */
 export const CUSTOM_WINDOW_DAYS = [14, 45, 60, 90, 120, 180, 270]
 
-function deriveSlotsFromResult(result: MoversResult, timeframe: PortfolioExplanationTimeframe, windowDays: number): PortfolioInsightSlot[] {
-  const stockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[timeframe]
-  const portfolioPct = MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME[timeframe]
-  const slots: PortfolioInsightSlot[] = []
-  if (Math.abs(result.dayChangePercent) >= portfolioPct) {
-    slots.push({ scope: 'portfolio', scopeKey: '', timeframe, windowDays })
-  }
-  for (const m of result.movers) {
-    if (Math.abs(m.percentChange) >= moveBar(stockPct, m.crypto)) slots.push({ scope: 'stock', scopeKey: m.symbol, timeframe, windowDays })
-  }
-  for (const t of result.themeMoves) {
-    if (Math.abs(t.avgPercentChange) >= moveBar(stockPct, t.crypto)) slots.push({ scope: 'sector', scopeKey: t.theme, timeframe, windowDays })
-  }
-  return slots
+/** One carousel price-move card: the slot, how much it moves net worth
+ *  (percent of net worth — the ranking score), and an optional "why now"
+ *  tag. */
+export interface PulseMoveCard {
+  slot: PortfolioInsightSlot
+  score: number
+  tag?: string
+  /** The card is a stock's return since the user bought it. */
+  sinceBuy?: boolean
 }
 
-/** Every currently-relevant Portfolio Pulse carousel slot, across all three
- *  scopes (stock/sector/portfolio) and every timeframe (daily/weekly/
- *  monthly/yearly, plus a "notable move" catch-all over CUSTOM_WINDOW_DAYS)
- *  — the carousel renders exactly this list, nothing when it's empty,
- *  auto-advancing through whichever insights are live right now.
- *  `priceHistory` should cover at least a year back (see
- *  getTickerPriceHistory) so every pass below has what it needs from one
- *  shared fetch. */
-export function computeCandidateSlots(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>): PortfolioInsightSlot[] {
-  const daily = computeMovers(assets, netWorth)
-  const weekly = computeMoversForWindow(assets, netWorth, priceHistory, 7, 'weekly')
-  const monthly = computeMoversForWindow(assets, netWorth, priceHistory, 30, 'monthly')
-  const yearly = computeMoversForWindow(assets, netWorth, priceHistory, 365, 'yearly')
+/** A stock's bar for earning a card: the timeframe/crypto bar, raised for a
+ *  "since you bought it" return. */
+function stockCardBar(m: PortfolioExplanationMover, stockPct: number): number {
+  return moveBar(stockPct, m.crypto) * (m.sinceBuy ? SINCE_BUY_BAR_MULTIPLIER : 1)
+}
 
-  const slots = [
-    ...deriveSlotsFromResult(daily, 'daily', 1),
-    ...deriveSlotsFromResult(weekly, 'weekly', 7),
-    ...deriveSlotsFromResult(monthly, 'monthly', 30),
-    ...deriveSlotsFromResult(yearly, 'yearly', 365),
+/** A position the user opened (almost) just now: its "move" is mostly the
+ *  day they bought it, which they already know about. */
+function tooNewToReport(m: PortfolioExplanationMover, timeframe: PortfolioExplanationTimeframe): boolean {
+  if (m.heldDays === undefined) return false
+  if (timeframe === 'daily') return m.heldDays < 1
+  return !!m.sinceBuy && m.heldDays < SINCE_BUY_MIN_HOLD_DAYS
+}
+
+/** Every card one MoversResult earns at one timeframe — filtered for noise:
+ *  - a stock/sector must move net worth by at least MIN_CARD_NET_WORTH_PCT;
+ *  - brand-new positions and weakly-"since you bought it" returns are skipped;
+ *  - a stock inside a flagged sector is folded into that sector's card unless
+ *    it alone accounts for most of the sector's swing.
+ *  `folded` lists the stock keys folded away, so the custom-window scan
+ *  doesn't resurrect them. */
+function deriveCardsFromResult(
+  result: MoversResult,
+  timeframe: PortfolioExplanationTimeframe,
+  windowDays: number,
+  netWorth: number,
+): { cards: PulseMoveCard[]; folded: Set<string> } {
+  const stockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[timeframe]
+  const portfolioPct = MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME[timeframe]
+  const pctOfNetWorth = (dollars: number) => (netWorth > 0 ? (Math.abs(dollars) / netWorth) * 100 : 0)
+  const floorPct = netWorth > 0 ? MIN_CARD_NET_WORTH_PCT : 0
+  const cards: PulseMoveCard[] = []
+  const folded = new Set<string>()
+
+  if (Math.abs(result.dayChangePercent) >= portfolioPct) {
+    cards.push({ slot: { scope: 'portfolio', scopeKey: '', timeframe, windowDays }, score: Math.abs(result.dayChangePercent) })
+  }
+
+  const sectorGross = new Map<string, number>()
+  for (const t of result.themeMoves) {
+    if (Math.abs(t.avgPercentChange) < moveBar(stockPct, t.crypto)) continue
+    const members = result.movers.filter(m => t.memberSymbols.includes(m.symbol))
+    const impact = pctOfNetWorth(members.reduce((sum, m) => sum + m.dollarChange, 0))
+    if (impact < floorPct) continue
+    sectorGross.set(t.theme, members.reduce((sum, m) => sum + Math.abs(m.dollarChange), 0))
+    cards.push({ slot: { scope: 'sector', scopeKey: t.theme, timeframe, windowDays }, score: impact })
+  }
+
+  for (const m of result.movers) {
+    if (Math.abs(m.percentChange) < stockCardBar(m, stockPct)) continue
+    if (tooNewToReport(m, timeframe)) continue
+    const impact = pctOfNetWorth(m.dollarChange)
+    if (impact < floorPct) continue
+    const gross = m.theme ? sectorGross.get(m.theme) : undefined
+    if (gross && gross > 0 && (Math.abs(m.dollarChange) / gross) * 100 < DOMINANT_MOVER_CONTRIBUTION_PCT) {
+      folded.add(`stock:${m.symbol}`)
+      continue
+    }
+    cards.push({ slot: { scope: 'stock', scopeKey: m.symbol, timeframe, windowDays }, score: impact, ...(m.sinceBuy ? { sinceBuy: true } : {}) })
+  }
+  return { cards, folded }
+}
+
+/** "Why now" context for a stock card, from the price history we already
+ *  loaded — a new high/low over the history span, or a reversal of the
+ *  window before it. Undefined when history is too short to say. */
+function whyNowTag(card: PulseMoveCard, assets: any[], priceHistory: Map<string, TickerPricePoint[]>): string | undefined {
+  if (card.slot.scope !== 'stock') return undefined
+  const asset = assets.find(a => isTickerAsset(a) && a.ticker?.symbol === card.slot.scopeKey)
+  const history = asset?.ticker?.id ? priceHistory.get(asset.ticker.id) : undefined
+  const price = Number(asset?.ticker?.current_price)
+  if (!history || history.length < 2 || !Number.isFinite(price) || price <= 0) return undefined
+
+  const spanDays = Math.floor((Date.parse(`${todayMarketDate()}T00:00:00Z`) - Date.parse(`${history[0].date}T00:00:00Z`)) / 86_400_000)
+  if (spanDays >= 90) {
+    const prices = history.map(p => p.price)
+    const label = spanDays >= 350 ? '52-week' : `${Math.floor(spanDays / 30)}-month`
+    if (price >= Math.max(...prices)) return `New ${label} high`
+    if (price <= Math.min(...prices)) return `New ${label} low`
+  }
+
+  if (!card.sinceBuy && card.slot.windowDays >= 7) {
+    const w = card.slot.windowDays
+    const priorStart = findPriceApproxNDaysAgo(history, w * 2)
+    const priorEnd = findPriceApproxNDaysAgo(history, w)
+    if (priorStart && priorEnd && priorStart > 0 && priorEnd > 0) {
+      const priorPct = (priorEnd / priorStart - 1) * 100
+      const currentPct = (price / priorEnd - 1) * 100
+      if (Math.abs(priorPct) >= REVERSAL_PRIOR_MOVE_PCT && Math.sign(priorPct) !== Math.sign(currentPct) && currentPct !== 0) {
+        return priorPct > 0 ? `Reversal after a ${Math.round(priorPct)}% run up` : `Rebound after a ${Math.round(Math.abs(priorPct))}% slide`
+      }
+    }
+  }
+  return undefined
+}
+
+/** Whether the user has already opened this slot's explanation and nothing
+ *  material has changed since — such a card is demoted behind fresh ones. */
+export function isSlotSeenAndUnchanged(slot: PortfolioInsightSlot, fullResult: MoversResult, previous?: PortfolioExplanationRow | null): boolean {
+  if (!previous) return false
+  const resetsDaily = slot.timeframe === 'daily'
+  if (resetsDaily && previous.market_date !== todayMarketDate()) return false
+  return !shouldRegenerate(scopeMoversResult(fullResult, slot), previous, resetsDaily, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME[slot.timeframe])
+}
+
+/** Every currently-relevant Portfolio Pulse price-move card, ranked by how
+ *  much it moves net worth and capped at MAX_PULSE_CARDS — across all three
+ *  scopes (stock/sector/portfolio) and every timeframe (daily/weekly/monthly/
+ *  yearly, plus a single "notable move" catch-all over CUSTOM_WINDOW_DAYS).
+ *  Noise filters (dollar floor, since-buy handling, folding stocks into
+ *  their sector) live in deriveCardsFromResult. `priceHistory` should cover
+ *  at least a year back (see getTickerPriceHistory) so every pass below has
+ *  what it needs from one shared fetch. */
+export function computeCandidateCards(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>): PulseMoveCard[] {
+  const fixed = [
+    { result: computeMovers(assets, netWorth), timeframe: 'daily' as const, windowDays: 1 },
+    { result: computeMoversForWindow(assets, netWorth, priceHistory, 7, 'weekly'), timeframe: 'weekly' as const, windowDays: 7 },
+    { result: computeMoversForWindow(assets, netWorth, priceHistory, 30, 'monthly'), timeframe: 'monthly' as const, windowDays: 30 },
+    { result: computeMoversForWindow(assets, netWorth, priceHistory, 365, 'yearly'), timeframe: 'yearly' as const, windowDays: 365 },
   ]
+  const derived = fixed.map(f => deriveCardsFromResult(f.result, f.timeframe, f.windowDays, netWorth))
+  const cards = derived.flatMap(d => d.cards)
 
   // "Notable move" catch-all: a stock/sector whose move over some
   // non-calendar window stands out even though it doesn't cross the bar at
-  // any fixed calendar bucket above. Skips anything already covered by a
-  // slot above, and keeps at most the two most extreme finds (by
-  // magnitude, deduped per symbol/theme) so the carousel doesn't fill up
-  // with near-duplicate long-window variants of the same story.
-  const covered = new Set(slots.filter(s => s.scope !== 'portfolio').map(s => `${s.scope}:${s.scopeKey}`))
-  const customStockPct = MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME.custom
-  const found = new Map<string, { slot: PortfolioInsightSlot; magnitude: number }>()
+  // any fixed calendar bucket above. Skips anything already covered (or
+  // folded into a sector card) above, and keeps only the single most
+  // impactful find so the carousel doesn't fill up with long-window
+  // variants of the same story.
+  const covered = new Set([
+    ...cards.filter(c => c.slot.scope !== 'portfolio').map(c => `${c.slot.scope}:${c.slot.scopeKey}`),
+    ...derived.flatMap(d => [...d.folded]),
+  ])
+  const found = new Map<string, PulseMoveCard>()
   for (const windowDays of CUSTOM_WINDOW_DAYS) {
     const windowResult = computeMoversForWindow(assets, netWorth, priceHistory, windowDays, 'custom')
-    for (const m of windowResult.movers) {
-      const key = `stock:${m.symbol}`
-      if (covered.has(key) || Math.abs(m.percentChange) < moveBar(customStockPct, m.crypto)) continue
+    for (const card of deriveCardsFromResult(windowResult, 'custom', windowDays, netWorth).cards) {
+      if (card.slot.scope === 'portfolio') continue
+      const key = `${card.slot.scope}:${card.slot.scopeKey}`
+      if (covered.has(key)) continue
       const existing = found.get(key)
-      if (!existing || Math.abs(m.percentChange) > existing.magnitude) {
-        found.set(key, { slot: { scope: 'stock', scopeKey: m.symbol, timeframe: 'custom', windowDays }, magnitude: Math.abs(m.percentChange) })
-      }
-    }
-    for (const t of windowResult.themeMoves) {
-      const key = `sector:${t.theme}`
-      if (covered.has(key) || Math.abs(t.avgPercentChange) < moveBar(customStockPct, t.crypto)) continue
-      const existing = found.get(key)
-      if (!existing || Math.abs(t.avgPercentChange) > existing.magnitude) {
-        found.set(key, { slot: { scope: 'sector', scopeKey: t.theme, timeframe: 'custom', windowDays }, magnitude: Math.abs(t.avgPercentChange) })
-      }
+      if (!existing || card.score > existing.score) found.set(key, card)
     }
   }
-  const topCustom = [...found.values()].sort((a, b) => b.magnitude - a.magnitude).slice(0, 2).map(c => c.slot)
+  const topCustom = [...found.values()].sort((a, b) => b.score - a.score).slice(0, 1)
 
   // One card per subject (a given stock, sector, or the portfolio itself):
   // the same subject crossing its bar at several timeframes would otherwise
@@ -741,12 +893,28 @@ export function computeCandidateSlots(assets: any[], netWorth: number, priceHist
   // weekly → monthly → yearly → custom, so the first hit is the shortest
   // (most current) timeframe.
   const seen = new Set<string>()
-  return [...slots, ...topCustom].filter(s => {
-    const key = `${s.scope}:${s.scopeKey}`
+  const unique = [...cards, ...topCustom].filter(c => {
+    const key = `${c.slot.scope}:${c.slot.scopeKey}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
+
+  // Array.prototype.sort is stable, so equal scores keep the shorter-
+  // timeframe-first order established above.
+  return unique
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_PULSE_CARDS)
+    .map(card => {
+      const tag = whyNowTag(card, assets, priceHistory)
+      return tag ? { ...card, tag } : card
+    })
+}
+
+/** The slots behind computeCandidateCards — what the carousel's price-move
+ *  cards are, minus score/tag. */
+export function computeCandidateSlots(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>): PortfolioInsightSlot[] {
+  return computeCandidateCards(assets, netWorth, priceHistory).map(c => c.slot)
 }
 
 /** `timeWord` defaults to 'daily' so the exported constant below (still

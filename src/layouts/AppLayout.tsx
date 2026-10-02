@@ -16,7 +16,7 @@ import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
-import { subscribeToResumeConversationRequests, subscribeToExplanationRequests } from '@/lib/commandBarBridge'
+import { subscribeToResumeConversationRequests, subscribeToExplanationRequests, subscribeToPrefillRequests } from '@/lib/commandBarBridge'
 import type { PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 
 const MAX_SAFE_TOP_PX = 64
@@ -122,6 +122,7 @@ export default function AppLayout() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
   const [pendingExplanationSlot, setPendingExplanationSlot] = useState<PortfolioInsightSlot | null>(null)
+  const [pendingPrefill, setPendingPrefill] = useState<string | null>(null)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
 
   // Settings' conversation history list lives outside CommandBar's tree —
@@ -140,6 +141,14 @@ export default function AppLayout() {
   useEffect(() => {
     return subscribeToExplanationRequests((slot) => {
       setPendingExplanationSlot(slot)
+      setCmdOpen(true)
+    })
+  }, [])
+
+  // Portfolio Pulse event cards: open the command bar with a question typed in.
+  useEffect(() => {
+    return subscribeToPrefillRequests((text) => {
+      setPendingPrefill(text)
       setCmdOpen(true)
     })
   }, [])
@@ -299,6 +308,8 @@ export default function AppLayout() {
         onResumeHandled={() => setResumeConversationId(null)}
         startExplanationRequest={pendingExplanationSlot}
         onExplanationRequestHandled={() => setPendingExplanationSlot(null)}
+        prefillQuery={pendingPrefill}
+        onPrefillHandled={() => setPendingPrefill(null)}
       />
       {cgAlert && (
         <div
