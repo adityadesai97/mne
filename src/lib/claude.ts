@@ -1607,12 +1607,13 @@ For navigation/view requests use navigate_to. For data changes use the appropria
   - Bond and T-Bill subtypes -> account_type Investment; tradable — use count (units), cost_price (per unit), and purchase_date INSTEAD of price when adding one with add_cash_asset/add_cash_assets. To add more units of an EXISTING Bond/T-Bill later, use add_fixed_income_lot / add_fixed_income_lots (do not use add_cash_asset again for the same position, and never use update_asset_value on a Bond/T-Bill — its value is derived from lots).
   Include interest_rate (annual %) and maturity_date (YYYY-MM-DD) on Fixed Income assets when the user or document states them; leave them out rather than guessing. face_value (amount paid per unit at maturity) is required for Bond and T-Bill.
   Treasury Bills (and any other discount instrument) sell below face value and pay the full face value at maturity — no periodic interest. For these: cost_price = the discounted amount actually paid per unit, face_value = the amount paid out per unit at maturity.
-For sell_shares, require the source account/location name. For lot selection, require either:
+For sell_shares (and sell_crypto), require the source account/location name. For lot selection, require either:
 - single-lot: purchase_date + count
 - multi-lot: lots[] with purchase_date + count for each lot
 If lot details are missing, ask a follow-up question.
 When the user provides 2 or more stock purchases and all details are present, use add_stock_transactions with a transactions array.
 Cryptocurrency holdings (BTC, ETH, SOL, QNT, ...) use add_crypto_transaction / add_crypto_transactions (2+ purchases, e.g. several lots) — NOT the stock tools. Fields: symbol, units (may be fractional), cost_per_unit (USD), purchase_date, location_name, optional ownership. There is no subtype, no account_type (crypto locations are always the Crypto account type), no RSU/ESPP, and no company fundamentals (get_company_fundamentals is stock-only). Say "units"/"coins" and "exchange or wallet", never "shares" or "brokerage", when talking about crypto.
+  To record SELLING crypto use sell_crypto (symbol, price_per_unit, sale_date, location_name, plus either units + purchase_date for one lot or lots[] with purchase_date + units for several) — NOT sell_shares; it also takes the optional proceeds_destination_asset_name / proceeds_transfer_amount.
   For crypto, location_name is the exchange or wallet the coins were bought on / are held in (Coinbase, Kraken, Ledger, Robinhood, ...) and it is REQUIRED. It must come from the user (or an attached document) — never guess, default, or "assume" one (do NOT assume Coinbase). If it isn't stated, ask which exchange or wallet and wait.
 When you need to ask the user a follow-up question, reply with the question ONLY — never call a write tool in that same response, and never proceed on an assumed answer. Wait for their reply.
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
@@ -2155,7 +2156,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'sell_shares',
-      description: 'Record a stock sale from one or more purchase-date lots in a specific account/location, with optional proceeds transfer.',
+      description: 'Record a stock sale from one or more purchase-date lots in a specific account/location, with optional proceeds transfer. Not for cryptocurrency — use sell_crypto for coins.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -2181,6 +2182,39 @@ const tools = [
           proceeds_transfer_amount: { type: 'number', description: 'Optional transfer amount; defaults to total shares sold × sale_price' },
         },
         required: ['symbol', 'sale_price', 'sale_date', 'source_location_name'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'sell_crypto',
+      description: 'Record a sale of cryptocurrency from one or more purchase-date lots on a specific exchange or wallet, with optional proceeds transfer. For stocks use sell_shares.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Coin symbol e.g. BTC, ETH, QNT' },
+          units: { type: 'number', description: 'Number of coins/units sold (single-lot mode, may be fractional)' },
+          price_per_unit: { type: 'number', description: 'USD price per coin/unit at sale' },
+          sale_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+          purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for the original lot being sold (single-lot mode)' },
+          lots: {
+            type: 'array',
+            description: 'Optional multi-lot mode: each entry specifies purchase_date and units sold from that lot.',
+            items: {
+              type: 'object',
+              properties: {
+                purchase_date: { type: 'string', description: 'ISO date YYYY-MM-DD for this lot' },
+                units: { type: 'number', description: 'Units sold from this lot' },
+              },
+              required: ['purchase_date', 'units'],
+            },
+          },
+          location_name: { type: 'string', description: 'The exchange or wallet the coins are sold from, e.g. Coinbase, Kraken, Ledger. Must come from the user — never guess.' },
+          proceeds_destination_asset_name: { type: 'string', description: 'Optional destination asset name to receive sale proceeds (e.g., a Cash or savings account)' },
+          proceeds_transfer_amount: { type: 'number', description: 'Optional transfer amount; defaults to total units sold × price_per_unit' },
+        },
+        required: ['symbol', 'price_per_unit', 'sale_date', 'location_name'],
       },
     },
   },
@@ -2228,6 +2262,7 @@ const WRITE_TOOL_NAMES = new Set([
   'add_rsu_grant',
   'add_rsu_grants',
   'sell_shares',
+  'sell_crypto',
   'update_asset_value',
 ])
 
@@ -2556,6 +2591,24 @@ export function cryptoToStockTransactionInput(tx: any) {
   }
 }
 
+/** Maps a sell_crypto call onto the shared sell_shares logic (same lots,
+ *  same proceeds-transfer handling): units -> count, price_per_unit ->
+ *  sale_price, location_name -> source_location_name. */
+export function cryptoSaleToSellSharesInput(input: any) {
+  const lots = Array.isArray(input?.lots) ? input.lots : []
+  return {
+    symbol: normalizeSymbol(input?.symbol),
+    sale_price: input?.price_per_unit,
+    sale_date: input?.sale_date,
+    source_location_name: input?.location_name,
+    ...(lots.length > 0
+      ? { lots: lots.map((lot: any) => ({ purchase_date: lot?.purchase_date, count: lot?.units })) }
+      : { count: input?.units, purchase_date: input?.purchase_date }),
+    ...(input?.proceeds_destination_asset_name ? { proceeds_destination_asset_name: input.proceeds_destination_asset_name } : {}),
+    ...(input?.proceeds_transfer_amount != null ? { proceeds_transfer_amount: input.proceeds_transfer_amount } : {}),
+  }
+}
+
 function validateCryptoTransaction(tx: any, label: string): string | null {
   if (!tx?.symbol || !String(tx.symbol).trim()) return `${label}Coin symbol is required`
   if (!Number.isFinite(Number(tx.units)) || Number(tx.units) <= 0) return `${label}Units must be a positive number`
@@ -2576,6 +2629,23 @@ function cryptoPriceToText(value: unknown): string {
 }
 
 export function validateWriteToolInput(toolName: string, input: any): string | null {
+  if (toolName === 'sell_crypto') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Coin symbol is required'
+    if (!Number.isFinite(Number(input.price_per_unit)) || Number(input.price_per_unit) < 0) return 'Price per unit must be a non-negative number'
+    if (!isValidIsoDate(input.sale_date)) return `Invalid sale date: "${input.sale_date}". Use YYYY-MM-DD format`
+    if (new Date(input.sale_date) > new Date()) return 'Sale date cannot be in the future'
+    if (!input.location_name || !String(input.location_name).trim()) return 'Exchange or wallet is required'
+    const lots = Array.isArray(input.lots) ? input.lots : []
+    if (lots.length === 0) {
+      if (!Number.isFinite(Number(input.units)) || Number(input.units) <= 0) return 'Units to sell must be a positive number'
+      if (!isValidIsoDate(input.purchase_date)) return `Invalid purchase date: "${input.purchase_date}". Use YYYY-MM-DD format`
+    }
+    for (let i = 0; i < lots.length; i++) {
+      if (!Number.isFinite(Number(lots[i].units)) || Number(lots[i].units) <= 0) return `Lot ${i + 1}: units must be a positive number`
+      if (!isValidIsoDate(lots[i].purchase_date)) return `Lot ${i + 1}: invalid purchase date "${lots[i].purchase_date}". Use YYYY-MM-DD`
+    }
+  }
+
   if (toolName === 'add_crypto_transaction') {
     const error = validateCryptoTransaction(input, '')
     if (error) return error
@@ -2769,6 +2839,19 @@ export function confirmationMessageFor(toolName: string, input: any): string {
         : ''
       return `Sell ${totalShares} ${input.symbol.toUpperCase()} shares from ${input.source_location_name} at $${input.sale_price}/share on ${formatDateMDY(input.sale_date)} (lots: ${lotSummary})${transferText}`
     }
+    case 'sell_crypto': {
+      const lots = Array.isArray(input.lots) ? input.lots : []
+      const normalizedLots = lots.length > 0 ? lots : [{ purchase_date: input.purchase_date, units: input.units }]
+      const totalUnits = normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.units ?? 0), 0)
+      const lotSummary = normalizedLots
+        .map((lot: any) => `${numberToText(lot.units, 8)} on ${formatDateMDY(lot.purchase_date)}`)
+        .join(', ')
+      const rawTransfer = Number(input.proceeds_transfer_amount ?? totalUnits * Number(input.price_per_unit ?? 0))
+      const transferText = input.proceeds_destination_asset_name
+        ? `; transfer ${moneyToText(Number.isFinite(rawTransfer) ? rawTransfer : 0)} to ${input.proceeds_destination_asset_name}`
+        : ''
+      return `Sell ${numberToText(totalUnits, 8)} ${normalizeSymbol(input.symbol)} from ${String(input.location_name ?? '').trim()} at ${cryptoPriceToText(input.price_per_unit)}/unit on ${formatDateMDY(input.sale_date)} (lots: ${lotSummary})${transferText}`
+    }
     case 'update_asset_value':
       return `Update "${input.asset_name}" value to $${Number(input.price).toLocaleString()}`
     default:
@@ -2945,6 +3028,11 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     for (const lot of lots) {
       await executeTool('add_fixed_income_lot', lot, userId)
     }
+    return
+  }
+
+  if (toolName === 'sell_crypto') {
+    await executeTool('sell_shares', cryptoSaleToSellSharesInput(input), userId)
     return
   }
 
@@ -3187,8 +3275,11 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
     const symbol = input.symbol.toUpperCase()
 
     const { data: ticker } = await supabase.from('tickers')
-      .select('id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+      .select('id, kind').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
     if (!ticker) throw new Error(`No position found for ${symbol}`)
+    // Crypto positions are measured in units, stocks in shares — error text
+    // the user reads should match what they hold.
+    const unitWord = ticker.kind === 'crypto' ? 'units' : 'shares'
 
     const sourceAccount = String(input.source_location_name ?? '').trim()
     if (!sourceAccount) throw new Error('source_location_name is required')
@@ -3212,8 +3303,8 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       .eq('user_id', userId)
       .eq('ticker_id', ticker.id)
       .in('asset_type', ['Stock', 'Crypto'])
-    if (assetsErr) throw new Error(`Failed to fetch stock assets: ${assetsErr.message}`)
-    if (!stockAssets || stockAssets.length === 0) throw new Error(`No stock asset found for ${symbol}`)
+    if (assetsErr) throw new Error(`Failed to fetch ${symbol} positions: ${assetsErr.message}`)
+    if (!stockAssets || stockAssets.length === 0) throw new Error(`No ${symbol} position found`)
 
     const accountQuery = sourceAccount.toLowerCase()
     const matchedAssets = stockAssets.filter((asset: any) => {
@@ -3222,7 +3313,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       return assetName.includes(accountQuery) || locationName.includes(accountQuery)
     })
     if (matchedAssets.length === 0) {
-      throw new Error(`No ${symbol} stock position found in account "${sourceAccount}"`)
+      throw new Error(`No ${symbol} position found in account "${sourceAccount}"`)
     }
 
     const matchedLocationNames = Array.from(
@@ -3258,7 +3349,7 @@ async function executeTool(toolName: string, input: any, userId: string): Promis
       }, 0)
       if (availableShares < lotSpec.count) {
         throw new Error(
-          `Not enough shares in selected lot: ${availableShares} available on ${lotSpec.purchase_date} in "${sourceAccount}", tried to sell ${lotSpec.count}`,
+          `Not enough ${unitWord} in selected lot: ${availableShares} available on ${lotSpec.purchase_date} in "${sourceAccount}", tried to sell ${lotSpec.count}`,
         )
       }
 
@@ -3688,7 +3779,7 @@ export function locationMentionedByUser(location: unknown, userText: string): bo
   return words.some((word) => haystack.includes(word))
 }
 
-/** Crypto purchases whose exchange/wallet the user never actually named.
+/** Crypto purchases and sales whose exchange/wallet the user never actually named.
  *  The model is told never to assume one, but when it asks "which exchange?"
  *  and calls the write tool with a made-up one in the same response, the
  *  made-up value would otherwise win (the confirmation is built from the tool
@@ -3700,7 +3791,7 @@ export function findCryptoPurchasesWithUnstatedLocation(
 ): string[] {
   const symbols: string[] = []
   for (const tool of writeTools) {
-    const transactions = tool.name === 'add_crypto_transaction'
+    const transactions = tool.name === 'add_crypto_transaction' || tool.name === 'sell_crypto'
       ? [tool.input]
       : tool.name === 'add_crypto_transactions' && Array.isArray(tool.input?.transactions)
         ? tool.input.transactions

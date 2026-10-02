@@ -1,7 +1,7 @@
 import {
   buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule,
   locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation, asksUserAQuestion,
-  cryptoToStockTransactionInput, buildPreviewSectionsFor, validateWriteToolInput, confirmationMessageFor,
+  cryptoToStockTransactionInput, cryptoSaleToSellSharesInput, buildPreviewSectionsFor, validateWriteToolInput, confirmationMessageFor,
 } from '../lib/claude'
 
 test('system prompt includes portfolio context instruction', () => {
@@ -245,4 +245,53 @@ test('asksUserAQuestion ignores statements, URLs, and code spans', () => {
   expect(asksUserAQuestion('See https://example.com/page?id=1 for details.')).toBe(false)
   expect(asksUserAQuestion('Run `a ? b : c` to check.')).toBe(false)
   expect(asksUserAQuestion('```js\nconst x = y ? 1 : 2\n```\nAdding the lot now.')).toBe(false)
+})
+
+const QNT_SALE = { symbol: 'qnt', units: 5.9784, price_per_unit: 227.94, sale_date: '2026-10-02', purchase_date: '2026-09-27', location_name: 'Robinhood' }
+
+test('the crypto sale confirmation speaks crypto: units, per-unit price with full precision, exchange, no shares', () => {
+  const single = confirmationMessageFor('sell_crypto', QNT_SALE)
+  expect(single).toBe('Sell 5.9784 QNT from Robinhood at $227.94/unit on 10/02/2026 (lots: 5.9784 on 09/27/2026)')
+  expect(single).not.toMatch(/share|stock/i)
+
+  const multi = confirmationMessageFor('sell_crypto', {
+    symbol: 'QNT', price_per_unit: 227.94, sale_date: '2026-10-02', location_name: 'Robinhood',
+    lots: [{ purchase_date: '2026-09-27', units: 5.9784 }, { purchase_date: '2026-09-29', units: 1.5 }],
+    proceeds_destination_asset_name: 'Chase Savings',
+  })
+  expect(multi).toBe('Sell 7.4784 QNT from Robinhood at $227.94/unit on 10/02/2026 (lots: 5.9784 on 09/27/2026, 1.5 on 09/29/2026); transfer $1,704.63 to Chase Savings')
+  expect(confirmationMessageFor('sell_crypto', { ...QNT_SALE, price_per_unit: 0.00001234 })).toMatch(/\$0\.00001234\/unit/)
+})
+
+test('sell_crypto maps onto the shared sell logic: units -> count, price_per_unit -> sale_price, location -> source account', () => {
+  expect(cryptoSaleToSellSharesInput(QNT_SALE)).toEqual({
+    symbol: 'QNT', sale_price: 227.94, sale_date: '2026-10-02', source_location_name: 'Robinhood', count: 5.9784, purchase_date: '2026-09-27',
+  })
+  const multi = cryptoSaleToSellSharesInput({
+    symbol: 'QNT', price_per_unit: 227.94, sale_date: '2026-10-02', location_name: 'Robinhood',
+    lots: [{ purchase_date: '2026-09-27', units: 5.9784 }], proceeds_destination_asset_name: 'Chase Savings', proceeds_transfer_amount: 100,
+  })
+  expect(multi).toEqual({
+    symbol: 'QNT', sale_price: 227.94, sale_date: '2026-10-02', source_location_name: 'Robinhood',
+    lots: [{ purchase_date: '2026-09-27', count: 5.9784 }], proceeds_destination_asset_name: 'Chase Savings', proceeds_transfer_amount: 100,
+  })
+})
+
+test('sell_crypto validation requires units or lots, a past sale date, price, and an exchange or wallet', () => {
+  expect(validateWriteToolInput('sell_crypto', QNT_SALE)).toBeNull()
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, units: 0 })).toMatch(/Units to sell/)
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, location_name: '' })).toMatch(/Exchange or wallet/)
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, sale_date: '2999-01-01' })).toMatch(/future/)
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, price_per_unit: -1 })).toMatch(/Price per unit/)
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, units: undefined, purchase_date: undefined, lots: [{ purchase_date: '2026-09-27', units: 2 }] })).toBeNull()
+  expect(validateWriteToolInput('sell_crypto', { ...QNT_SALE, lots: [{ purchase_date: 'nope', units: 2 }] })).toMatch(/Lot 1: invalid purchase date/)
+})
+
+test('the exchange guard also covers crypto sales, and the prompt routes crypto sales to sell_crypto', () => {
+  const sale = { name: 'sell_crypto', input: QNT_SALE }
+  expect(findCryptoPurchasesWithUnstatedLocation([sale], 'sell my qnt')).toEqual(['QNT'])
+  expect(findCryptoPurchasesWithUnstatedLocation([sale], 'sell my qnt on robinhood')).toEqual([])
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toMatch(/sell_crypto/)
+  expect(prompt).toMatch(/NOT sell_shares/)
 })
