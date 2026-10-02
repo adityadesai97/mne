@@ -2,7 +2,10 @@ import { getSupabaseClient } from '../supabase'
 import { isTickerAsset } from '../portfolio'
 
 // Backfill one snapshot per unique stock purchase_date using current prices × shares held on that date.
-// Skips dates that already have a snapshot or are in the future.
+// Skips dates that already have a snapshot or are in the future, and anything
+// on/after the earliest real snapshot: the estimate below is stock-only
+// (no cash/401k/HSA/fixed income), so inside the range of real history it
+// shows up as a false one-day crash on any purchase date the app wasn't opened.
 export async function backfillHistoricalSnapshots(assets: any[]) {
   const supabase = getSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,6 +16,7 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
     .select('date')
     .eq('user_id', user.id)
   const existingDates = new Set((existing ?? []).map((r: any) => r.date))
+  const earliestReal = [...existingDates].sort()[0] as string | undefined
 
   // Collect all purchase dates across all stock transactions
   const allDates = new Set<string>()
@@ -29,6 +33,7 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
 
   for (const date of [...allDates].sort()) {
     if (date >= today || existingDates.has(date)) continue
+    if (earliestReal && date >= earliestReal) continue
 
     // Value on this date = sum of (shares in each stock purchased on or before this date) × current price
     let value = 0
