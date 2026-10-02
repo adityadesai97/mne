@@ -1,6 +1,7 @@
 import {
   buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule,
   locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation, asksUserAQuestion,
+  cryptoToStockTransactionInput, buildPreviewSectionsFor, validateWriteToolInput, confirmationMessageFor,
 } from '../lib/claude'
 
 test('system prompt includes portfolio context instruction', () => {
@@ -165,30 +166,70 @@ test('locationMentionedByUser matches loosely on wording but not on a name never
   expect(locationMentionedByUser('FX', 'fx')).toBe(false) // too short to be meaningful
 })
 
+const QNT_LOTS = [
+  { symbol: 'QNT', units: 5.9784, cost_per_unit: 164.882, purchase_date: '2026-09-27', location_name: 'Robinhood' },
+  { symbol: 'QNT', units: 15.7033, cost_per_unit: 253.253, purchase_date: '2026-09-29', location_name: 'Robinhood' },
+]
+
 test('a crypto purchase with an exchange the user never named is flagged (the reported QNT case)', () => {
   const userText = 'I bought QNT coin: 5.9784 at 164.882 on 9/27/26 and 15.7033 at 253.253 on 9/29/26'
-  const tools = [{
-    name: 'add_stock_transactions',
-    input: {
-      transactions: [
-        { symbol: 'QNT', asset_class: 'Crypto', count: 5.9784, cost_price: 164.882, purchase_date: '2026-09-27', location_name: 'Coinbase', account_type: 'Investment' },
-        { symbol: 'QNT', asset_class: 'Crypto', count: 15.7033, cost_price: 253.253, purchase_date: '2026-09-29', location_name: 'Coinbase', account_type: 'Investment' },
-      ],
-    },
-  }]
+  const tools = [{ name: 'add_crypto_transactions', input: { transactions: QNT_LOTS.map(l => ({ ...l, location_name: 'Coinbase' })) } }]
   expect(findCryptoPurchasesWithUnstatedLocation(tools, userText)).toEqual(['QNT'])
   // Once the user answers across the conversation, the same call passes.
   expect(findCryptoPurchasesWithUnstatedLocation(tools, `${userText}\nCoinbase`)).toEqual([])
+  expect(findCryptoPurchasesWithUnstatedLocation(tools, `${userText}\nRobinhood`)).toEqual(['QNT'])
 })
 
-test('the exchange guard only applies to crypto and handles the single-transaction tool', () => {
-  const stock = { name: 'add_stock_transaction', input: { symbol: 'AAPL', asset_class: 'Stock', location_name: 'Fidelity' } }
-  const stockDefault = { name: 'add_stock_transaction', input: { symbol: 'AAPL', location_name: 'Fidelity' } }
-  const crypto = { name: 'add_stock_transaction', input: { symbol: 'btc', asset_class: 'Crypto', location_name: 'Kraken' } }
+test('the exchange guard only applies to the crypto tools', () => {
+  const stock = { name: 'add_stock_transaction', input: { symbol: 'AAPL', location_name: 'Fidelity' } }
   const other = { name: 'add_cash_asset', input: { name: 'Savings', location_name: 'Chase' } }
-  expect(findCryptoPurchasesWithUnstatedLocation([stock, stockDefault, other], 'bought apple')).toEqual([])
+  const crypto = { name: 'add_crypto_transaction', input: { symbol: 'btc', units: 1, location_name: 'Kraken' } }
+  expect(findCryptoPurchasesWithUnstatedLocation([stock, other], 'bought apple')).toEqual([])
   expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc')).toEqual(['BTC'])
   expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc on kraken')).toEqual([])
+})
+
+test('crypto purchases map onto the shared lot storage as units in a Crypto-account location', () => {
+  expect(cryptoToStockTransactionInput({ ...QNT_LOTS[0], symbol: 'qnt', ownership: 'Joint' })).toEqual({
+    symbol: 'QNT',
+    asset_class: 'Crypto',
+    count: 5.9784,
+    cost_price: 164.882,
+    purchase_date: '2026-09-27',
+    location_name: 'Robinhood',
+    account_type: 'Crypto',
+    ownership: 'Joint',
+  })
+})
+
+test('the crypto confirmation speaks crypto: no shares, no stock, no subtype, Crypto account, full price precision', () => {
+  const input = { transactions: QNT_LOTS }
+  expect(confirmationMessageFor('add_crypto_transactions', input)).toBe('Add 2 crypto purchases')
+  const [section] = buildPreviewSectionsFor('add_crypto_transactions', input)
+  expect(section.title).toBe('Crypto Purchases')
+  expect(section.columns).toEqual(['Coin', 'Units', 'Cost/Unit', 'Purchase Date', 'Exchange / Wallet', 'Account'])
+  expect(section.columns.join(' ')).not.toMatch(/share|stock|subtype/i)
+  // Symbol is just the coin; units/price keep their precision ($164.882, not $164.88); account is Crypto.
+  expect(section.rows[0]).toEqual(['QNT', '5.9784', '$164.882', '09/27/2026', 'Robinhood', 'Crypto'])
+  expect(section.rows[1]).toEqual(['QNT', '15.7033', '$253.253', '09/29/2026', 'Robinhood', 'Crypto'])
+  const single = confirmationMessageFor('add_crypto_transaction', QNT_LOTS[0])
+  expect(single).toBe('Add 5.9784 QNT at $164.882/unit purchased on 09/27/2026 (Robinhood)')
+  expect(single).not.toMatch(/share|stock/i)
+})
+
+test('crypto validation requires units, cost, a past date, and an exchange or wallet', () => {
+  expect(validateWriteToolInput('add_crypto_transactions', { transactions: QNT_LOTS })).toBeNull()
+  expect(validateWriteToolInput('add_crypto_transaction', { ...QNT_LOTS[0], units: 0 })).toMatch(/Units/)
+  expect(validateWriteToolInput('add_crypto_transaction', { ...QNT_LOTS[0], location_name: ' ' })).toMatch(/Exchange or wallet/)
+  expect(validateWriteToolInput('add_crypto_transaction', { ...QNT_LOTS[0], purchase_date: '2999-01-01' })).toMatch(/future/)
+  expect(validateWriteToolInput('add_crypto_transactions', { transactions: [QNT_LOTS[0], { ...QNT_LOTS[1], symbol: '' }] })).toMatch(/Transaction 2: Coin symbol/)
+})
+
+test('system prompt routes crypto to the crypto tools and bans stock wording for it', () => {
+  const prompt = buildSystemPrompt([])
+  expect(prompt).toMatch(/add_crypto_transaction/)
+  expect(prompt).toMatch(/NOT the stock tools/)
+  expect(prompt).not.toMatch(/asset_class/)
 })
 
 test('asksUserAQuestion detects a question to the user, including the reported exchange case', () => {

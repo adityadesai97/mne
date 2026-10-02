@@ -357,6 +357,7 @@ function normalizeAccountType(value: unknown): string {
   if (normalized.includes('check')) return 'Checking'
   if (normalized.includes('sav')) return 'Savings'
   if (normalized.includes('misc')) return 'Misc'
+  if (normalized.includes('crypto')) return 'Crypto'
   return raw || 'Investment'
 }
 

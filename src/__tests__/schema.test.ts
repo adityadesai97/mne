@@ -32,3 +32,17 @@ test('the newest migration touching assets_asset_type_check allows every asset t
   expect(latest).toBeDefined()
   for (const type of APP_ASSET_TYPES) expect(latest!.allowed).toContain(type)
 })
+
+// locations_account_type_check exists only on hosted projects (not in the
+// bootstrap), so only the newest migration touching it is checked.
+test('the newest migration touching locations_account_type_check allows Crypto and the other account types', () => {
+  const dir = join(process.cwd(), 'supabase/migrations')
+  const latest = readdirSync(dir)
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+    .map(f => readFileSync(join(dir, f), 'utf8'))
+    .filter(sql => /locations_account_type_check/i.test(sql) && /check\s*\(\s*account_type\s+in/i.test(sql))
+    .pop()
+  expect(latest).toBeDefined()
+  for (const type of ['Investment', 'Checking', 'Savings', 'Misc', 'Crypto']) expect(latest).toContain(`'${type}'`)
+})
