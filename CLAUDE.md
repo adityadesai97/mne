@@ -142,7 +142,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `navigate_to` — routes to a page
 
 **Write tools** (require user confirmation before executing):
-- `add_stock_transaction` / `add_stock_transactions` — optional `asset_class: 'Stock' | 'Crypto'` (default Stock); Crypto is always Market subtype, fractional counts allowed. For Crypto, `location_name` (exchange/wallet) must be stated by the user: the prompt forbids assuming one, and `findCryptoPurchasesWithUnstatedLocation()` is a deterministic guard in `runCommand` — if the model calls the write tool with an exchange that doesn't appear anywhere in the user's messages, the app replies with a question instead of showing a confirmation (skipped when a file is attached, where a document can identify it). This exists because a write-tool call in the same model response as a clarifying question would otherwise win: the confirmation is built from the tool call alone.
+- `add_stock_transaction` / `add_stock_transactions` — optional `asset_class: 'Stock' | 'Crypto'` (default Stock); Crypto is always Market subtype, fractional counts allowed. For Crypto, `location_name` (exchange/wallet) must be stated by the user: the prompt forbids assuming one, and `findCryptoPurchasesWithUnstatedLocation()` is a deterministic guard in `runCommand` — if the model calls the write tool with an exchange that doesn't appear anywhere in the user's messages, the app replies with a question instead of showing a confirmation (skipped when a file is attached, where a document can identify it). This is the silent-assumption backstop to the general ask-and-write guard above.
 - `add_cash_asset` / `add_cash_assets` — for Bond/T-Bill, takes `count`/`cost_price`/`purchase_date` (the first lot) instead of `price`
 - `add_fixed_income_lot` / `add_fixed_income_lots` — buy more units of an *existing* Bond/T-Bill position
 - `add_ticker_to_watchlist`
@@ -150,6 +150,8 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `add_rsu_grant` / `add_rsu_grants` — optional `vesting_frequency` (monthly/quarterly/annually/continuous), defaults to quarterly
 - `sell_shares`
 - `update_asset_value` — rejects Bond/T-Bill assets; their value is derived from lots, use `add_fixed_income_lot` instead
+
+**A write is held whenever the model asks a question in the same response** (`asksUserAQuestion()` in `runCommand`, applies to every write tool): the confirmation is built from the tool call alone and would otherwise discard the question, so a model that asked for missing information while *also* calling the tool had its guess win. When the accompanying text ends a sentence with `?` (ignoring code spans and URLs), the app shows that text as a normal reply and makes no confirmation — the user's answer arrives as the next message and the model retries. The system prompt also tells the model never to ask and call a write tool in one response; the guard is the deterministic backstop. Crypto adds a second, narrower guard for the silent case (a value assumed with no question asked): see `add_stock_transaction` below.
 
 Write operations display a structured preview table in the UI before the user confirms. Multiple write tools in one agent turn are batched into a single confirmation dialog. Prefix commands with `mock:` to test the UI flow without making API or DB calls.
 

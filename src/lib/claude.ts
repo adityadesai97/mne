@@ -1497,6 +1497,18 @@ function extractTextFromResponse(response: NormalizedResponse): string {
   return response.choices[0]?.message?.content ?? ''
 }
 
+/** True when the model's accompanying text asks the user something — a
+ *  question mark ending a sentence, ignoring code spans/fences and URLs (whose
+ *  "?" is query-string syntax, not a question). Used to hold back a write the
+ *  model proposed in the same breath as asking for the information it needed. */
+export function asksUserAQuestion(text: string): boolean {
+  const prose = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+  return /\?(?=\s|$|["')\]*_])/.test(prose)
+}
+
 function buildCompactAssetContext(assets: any[]): any[] {
   return (assets ?? []).map((asset: any) => {
     const base: any = {
@@ -3864,6 +3876,18 @@ ${JSON.stringify(expandedContext, null, 2)}`
   if (writeTools.length === 0) {
     const text = extractTextFromResponse(response)
     return withTrace({ type: 'text', message: text || 'Could not understand command' })
+  }
+
+  // General guard for every write tool: if the model asked the user a question
+  // in the same response that proposes a write, it is asking for information
+  // it doesn't have, so whatever it put in the tool call is a guess. The
+  // confirmation below is built from the tool call alone and would discard the
+  // question, letting the guess win — so hold the write and show the question;
+  // the user's answer comes back as the next message and the model retries.
+  const accompanyingText = extractTextFromResponse(response)
+  if (asksUserAQuestion(accompanyingText)) {
+    addTrace('Waiting for your answer before making changes', writeTools.map((tool) => tool.name).join(', '))
+    return withTrace({ type: 'text', message: accompanyingText.trim() })
   }
 
   // Don't let a model-invented exchange/wallet reach the confirmation: for

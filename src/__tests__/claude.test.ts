@@ -1,6 +1,6 @@
 import {
   buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule,
-  locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation,
+  locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation, asksUserAQuestion,
 } from '../lib/claude'
 
 test('system prompt includes portfolio context instruction', () => {
@@ -189,4 +189,19 @@ test('the exchange guard only applies to crypto and handles the single-transacti
   expect(findCryptoPurchasesWithUnstatedLocation([stock, stockDefault, other], 'bought apple')).toEqual([])
   expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc')).toEqual(['BTC'])
   expect(findCryptoPurchasesWithUnstatedLocation([crypto], 'bought btc on kraken')).toEqual([])
+})
+
+test('asksUserAQuestion detects a question to the user, including the reported exchange case', () => {
+  expect(asksUserAQuestion('Which exchange or wallet did you use?')).toBe(true)
+  expect(asksUserAQuestion("Which exchange or wallet did you use? Since you didn't provide one, I'll assume Coinbase.")).toBe(true)
+  expect(asksUserAQuestion('Got it.\n\nWhich account is this in?\n')).toBe(true)
+  expect(asksUserAQuestion('Do you want me to add these (yes/no)?')).toBe(true)
+})
+
+test('asksUserAQuestion ignores statements, URLs, and code spans', () => {
+  expect(asksUserAQuestion('')).toBe(false)
+  expect(asksUserAQuestion("I'll add 2 QNT lots to your Coinbase account.")).toBe(false)
+  expect(asksUserAQuestion('See https://example.com/page?id=1 for details.')).toBe(false)
+  expect(asksUserAQuestion('Run `a ? b : c` to check.')).toBe(false)
+  expect(asksUserAQuestion('```js\nconst x = y ? 1 : 2\n```\nAdding the lot now.')).toBe(false)
 })
