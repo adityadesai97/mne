@@ -436,3 +436,106 @@ test('crypto is held to a higher major-move bar than stocks', () => {
   expect(computeMovers(bigCrypto, 1_000_000).movers[0].crypto).toBe(true)
   expect(computeCandidateSlots(bigCrypto, 1_000_000, new Map()).some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(true)
 })
+
+// ── Window moves measure what the user held, not the asset ───────────────
+
+function lotAsset(opts: {
+  symbol: string
+  currentPrice: number
+  lots: { units: number; cost: number; boughtDaysAgo?: number }[]
+  assetType?: 'Stock' | 'Crypto'
+}) {
+  return {
+    asset_type: opts.assetType ?? 'Stock',
+    name: opts.symbol,
+    price: null,
+    ticker: { id: `t-${opts.symbol}`, symbol: opts.symbol, current_price: opts.currentPrice, previous_close: opts.currentPrice, ticker_themes: [] },
+    stock_subtypes: [{
+      transactions: opts.lots.map(l => ({
+        count: String(l.units),
+        cost_price: String(l.cost),
+        ...(l.boughtDaysAgo != null ? { purchase_date: daysAgo(l.boughtDaysAgo) } : {}),
+      })),
+      rsu_grants: [],
+    }],
+  } as any
+}
+
+test('a position bought during the window is measured from what was paid, not from the asset\'s move before purchase (the reported QNT case)', () => {
+  // The coin is up ~158% over the week (88 -> 227.94), but both lots were
+  // bought mid-week: 5.9784 @ 164.882 five days ago, 15.7033 @ 253.253 three
+  // days ago. Held positions are roughly flat since purchase.
+  const qnt = lotAsset({
+    symbol: 'QNT', assetType: 'Crypto', currentPrice: 227.94,
+    lots: [{ units: 5.9784, cost: 164.882, boughtDaysAgo: 5 }, { units: 15.7033, cost: 253.253, boughtDaysAgo: 3 }],
+  })
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-QNT', [{ date: daysAgo(8), price: 88.3 }, { date: daysAgo(2), price: 240 }]]])
+  const result = computeMoversForWindow([qnt], 100_000, priceHistory, 7, 'weekly')
+
+  const startValue = 5.9784 * 164.882 + 15.7033 * 253.253
+  const gain = 21.6817 * 227.94 - startValue
+  expect(result.movers).toHaveLength(1)
+  expect(result.movers[0].dollarChange).toBeCloseTo(gain, 1)
+  expect(result.movers[0].percentChange).toBeCloseTo((gain / startValue) * 100, 1) // movers round to 0.01%
+  expect(Math.abs(result.movers[0].percentChange)).toBeLessThan(1) // not +158%
+  expect(result.movers[0].sinceBuy).toBe(true)
+  expect(result.hasMajorMove).toBe(false)
+  // ...and so the carousel doesn't surface a QNT card at any timeframe.
+  const slots = computeCandidateSlots([qnt], 100_000, priceHistory)
+  expect(slots.filter(s => s.scopeKey === 'QNT')).toEqual([])
+})
+
+test('a lot held since before the window anchors at the window-start price; a lot bought inside it anchors at cost', () => {
+  const asset = lotAsset({
+    symbol: 'MIX', currentPrice: 200,
+    lots: [{ units: 10, cost: 50, boughtDaysAgo: 30 }, { units: 10, cost: 150, boughtDaysAgo: 2 }],
+  })
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-MIX', [{ date: daysAgo(10), price: 100 }]]])
+  const [mover] = computeMoversForWindow([asset], 100_000, priceHistory, 7, 'weekly').movers
+  // old lot: 10 x (200-100) = 1000; new lot: 10 x (200-150) = 500; start value 1000 + 1500
+  expect(mover.dollarChange).toBeCloseTo(1500, 5)
+  expect(mover.percentChange).toBeCloseTo((1500 / 2500) * 100, 5)
+  expect(mover.sinceBuy).toBeUndefined()
+})
+
+test('a position bought entirely inside the window needs no price history; one with an older lot still does', () => {
+  const brandNew = lotAsset({ symbol: 'NEW', currentPrice: 130, lots: [{ units: 10, cost: 100, boughtDaysAgo: 2 }] })
+  const noHistory = new Map<string, TickerPricePoint[]>()
+  const included = computeMoversForWindow([brandNew], 100_000, noHistory, 7, 'weekly')
+  expect(included.movers).toHaveLength(1)
+  expect(included.movers[0].percentChange).toBeCloseTo(30, 5)
+
+  const hasOldLot = lotAsset({ symbol: 'OLD', currentPrice: 130, lots: [{ units: 10, cost: 100, boughtDaysAgo: 2 }, { units: 5, cost: 90, boughtDaysAgo: 40 }] })
+  expect(computeMoversForWindow([hasOldLot], 100_000, noHistory, 7, 'weekly').movers).toHaveLength(0)
+})
+
+test('lots with no purchase date are treated as held the whole window (existing behavior)', () => {
+  const asset = lotAsset({ symbol: 'LEGACY', currentPrice: 130, lots: [{ units: 10, cost: 1 }] })
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-LEGACY', [{ date: daysAgo(10), price: 100 }]]])
+  const [mover] = computeMoversForWindow([asset], 100_000, priceHistory, 7, 'weekly').movers
+  expect(mover.percentChange).toBeCloseTo(30, 5)
+  expect(mover.dollarChange).toBeCloseTo(300, 5)
+})
+
+test('the same ticker held in two accounts aggregates into one position return', () => {
+  const a = lotAsset({ symbol: 'DUO', currentPrice: 120, lots: [{ units: 10, cost: 1, boughtDaysAgo: 30 }] })
+  const b = lotAsset({ symbol: 'DUO', currentPrice: 120, lots: [{ units: 10, cost: 100, boughtDaysAgo: 1 }] })
+  const priceHistory = new Map<string, TickerPricePoint[]>([['t-DUO', [{ date: daysAgo(10), price: 80 }]]])
+  const [mover] = computeMoversForWindow([a, b], 100_000, priceHistory, 7, 'weekly').movers
+  expect(mover.dollarChange).toBeCloseTo(10 * (120 - 80) + 10 * (120 - 100), 5)
+  expect(mover.percentChange).toBeCloseTo((600 / (800 + 1000)) * 100, 1) // movers round to 0.01%
+})
+
+test('a since-purchase move is worded as such in the teaser and flagged to the LLM', () => {
+  const asset = lotAsset({ symbol: 'FRESH', currentPrice: 130, lots: [{ units: 10, cost: 100, boughtDaysAgo: 2 }] })
+  const result = computeMoversForWindow([asset], 100_000, new Map(), 7, 'weekly')
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'FRESH', timeframe: 'weekly', windowDays: 7 }
+  expect(buildSlotTeaser(slot, result, null)).toBe('FRESH moved +30.00% since you bought it. Want to know why?')
+
+  const prompt = buildExplanationUserPrompt(result.movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, [], undefined)
+  expect(prompt).toMatch(/return since purchase/)
+  // A position held the whole window keeps the plain wording.
+  const held = lotAsset({ symbol: 'HELD', currentPrice: 130, lots: [{ units: 10, cost: 1, boughtDaysAgo: 40 }] })
+  const heldResult = computeMoversForWindow([held], 100_000, new Map([['t-HELD', [{ date: daysAgo(10), price: 100 }]]]), 7, 'weekly')
+  expect(buildSlotTeaser({ ...slot, scopeKey: 'HELD' }, heldResult, null)).toBe('HELD moved +30.00% this week. Want to know why?')
+})

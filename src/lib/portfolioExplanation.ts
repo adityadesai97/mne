@@ -21,7 +21,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { computeDailyChange, computeShareCount, computeTotalNetWorth, isTickerAsset } from './portfolio'
+import { computeDailyChange, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import { config } from '@/store/config'
 
@@ -125,6 +125,10 @@ export interface SymbolMove {
   percentChange: number
   themes: string[]
   crypto?: boolean
+  /** The whole position was bought inside this window, so the move is the
+   *  position's return since purchase rather than the asset's move over the
+   *  full window. */
+  sinceBuy?: boolean
 }
 
 export interface MoversResult {
@@ -222,45 +226,94 @@ function findPriceApproxNDaysAgo(history: TickerPricePoint[], days: number): num
   return candidate ? candidate.price : null
 }
 
+/** ISO date (YYYY-MM-DD) `days` ago — the start of a rolling window, the same
+ *  cutoff findPriceApproxNDaysAgo anchors on. */
+function windowStartDate(days: number): string {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return cutoff.toISOString().split('T')[0]
+}
+
 /** Same shape as computeSymbolMoves, but for a weekly/monthly/yearly/custom
- *  window — each stock's move is `shares × (currentPrice − priceNDaysAgo)`
- *  using ticker_price_history instead of previous_close. A stock with no
- *  history point old enough for `days` is excluded, same as computeSymbolMoves
- *  excluding a stock with no previous_close. Kept separate from
- *  computeSymbolMoves (rather than parameterizing it) so the well-tested
- *  daily path is never at risk of a regression from this generalization. */
+ *  window, measured on what the user actually *held* rather than on the asset:
+ *  each tax lot contributes `units × (currentPrice − anchor)`, where the anchor
+ *  is the ticker's price when the window began for a lot bought before it, but
+ *  the lot's own cost price for a lot bought *inside* the window (those units
+ *  didn't exist in the portfolio for the earlier part of the window, so the
+ *  price move before purchase isn't the portfolio's move — a coin up 158% this
+ *  week is a 0% week for a position opened at today's price). A symbol's
+ *  percent is its position return over the window (Σ gain ÷ Σ start value).
+ *
+ *  A holding that has a lot older than the window but no history point old
+ *  enough for `days` is excluded, same as computeSymbolMoves excluding a stock
+ *  with no previous_close — which is what phases longer-timeframe cards in as
+ *  history accumulates. A position whose lots were *all* bought inside the
+ *  window needs no history at all. A lot with no purchase date is treated as
+ *  held for the whole window. Kept separate from computeSymbolMoves (rather
+ *  than parameterizing it) so the well-tested daily path is never at risk of
+ *  a regression from this generalization. */
 function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, TickerPricePoint[]>, days: number): SymbolMove[] {
-  const bySymbol = new Map<string, SymbolMove>()
+  const startDate = windowStartDate(days)
+  const acc = new Map<string, { move: SymbolMove; startValue: number; allLotsInWindow: boolean }>()
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     const tickerId = asset.ticker?.id
     if (!symbol || !tickerId) continue
-    const shares = computeShareCount(asset)
-    if (shares <= 0) continue
     const currentPrice = Number(asset.ticker?.current_price)
     if (!Number.isFinite(currentPrice)) continue
-    const priceThen = findPriceApproxNDaysAgo(priceHistory.get(tickerId) ?? [], days)
-    if (priceThen == null || priceThen <= 0) continue
 
-    const dollarChange = shares * (currentPrice - priceThen)
-    const percentChange = ((currentPrice - priceThen) / priceThen) * 100
+    const lots = (asset.stock_subtypes ?? [])
+      .flatMap((st: any) => st.transactions ?? [])
+      .map((t: any) => ({
+        units: netCount(t),
+        costPrice: Number(t.cost_price),
+        inWindow: typeof t.purchase_date === 'string' && t.purchase_date > startDate,
+      }))
+      .filter((lot: { units: number }) => lot.units > 0)
+    if (lots.length === 0) continue
 
-    const existing = bySymbol.get(symbol)
+    const needsHistory = lots.some((lot: { inWindow: boolean }) => !lot.inWindow)
+    const priceThen = needsHistory ? findPriceApproxNDaysAgo(priceHistory.get(tickerId) ?? [], days) : null
+    if (needsHistory && (priceThen == null || priceThen <= 0)) continue
+
+    let dollarChange = 0
+    let startValue = 0
+    for (const lot of lots) {
+      // A lot bought in the window with no usable cost basis contributes no
+      // move (anchored at today's price) rather than a fabricated one.
+      const anchor = lot.inWindow ? (lot.costPrice > 0 ? lot.costPrice : currentPrice) : (priceThen as number)
+      dollarChange += lot.units * (currentPrice - anchor)
+      startValue += lot.units * anchor
+    }
+    if (startValue <= 0) continue
+
+    const allLotsInWindow = !needsHistory
+    const existing = acc.get(symbol)
     if (existing) {
-      existing.dollarChange += dollarChange
+      existing.move.dollarChange += dollarChange
+      existing.startValue += startValue
+      existing.allLotsInWindow = existing.allLotsInWindow && allLotsInWindow
       continue
     }
-    bySymbol.set(symbol, {
-      symbol,
-      name: String(asset.name ?? symbol),
-      dollarChange,
-      percentChange,
-      themes: tickerThemeNames(asset),
-      ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
+    acc.set(symbol, {
+      move: {
+        symbol,
+        name: String(asset.name ?? symbol),
+        dollarChange,
+        percentChange: 0,
+        themes: tickerThemeNames(asset),
+        ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
+      },
+      startValue,
+      allLotsInWindow,
     })
   }
-  return [...bySymbol.values()]
+  return [...acc.values()].map(({ move, startValue, allLotsInWindow }) => ({
+    ...move,
+    percentChange: (move.dollarChange / startValue) * 100,
+    ...(allLotsInWindow ? { sinceBuy: true } : {}),
+  }))
 }
 
 /** The core attribution pass, shared by every timeframe: ranks movers, and
@@ -323,6 +376,7 @@ function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: n
     contributionPct: totalAbsSwing > 0 ? Math.round((Math.abs(move.dollarChange) / totalAbsSwing) * 1000) / 10 : 0,
     ...(themeBySymbol.has(move.symbol) ? { theme: themeBySymbol.get(move.symbol) } : {}),
     ...(move.crypto ? { crypto: true } : {}),
+    ...(move.sinceBuy ? { sinceBuy: true } : {}),
     headlines: [],
   }))
 
@@ -496,7 +550,9 @@ function buildPortfolioTeaser(
     : null
 
   if (dominant) {
-    return `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} ${when}. Want to know why?`
+    return dominant.sinceBuy
+      ? `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} since you bought it. Want to know why?`
+      : `${dominant.symbol} moved ${fmtPercent(dominant.percentChange)} ${when}. Want to know why?`
   }
   if (result.themeMoves.length > 0) {
     const primaryTheme = [...result.themeMoves].sort((a, b) => Math.abs(b.avgPercentChange) - Math.abs(a.avgPercentChange))[0]
@@ -577,7 +633,9 @@ export function buildSlotTeaser(slot: PortfolioInsightSlot, fullResult: MoversRe
     if (!mover) return null
     return stale
       ? `${mover.symbol} just moved again ${when}. Want an updated explanation?`
-      : `${mover.symbol} moved ${fmtPercent(mover.percentChange)} ${when}. Want to know why?`
+      : mover.sinceBuy
+        ? `${mover.symbol} moved ${fmtPercent(mover.percentChange)} since you bought it. Want to know why?`
+        : `${mover.symbol} moved ${fmtPercent(mover.percentChange)} ${when}. Want to know why?`
   }
 
   const theme = scoped.themeMoves[0]
@@ -722,7 +780,8 @@ export function buildExplanationUserPrompt(
     const headlineText = m.headlines.length
       ? ` Headlines: ${m.headlines.map(h => `"${h.title}" (${h.source})`).join('; ')}`
       : ''
-    lines.push(`- ${m.symbol} (${m.name}): ${fmtDollars(m.dollarChange)} (${fmtPercent(m.percentChange)}), ${m.contributionPct}% of ${swingWord} swing.${headlineText}`)
+    const sinceBuyNote = m.sinceBuy ? ' [the user bought this during the period, so this is their return since purchase, not the asset\'s move over the whole period]' : ''
+    lines.push(`- ${m.symbol} (${m.name}): ${fmtDollars(m.dollarChange)} (${fmtPercent(m.percentChange)})${sinceBuyNote}, ${m.contributionPct}% of ${swingWord} swing.${headlineText}`)
   }
 
   if (themeMoves.length > 0) {
