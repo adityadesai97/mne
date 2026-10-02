@@ -142,7 +142,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `navigate_to` — routes to a page
 
 **Write tools** (require user confirmation before executing):
-- `add_stock_transaction` / `add_stock_transactions` — optional `asset_class: 'Stock' | 'Crypto'` (default Stock); Crypto is always Market subtype, fractional counts allowed
+- `add_stock_transaction` / `add_stock_transactions` — optional `asset_class: 'Stock' | 'Crypto'` (default Stock); Crypto is always Market subtype, fractional counts allowed. For Crypto, `location_name` (exchange/wallet) must be stated by the user: the prompt forbids assuming one, and `findCryptoPurchasesWithUnstatedLocation()` is a deterministic guard in `runCommand` — if the model calls the write tool with an exchange that doesn't appear anywhere in the user's messages, the app replies with a question instead of showing a confirmation (skipped when a file is attached, where a document can identify it). This exists because a write-tool call in the same model response as a clarifying question would otherwise win: the confirmation is built from the tool call alone.
 - `add_cash_asset` / `add_cash_assets` — for Bond/T-Bill, takes `count`/`cost_price`/`purchase_date` (the first lot) instead of `price`
 - `add_fixed_income_lot` / `add_fixed_income_lots` — buy more units of an *existing* Bond/T-Bill position
 - `add_ticker_to_watchlist`
