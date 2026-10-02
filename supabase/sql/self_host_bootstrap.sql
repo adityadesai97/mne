@@ -440,11 +440,31 @@ alter table public.fixed_income_lots enable row level security;
 alter table public.user_settings enable row level security;
 -- Crypto needs sub-cent prices and satoshi-level quantities; widen the
 -- original stock-oriented numeric precision (no-op when already widened).
-alter table public.tickers alter column current_price type numeric(18,8);
-alter table public.tickers alter column previous_close type numeric(18,8);
-alter table public.ticker_price_history alter column price type numeric(18,8);
-alter table public.transactions alter column count type numeric(20,8);
-alter table public.transactions alter column cost_price type numeric(18,8);
+do $$
+declare
+  r record;
+begin
+  for r in
+    select * from (values
+      ('tickers', 'current_price', 18, 8),
+      ('tickers', 'previous_close', 18, 8),
+      ('ticker_price_history', 'price', 18, 8),
+      ('transactions', 'count', 20, 8),
+      ('transactions', 'cost_price', 18, 8)
+    ) as t(tbl, col, prec, scl)
+  loop
+    -- numeric_precision is null for an unbounded numeric column (already
+    -- wide enough — constraining it would be a regression, not a widening).
+    if exists (
+      select 1 from information_schema.columns c
+      where c.table_schema = 'public' and c.table_name = r.tbl and c.column_name = r.col
+        and c.numeric_precision is not null
+        and (c.numeric_precision < r.prec or c.numeric_scale < r.scl)
+    ) then
+      execute format('alter table public.%I alter column %I type numeric(%s,%s)', r.tbl, r.col, r.prec, r.scl);
+    end if;
+  end loop;
+end $$;
 
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
