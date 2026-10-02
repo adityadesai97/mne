@@ -1,7 +1,7 @@
 // src/pages/Portfolio.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion'
-import { Search, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, PackageOpen, SearchX, ChevronDown, LayoutGrid, List } from 'lucide-react'
+import { Search, ArrowDownAZ, ArrowDownWideNarrow, TrendingUpDown, Percent, PackageOpen, SearchX, ChevronDown, LayoutGrid, List } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
@@ -10,7 +10,7 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DissolveClearInput } from '@/components/ui/DissolveClearInput'
-import { computeAssetValue, computeUnrealizedGain } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { showAppAlert } from '@/lib/appAlerts'
 
@@ -25,14 +25,22 @@ function formatRelativeTime(isoString: string | null): string | null {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-type SortOption = 'name' | 'value' | 'gain'
+type SortOption = 'name' | 'value' | 'gain' | 'gainPct'
 type AssetView = 'grid' | 'list'
 
 const SORT_OPTIONS: { v: SortOption; label: string; icon: React.ElementType }[] = [
   { v: 'name', label: 'Name', icon: ArrowDownAZ },
   { v: 'value', label: 'Value', icon: ArrowDownWideNarrow },
-  { v: 'gain', label: 'Gain', icon: TrendingUpDown },
+  { v: 'gain', label: 'Gain $', icon: TrendingUpDown },
+  { v: 'gainPct', label: 'Gain %', icon: Percent },
 ]
+
+/** Unrealized gain as a percent of cost basis; assets with no basis sort last. */
+function gainPct(asset: any): number {
+  const basis = computeCostBasis(asset)
+  if (basis <= 0) return -Infinity
+  return (computeUnrealizedGain(asset) / basis) * 100
+}
 
 const VIEW_OPTIONS: { v: AssetView; label: string; icon: React.ElementType }[] = [
   { v: 'grid', label: 'Grid', icon: LayoutGrid },
@@ -245,6 +253,9 @@ export default function Portfolio() {
       }
       if (sort === 'gain') {
         return computeUnrealizedGain(b) - computeUnrealizedGain(a)
+      }
+      if (sort === 'gainPct') {
+        return gainPct(b) - gainPct(a)
       }
       return 0
     })
