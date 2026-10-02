@@ -17,6 +17,9 @@ export interface PortfolioExplanationMover {
   // True for a cryptocurrency holding — it's held to a higher major-move bar
   // (CRYPTO_MOVE_BAR_MULTIPLIER). Absent on older rows and on stocks.
   crypto?: boolean
+  // The position was bought inside the window, so percentChange/dollarChange
+  // are its return since purchase, not the asset's move over the full window.
+  sinceBuy?: boolean
   headlines: PortfolioExplanationHeadline[]
 }
 
