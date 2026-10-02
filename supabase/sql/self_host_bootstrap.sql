@@ -111,7 +111,7 @@ update public.assets set fixed_income_subtype = 'Deposit', asset_type = 'Fixed I
 
 alter table public.assets
   add constraint assets_asset_type_check
-  check (asset_type in ('Stock', '401k', 'Fixed Income', 'Cash', 'HSA'));
+  check (asset_type in ('Stock', 'Crypto', '401k', 'Fixed Income', 'Cash', 'HSA'));
 
 do $$
 begin
