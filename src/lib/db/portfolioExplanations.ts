@@ -20,6 +20,10 @@ export interface PortfolioExplanationMover {
   // The position was bought inside the window, so percentChange/dollarChange
   // are its return since purchase, not the asset's move over the full window.
   sinceBuy?: boolean
+  // Whole days since the position's oldest lot was bought; absent when any
+  // lot has no purchase date. Used to keep brand-new positions off the
+  // Portfolio Pulse carousel (their "move" is just the day they were opened).
+  heldDays?: number
   headlines: PortfolioExplanationHeadline[]
 }
 

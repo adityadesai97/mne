@@ -2,7 +2,7 @@ import {
   trimToLastSentence,
   computeMovers, computeMoversForWindow, shouldRegenerate, buildStaticNoMoveSummary, buildExplanationUserPrompt, buildTeaser, todayMarketDate, stripSources,
   explanationTriggerQuestion, DAILY_PORTFOLIO_SLOT, MAJOR_MOVE_STOCK_PCT_BY_TIMEFRAME, MAJOR_MOVE_PORTFOLIO_PCT_BY_TIMEFRAME,
-  computeCandidateSlots, buildSlotTeaser, scopeMoversResult, CUSTOM_WINDOW_DAYS,
+  computeCandidateSlots, computeCandidateCards, isSlotSeenAndUnchanged, buildSlotTeaser, scopeMoversResult, CUSTOM_WINDOW_DAYS, MAX_PULSE_CARDS,
   type PortfolioInsightSlot,
 } from '../lib/portfolioExplanation'
 import type { TickerPricePoint } from '../lib/db/tickerPriceHistory'
@@ -392,7 +392,7 @@ test('buildSlotTeaser returns null for a stock-scope slot whose mover no longer 
 test('computeCandidateSlots collapses a stock crossing its bar at several timeframes into one slot (the shortest)', () => {
   const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 110, previousClose: 100, shares: 10, tickerId: 't-nvda' })]
   const priceHistory = new Map<string, TickerPricePoint[]>([['t-nvda', [{ date: daysAgo(7), price: 95 }]]])
-  const slots = computeCandidateSlots(assets, 1_000_000, priceHistory)
+  const slots = computeCandidateSlots(assets, 20_000, priceHistory)
   expect(slots).toContainEqual({ scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 })
   expect(slots.filter(s => s.scope === 'stock' && s.scopeKey === 'NVDA')).toHaveLength(1)
 })
@@ -406,7 +406,7 @@ test('computeCandidateSlots finds a notable custom-window move not covered by an
       { date: daysAgo(7), price: 122 }, // +6.6% over 7 days — under the 8% weekly bar
     ]],
   ])
-  const slots = computeCandidateSlots(assets, 1_000_000, priceHistory)
+  const slots = computeCandidateSlots(assets, 20_000, priceHistory)
   const fixedTimeframeSlots = slots.filter(s => s.scopeKey === 'NVDA' && s.timeframe !== 'custom')
   expect(fixedTimeframeSlots).toHaveLength(0)
   const customSlot = slots.find(s => s.scope === 'stock' && s.scopeKey === 'NVDA' && s.timeframe === 'custom')
@@ -424,8 +424,8 @@ test('crypto is held to a higher major-move bar than stocks', () => {
   // +7%: past the 5% stock bar, under the crypto bar (2x = 10%).
   const stockOnly = [stockAsset({ symbol: 'NVDA', currentPrice: 107, previousClose: 100, shares: 1 })]
   const cryptoOnly = [crypto('BTC', 107)]
-  const stockSlots = computeCandidateSlots(stockOnly, 1_000_000, new Map())
-  const cryptoSlots = computeCandidateSlots(cryptoOnly, 1_000_000, new Map())
+  const stockSlots = computeCandidateSlots(stockOnly, 1_000, new Map())
+  const cryptoSlots = computeCandidateSlots(cryptoOnly, 1_000, new Map())
   expect(stockSlots.some(s => s.scope === 'stock' && s.scopeKey === 'NVDA')).toBe(true)
   expect(cryptoSlots.some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(false)
   expect(computeMovers(cryptoOnly, 1_000_000).hasMajorMove).toBe(false)
@@ -434,7 +434,7 @@ test('crypto is held to a higher major-move bar than stocks', () => {
   const bigCrypto = [crypto('BTC', 112)]
   expect(computeMovers(bigCrypto, 1_000_000).hasMajorMove).toBe(true)
   expect(computeMovers(bigCrypto, 1_000_000).movers[0].crypto).toBe(true)
-  expect(computeCandidateSlots(bigCrypto, 1_000_000, new Map()).some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(true)
+  expect(computeCandidateSlots(bigCrypto, 1_000, new Map()).some(s => s.scope === 'stock' && s.scopeKey === 'BTC')).toBe(true)
 })
 
 // ── Window moves measure what the user held, not the asset ───────────────
@@ -538,4 +538,128 @@ test('a since-purchase move is worded as such in the teaser and flagged to the L
   const held = lotAsset({ symbol: 'HELD', currentPrice: 130, lots: [{ units: 10, cost: 1, boughtDaysAgo: 40 }] })
   const heldResult = computeMoversForWindow([held], 100_000, new Map([['t-HELD', [{ date: daysAgo(10), price: 100 }]]]), 7, 'weekly')
   expect(buildSlotTeaser({ ...slot, scopeKey: 'HELD' }, heldResult, null)).toBe('HELD moved +30.00% this week. Want to know why?')
+})
+
+// ── Carousel noise filters, ranking and tags ─────────────────────────────
+
+function datedStock(opts: { symbol: string; price: number; prevClose: number; shares: number; cost: number; boughtDaysAgo?: number; themes?: string[] }) {
+  return {
+    asset_type: 'Stock',
+    name: opts.symbol,
+    price: null,
+    ticker: {
+      id: `t-${opts.symbol}`, symbol: opts.symbol, current_price: opts.price, previous_close: opts.prevClose,
+      ticker_themes: (opts.themes ?? []).map(name => ({ theme: { name } })),
+    },
+    stock_subtypes: [{
+      transactions: [{ count: String(opts.shares), cost_price: String(opts.cost), ...(opts.boughtDaysAgo != null ? { purchase_date: daysAgo(opts.boughtDaysAgo) } : {}) }],
+      rsu_grants: [],
+    }],
+  } as any
+}
+
+test('a big percent move that is a tiny slice of net worth gets no card (dollar floor)', () => {
+  const assets = [stockAsset({ symbol: 'TINY', currentPrice: 110, previousClose: 100, shares: 1 })] // +$10
+  expect(computeCandidateSlots(assets, 1_000_000, new Map())).toEqual([])
+  expect(computeCandidateSlots(assets, 1_000, new Map())).toContainEqual({ scope: 'stock', scopeKey: 'TINY', timeframe: 'daily', windowDays: 1 })
+})
+
+test('a position bought today gets no daily card', () => {
+  const fresh = datedStock({ symbol: 'NEW', price: 110, prevClose: 100, shares: 10, cost: 110, boughtDaysAgo: 0 })
+  expect(computeCandidateSlots([fresh], 5_000, new Map()).filter(s => s.scopeKey === 'NEW')).toEqual([])
+  const old = datedStock({ symbol: 'OLD', price: 110, prevClose: 100, shares: 10, cost: 50, boughtDaysAgo: 100 })
+  expect(computeCandidateSlots([old], 5_000, new Map()).some(s => s.scopeKey === 'OLD')).toBe(true)
+})
+
+test('a since-you-bought return needs the raised bar and a minimum holding period', () => {
+  const nw = 5_000
+  // +9% since purchase: past the 8% weekly bar, under the 1.5x since-buy bar (12%).
+  const modest = datedStock({ symbol: 'MOD', price: 109, prevClose: 109, shares: 10, cost: 100, boughtDaysAgo: 5 })
+  expect(computeCandidateSlots([modest], nw, new Map()).filter(s => s.scopeKey === 'MOD')).toEqual([])
+  // +20% since purchase, held 5 days: qualifies.
+  const strong = datedStock({ symbol: 'STR', price: 120, prevClose: 120, shares: 10, cost: 100, boughtDaysAgo: 5 })
+  expect(computeCandidateSlots([strong], nw, new Map()).some(s => s.scopeKey === 'STR' && s.timeframe === 'weekly')).toBe(true)
+  // +20% but only held 1 day: too new.
+  const brandNew = datedStock({ symbol: 'BRN', price: 120, prevClose: 120, shares: 10, cost: 100, boughtDaysAgo: 1 })
+  expect(computeCandidateSlots([brandNew], nw, new Map()).filter(s => s.scopeKey === 'BRN')).toEqual([])
+})
+
+test('stocks inside a flagged sector fold into the sector card unless one dominates it', () => {
+  const semis = (nvda: number, amd: number, avgo: number) => [
+    stockAsset({ symbol: 'NVDA', currentPrice: nvda, previousClose: 100, shares: 10, themes: ['Semis'] }),
+    stockAsset({ symbol: 'AMD', currentPrice: amd, previousClose: 100, shares: 10, themes: ['Semis'] }),
+    stockAsset({ symbol: 'AVGO', currentPrice: avgo, previousClose: 100, shares: 10, themes: ['Semis'] }),
+  ]
+  const even = computeCandidateSlots(semis(107, 107, 107), 10_000, new Map())
+  expect(even.filter(s => s.scope === 'sector').map(s => s.scopeKey)).toEqual(['Semis'])
+  expect(even.filter(s => s.scope === 'stock')).toEqual([])
+
+  // NVDA alone is ~80% of the sector's swing, so it keeps its own card.
+  const lopsided = computeCandidateSlots(semis(140, 103, 103), 10_000, new Map())
+  expect(lopsided.some(s => s.scope === 'sector' && s.scopeKey === 'Semis')).toBe(true)
+  expect(lopsided.some(s => s.scope === 'stock' && s.scopeKey === 'NVDA')).toBe(true)
+  expect(lopsided.some(s => s.scope === 'stock' && s.scopeKey === 'AMD')).toBe(false)
+})
+
+test('cards are ranked by net-worth impact and capped', () => {
+  const assets = Array.from({ length: 8 }, (_, i) =>
+    stockAsset({ symbol: `S${i}`, currentPrice: 100 + 10 + i * 5, previousClose: 100, shares: 10 + i }), // growing $ impact
+  )
+  const cards = computeCandidateCards(assets, 100_000, new Map())
+  expect(cards.length).toBeLessThanOrEqual(MAX_PULSE_CARDS)
+  const scores = cards.map(c => c.score)
+  expect([...scores].sort((a, b) => b - a)).toEqual(scores)
+  // The portfolio card outranks its parts; among stocks, the biggest dollar mover leads.
+  expect(cards[0].slot.scope).toBe('portfolio')
+  expect(cards.find(c => c.slot.scope === 'stock')?.slot.scopeKey).toBe('S7')
+})
+
+test('at most one notable-move (custom window) card is kept', () => {
+  const mk = (symbol: string) => stockAsset({ symbol, currentPrice: 130, previousClose: 129, shares: 10, tickerId: `t-${symbol}` })
+  const history = (symbol: string): [string, TickerPricePoint[]] => [`t-${symbol}`, [{ date: daysAgo(60), price: 100 }, { date: daysAgo(30), price: 115 }, { date: daysAgo(7), price: 122 }]]
+  const cards = computeCandidateCards([mk('AAA'), mk('BBB')], 20_000, new Map([history('AAA'), history('BBB')]))
+  expect(cards.filter(c => c.slot.timeframe === 'custom')).toHaveLength(1)
+})
+
+test('a stock at its highest price in the history gets a new-high tag', () => {
+  const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 150, previousClose: 130, shares: 10, tickerId: 't-nvda' })]
+  const history = [{ date: daysAgo(200), price: 90 }, { date: daysAgo(100), price: 120 }, { date: daysAgo(10), price: 135 }]
+  const card = computeCandidateCards(assets, 5_000, new Map([['t-nvda', history]])).find(c => c.slot.scope === 'stock')!
+  expect(card.tag).toBe('New 6-month high')
+  // Too little history to claim anything.
+  const bare = computeCandidateCards(assets, 5_000, new Map([['t-nvda', [{ date: daysAgo(10), price: 135 }]]])).find(c => c.slot.scope === 'stock')!
+  expect(bare.tag).toBeUndefined()
+})
+
+test('a weekly move against the prior week\'s run is tagged as a reversal', () => {
+  // 14d ago 100 -> 7d ago 130 (+30% run), now 110 (-15.4%).
+  const assets = [stockAsset({ symbol: 'ZZZ', currentPrice: 110, previousClose: 110, shares: 20, tickerId: 't-zzz' })]
+  const history = [{ date: daysAgo(14), price: 100 }, { date: daysAgo(7), price: 130 }]
+  const cards = computeCandidateCards(assets, 5_000, new Map([['t-zzz', history]]))
+  expect(cards.find(c => c.slot.scope === 'stock' && c.slot.timeframe === 'weekly')?.tag).toMatch(/^Reversal after a 30% run up$/)
+})
+
+test('the portfolio teaser says when one holding accounts for most of the swing', () => {
+  const assets = [
+    stockAsset({ symbol: 'BIG', currentPrice: 103, previousClose: 100, shares: 100 }), // +$300, +3% (under 5% bar)
+    stockAsset({ symbol: 'A', currentPrice: 100.5, previousClose: 100, shares: 10 }),
+    stockAsset({ symbol: 'B', currentPrice: 100.5, previousClose: 100, shares: 10 }),
+  ]
+  const result = computeMovers(assets, 20_000)
+  expect(buildTeaser(result)).toBe('Your portfolio went up 1.55% today. BIG accounts for 97% of the swing. Want to know why?')
+})
+
+test('a card already opened and unchanged is reported as seen; a changed one is not', () => {
+  const assets = [stockAsset({ symbol: 'NVDA', currentPrice: 110, previousClose: 100, shares: 10 })]
+  const result = computeMovers(assets, 5_000)
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NVDA', timeframe: 'daily', windowDays: 1 }
+  const previous = {
+    market_date: todayMarketDate(),
+    day_change_percent: 10,
+    movers: scopeMoversResult(result, slot).movers,
+    theme_moves: [],
+  } as any
+  expect(isSlotSeenAndUnchanged(slot, result, previous)).toBe(true)
+  expect(isSlotSeenAndUnchanged(slot, result, { ...previous, market_date: '2000-01-01' })).toBe(false)
+  expect(isSlotSeenAndUnchanged(slot, result, null)).toBe(false)
 })
