@@ -379,9 +379,14 @@ interface Props {
   startExplanationRequest?: PortfolioInsightSlot | null
   /** Called once the explanation request above has been consumed. */
   onExplanationRequestHandled?: () => void
+  /** Set by a Portfolio Pulse event card: a question to type into the input
+   *  (not submit) when the panel opens. */
+  prefillQuery?: string | null
+  /** Called once the prefill above has been placed in the input. */
+  onPrefillHandled?: () => void
 }
 
-export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled }: Props) {
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled }: Props) {
   const [query, setQuery] = useState('')
   const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
@@ -518,6 +523,17 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       conversationOriginRef.current = 'command_bar'
     }
   }, [open])
+
+  // A Portfolio Pulse event card's question: type it in and leave the
+  // sending to the user. Runs after the reset-on-close effect above, so a
+  // panel opening from closed keeps the text.
+  useEffect(() => {
+    if (!open || !prefillQuery) return
+    setQuery(prefillQuery)
+    onPrefillHandled?.()
+    // No cleanup: handling the prefill clears it, which re-runs this effect.
+    window.setTimeout(() => focusInput(), 0)
+  }, [open, prefillQuery, onPrefillHandled, focusInput])
 
   // Resuming a saved conversation from Settings' history list: load its
   // messages, show them as an already-expanded thread, and keep saving

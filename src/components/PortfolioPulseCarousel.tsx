@@ -4,13 +4,24 @@ import { Sparkles, ArrowRight } from 'lucide-react'
 import {
   computeMovers,
   computeMoversForWindow,
-  computeCandidateSlots,
+  computeCandidateCards,
   buildSlotTeaser,
+  isSlotSeenAndUnchanged,
   type PortfolioInsightSlot,
 } from '@/lib/portfolioExplanation'
+import {
+  computeEventCards,
+  fetchUpcomingEarnings,
+  loadSeenEventIds,
+  markEventSeen,
+  rankPulseItems,
+  type PulseItem,
+} from '@/lib/portfolioPulseEvents'
+import { getAllThemes } from '@/lib/db/themes'
+import { config } from '@/store/config'
 import { getTickerPriceHistory, type TickerPricePoint } from '@/lib/db/tickerPriceHistory'
 import { getPortfolioExplanation, type PortfolioExplanationRow } from '@/lib/db/portfolioExplanations'
-import { openPortfolioExplanationInCommandBar } from '@/lib/commandBarBridge'
+import { openPortfolioExplanationInCommandBar, openCommandBarWithPrompt } from '@/lib/commandBarBridge'
 import { isTickerAsset } from '@/lib/portfolio'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
@@ -53,6 +64,9 @@ function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string
 export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; netWorth: number }) {
   const [priceHistory, setPriceHistory] = useState<Map<string, TickerPricePoint[]> | null>(null)
   const [previousBySlot, setPreviousBySlot] = useState<Map<string, PortfolioExplanationRow | null>>(new Map())
+  const [themes, setThemes] = useState<{ name: string; theme_targets?: { target_percentage: number | string }[] | null }[]>([])
+  const [earnings, setEarnings] = useState<Map<string, string>>(new Map())
+  const [seenEventIds, setSeenEventIds] = useState<Set<string>>(() => loadSeenEventIds())
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -78,11 +92,37 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerIdsKey])
 
-  const slots = useMemo(() => {
+  // Theme targets (for the allocation-drift card) and upcoming earnings dates
+  // (for the earnings card) — both best-effort, both only refetched when the
+  // set of held tickers changes. A failure just means those cards don't show.
+  useEffect(() => {
+    let cancelled = false
+    getAllThemes()
+      .then(rows => { if (!cancelled) setThemes((rows ?? []) as any) })
+      .catch(e => console.error('Failed to load themes for Portfolio Pulse', e))
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (!config.finnhubApiKey || tickerIds.length === 0) { setEarnings(new Map()); return }
+    let cancelled = false
+    fetchUpcomingEarnings(assets, config.finnhubApiKey)
+      .then(found => { if (!cancelled) setEarnings(found) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerIdsKey])
+
+  const moveCards = useMemo(() => {
     if (!priceHistory || assets.length === 0) return []
-    return computeCandidateSlots(assets, netWorth, priceHistory)
+    return computeCandidateCards(assets, netWorth, priceHistory)
   }, [assets, netWorth, priceHistory])
+  const slots = useMemo(() => moveCards.map(c => c.slot), [moveCards])
   const slotsKey = slots.map(slotKey).join('|')
+
+  const eventCards = useMemo(
+    () => (assets.length === 0 ? [] : computeEventCards(assets, netWorth, themes, earnings)),
+    [assets, netWorth, themes, earnings],
+  )
 
   // One cheap DB read per currently-relevant slot (typically a handful),
   // purely so buildSlotTeaser can tell "you already saw this" from
@@ -103,18 +143,33 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotsKey])
 
+  // Price-move cards and event cards compete for the same few spots, ranked
+  // by how much of net worth each puts at stake; anything already opened
+  // (and unchanged) is demoted behind fresh cards — see rankPulseItems.
   const cards = useMemo(() => {
     if (!priceHistory) return []
-    const built: { slot: PortfolioInsightSlot; teaser: string }[] = []
-    for (const slot of slots) {
-      const result = resultForSlot(assets, netWorth, priceHistory, slot)
-      const previous = previousBySlot.get(slotKey(slot)) ?? null
-      const teaser = buildSlotTeaser(slot, result, previous)
-      if (teaser) built.push({ slot, teaser })
+    const items: PulseItem[] = []
+    for (const card of moveCards) {
+      const result = resultForSlot(assets, netWorth, priceHistory, card.slot)
+      const previous = previousBySlot.get(slotKey(card.slot)) ?? null
+      const teaser = buildSlotTeaser(card.slot, result, previous)
+      if (!teaser) continue
+      items.push({
+        type: 'move',
+        key: slotKey(card.slot),
+        slot: card.slot,
+        teaser,
+        tag: card.tag,
+        score: card.score,
+        seen: isSlotSeenAndUnchanged(card.slot, result, previous),
+      })
     }
-    return built
-  }, [slots, assets, netWorth, priceHistory, previousBySlot])
-  const cardsKey = cards.map(c => slotKey(c.slot)).join('|')
+    for (const event of eventCards) {
+      items.push({ type: 'event', key: event.id, event, seen: seenEventIds.has(event.id) })
+    }
+    return rankPulseItems(items)
+  }, [moveCards, eventCards, assets, netWorth, priceHistory, previousBySlot, seenEventIds])
+  const cardsKey = cards.map(c => c.key).join('|')
 
   // New content (a different set of relevant insights) always starts back
   // at the first card rather than leaving `index` pointing past the end or
@@ -175,7 +230,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
           <div className="flex items-center gap-1.5 shrink-0" role="tablist" aria-label="Portfolio Pulse insights">
             {cards.map((c, i) => (
               <button
-                key={slotKey(c.slot)}
+                key={c.key}
                 type="button"
                 role="tab"
                 aria-selected={i === index}
@@ -196,14 +251,24 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
       >
         {cards.map((c) => (
           <button
-            key={slotKey(c.slot)}
+            key={c.key}
             type="button"
-            onClick={() => openPortfolioExplanationInCommandBar(c.slot)}
-            title="Ask about this in the command bar"
+            onClick={() => {
+              if (c.type === 'move') {
+                openPortfolioExplanationInCommandBar(c.slot)
+              } else {
+                setSeenEventIds(markEventSeen(c.event.id))
+                openCommandBarWithPrompt(c.event.question)
+              }
+            }}
+            title={c.type === 'move' ? 'Ask about this in the command bar' : 'Ask about this in the command bar (pre-filled)'}
             className="w-full shrink-0 snap-center text-left cursor-pointer"
           >
             <p className="text-sm text-foreground leading-relaxed break-words">
-              {c.teaser}{' '}
+              {c.type === 'move' && c.tag && (
+                <span className="mr-2 inline-block rounded-full bg-muted px-2 py-0.5 align-baseline text-[11px] font-medium text-muted-foreground">{c.tag}</span>
+              )}
+              {c.type === 'move' ? c.teaser : c.event.text}{' '}
               <ArrowRight size={14} className="inline align-text-bottom text-muted-foreground" aria-hidden="true" />
             </p>
           </button>
