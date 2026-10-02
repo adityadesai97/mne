@@ -21,7 +21,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { computeDailyChange, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
+import { computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
 import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
 import { config } from '@/store/config'
 
@@ -191,40 +191,57 @@ function mergeHeldDays(a: number | undefined, b: number | undefined): number | u
   return a === undefined || b === undefined ? undefined : Math.max(a, b)
 }
 
-/** One entry per distinct stock symbol (assets holding the same ticker in
- *  different accounts move identically, since the move is price-only —
- *  dedupe so they aren't double-counted for breadth/theme detection). */
+/** One entry per distinct stock symbol. The same ticker held in several
+ *  accounts is aggregated into one position (dollar moves summed, percent is
+ *  the position's return = Σ move ÷ Σ start value) so it isn't double-counted
+ *  for breadth/theme detection. Measured on what was held: a lot bought today
+ *  counts from its purchase price (see computeDailyPosition). */
 function computeSymbolMoves(assets: any[]): SymbolMove[] {
-  const bySymbol = new Map<string, SymbolMove>()
+  const acc = new Map<string, { move: SymbolMove; rawDollarChange: number; startValue: number; allBoughtToday: boolean }>()
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
     if (!symbol) continue
     const shares = computeShareCount(asset)
     if (shares <= 0) continue
-    const change = computeDailyChange(asset)
-    if (!change) continue
+    const position = computeDailyPosition(asset)
+    if (!position) continue
+    // Per-asset cents rounding, so the sum matches Home's hero (a sum of
+    // computeDailyChange's rounded per-asset figures).
+    const dollarChange = Math.round(position.dollarChange * 100) / 100
 
     const heldDays = positionHeldDays(asset)
-    const existing = bySymbol.get(symbol)
+    const existing = acc.get(symbol)
     if (existing) {
-      existing.dollarChange += change.dollarChange
-      const merged = mergeHeldDays(existing.heldDays, heldDays)
-      if (merged === undefined) delete existing.heldDays
-      else existing.heldDays = merged
+      existing.move.dollarChange += dollarChange
+      existing.rawDollarChange += position.dollarChange
+      existing.startValue += position.startValue
+      existing.allBoughtToday = existing.allBoughtToday && position.allBoughtToday
+      const merged = mergeHeldDays(existing.move.heldDays, heldDays)
+      if (merged === undefined) delete existing.move.heldDays
+      else existing.move.heldDays = merged
       continue
     }
-    bySymbol.set(symbol, {
-      symbol,
-      name: String(asset.name ?? symbol),
-      dollarChange: change.dollarChange,
-      percentChange: change.percentChange,
-      themes: tickerThemeNames(asset),
-      ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
-      ...(heldDays !== undefined ? { heldDays } : {}),
+    acc.set(symbol, {
+      move: {
+        symbol,
+        name: String(asset.name ?? symbol),
+        dollarChange,
+        percentChange: 0,
+        themes: tickerThemeNames(asset),
+        ...(asset.asset_type === 'Crypto' ? { crypto: true } : {}),
+        ...(heldDays !== undefined ? { heldDays } : {}),
+      },
+      rawDollarChange: position.dollarChange,
+      startValue: position.startValue,
+      allBoughtToday: position.allBoughtToday,
     })
   }
-  return [...bySymbol.values()]
+  return [...acc.values()].map(({ move, rawDollarChange, startValue, allBoughtToday }) => ({
+    ...move,
+    percentChange: (rawDollarChange * 100) / startValue,
+    ...(allBoughtToday ? { sinceBuy: true } : {}),
+  }))
 }
 
 function detectThemeMoves(symbolMoves: SymbolMove[]): PortfolioExplanationThemeMove[] {

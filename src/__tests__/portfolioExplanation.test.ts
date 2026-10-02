@@ -6,6 +6,7 @@ import {
   type PortfolioInsightSlot,
 } from '../lib/portfolioExplanation'
 import type { TickerPricePoint } from '../lib/db/tickerPriceHistory'
+import { localDateKey } from '../lib/portfolio'
 
 // shouldRegenerate takes a full MoversResult — a minimal one for tests that
 // only care about the portfolio-level (aggregate %) check.
@@ -662,4 +663,51 @@ test('a card already opened and unchanged is reported as seen; a changed one is 
   expect(isSlotSeenAndUnchanged(slot, result, previous)).toBe(true)
   expect(isSlotSeenAndUnchanged(slot, result, { ...previous, market_date: '2000-01-01' })).toBe(false)
   expect(isSlotSeenAndUnchanged(slot, result, null)).toBe(false)
+})
+
+// ── Daily moves measure what the user held today ─────────────────────────
+
+function dailyLotAsset(symbol: string, now: number, prev: number, lots: { units: number; cost: number; boughtToday?: boolean }[]) {
+  return {
+    asset_type: 'Stock',
+    name: symbol,
+    price: null,
+    ticker: { id: `t-${symbol}`, symbol, current_price: now, previous_close: prev, ticker_themes: [] },
+    stock_subtypes: [{
+      transactions: lots.map(l => ({ count: String(l.units), cost_price: String(l.cost), ...(l.boughtToday ? { purchase_date: localDateKey() } : {}) })),
+      rsu_grants: [],
+    }],
+  } as any
+}
+
+test('a stock up 20% on the day is not a major move for a position bought today near the current price', () => {
+  const heldOvernight = [dailyLotAsset('AAA', 120, 100, [{ units: 10, cost: 90 }])]
+  expect(computeMovers(heldOvernight, 100_000).hasMajorMove).toBe(true) // +20% held through the close
+
+  const boughtToday = [dailyLotAsset('AAA', 120, 100, [{ units: 10, cost: 119, boughtToday: true }])]
+  const result = computeMovers(boughtToday, 100_000)
+  expect(result.hasMajorMove).toBe(false)
+  expect(result.movers[0].percentChange).toBeCloseTo(0.84, 2)
+  expect(result.movers[0].dollarChange).toBe(10)
+  expect(result.movers[0].sinceBuy).toBe(true)
+})
+
+test('the daily teaser says "since you bought it" for a position opened today', () => {
+  const assets = [dailyLotAsset('NEWB', 112, 90, [{ units: 10, cost: 100, boughtToday: true }])]
+  const result = computeMovers(assets, 100_000)
+  expect(result.hasMajorMove).toBe(true)
+  const slot: PortfolioInsightSlot = { scope: 'stock', scopeKey: 'NEWB', timeframe: 'daily', windowDays: 1 }
+  expect(buildSlotTeaser(slot, result, null)).toBe('NEWB moved +12.00% since you bought it. Want to know why?')
+  // and the plain wording is untouched for a position held overnight
+  const held = computeMovers([dailyLotAsset('OLDH', 112, 90, [{ units: 10, cost: 50 }])], 100_000)
+  expect(buildSlotTeaser({ ...slot, scopeKey: 'OLDH' }, held, null)).toBe('OLDH moved +24.44% today. Want to know why?')
+})
+
+test('the same ticker in two accounts aggregates its daily move into one position return', () => {
+  const a = dailyLotAsset('DUO', 110, 100, [{ units: 10, cost: 50 }])
+  const b = dailyLotAsset('DUO', 110, 100, [{ units: 10, cost: 105, boughtToday: true }])
+  const [mover] = computeMovers([a, b], 100_000).movers
+  expect(mover.dollarChange).toBe(10 * 10 + 10 * 5)
+  expect(mover.percentChange).toBeCloseTo((150 * 100) / (1000 + 1050), 1) // movers round to 0.01%
+  expect(mover.sinceBuy).toBeUndefined()
 })
