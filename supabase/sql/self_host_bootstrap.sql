@@ -848,6 +848,21 @@ create policy own_plaid_synced_positions
     )
   );
 
+-- Confirm in PlaidReviewModal runs as the signed-in user (not an edge
+-- function) and must be able to record the sync link itself after writing
+-- the asset/transaction/lot -- a plain INSERT, never upserted.
+drop policy if exists insert_own_plaid_synced_positions on public.plaid_synced_positions;
+create policy insert_own_plaid_synced_positions
+  on public.plaid_synced_positions
+  for insert
+  to authenticated
+  with check (
+    exists (
+      select 1 from public.plaid_items pi
+      where pi.id = plaid_item_id and pi.user_id = auth.uid()
+    )
+  );
+
 drop policy if exists own_llm_usage_log on public.llm_usage_log;
 create policy own_llm_usage_log
   on public.llm_usage_log

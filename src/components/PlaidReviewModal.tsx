@@ -7,6 +7,7 @@ import {
   listPendingPositions,
   markPendingPositionConfirmed,
   dismissPendingPosition,
+  recordPlaidSyncLink,
   type PendingPlaidPosition,
 } from '@/lib/db/plaid'
 
@@ -165,7 +166,15 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
     try {
       const { data: { user } } = await getSupabaseClient().auth.getUser()
       if (!user) throw new Error('Not authenticated')
-      await executeTool(toolName, input, user.id)
+      const result = await executeTool(toolName, input, user.id)
+      // Records the sync link so the badge has something to key off and so
+      // a later plaid-sync run updates this position in place instead of
+      // re-detecting (and potentially re-confirming, i.e. duplicating) it.
+      await recordPlaidSyncLink(row, {
+        assetId: result?.assetId,
+        transactionId: row.detected_type === 'stock' || row.detected_type === 'stock_plan' ? result?.transactionId : undefined,
+        fixedIncomeLotId: row.detected_type === 'fixed_income' ? result?.fixedIncomeLotId : undefined,
+      })
       await markPendingPositionConfirmed(row.id)
       setRows((prev) => prev.filter((r) => r.id !== row.id))
       onChanged?.()

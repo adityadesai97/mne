@@ -105,6 +105,8 @@ export async function listPlaidItems(): Promise<PlaidItem[]> {
 export interface PendingPlaidPosition {
   id: string
   plaid_item_id: string
+  external_account_id: string
+  external_security_id: string | null
   detected_type: 'stock' | 'cash' | 'fixed_income' | 'stock_plan'
   payload: Record<string, unknown>
   matched_asset_id: string | null
@@ -123,11 +125,35 @@ export async function getPendingPlaidPositionsCount(): Promise<number> {
 export async function listPendingPositions(): Promise<PendingPlaidPosition[]> {
   const { data, error } = await getSupabaseClient()
     .from('plaid_pending_positions')
-    .select('id, plaid_item_id, detected_type, payload, matched_asset_id, created_at')
+    .select('id, plaid_item_id, external_account_id, external_security_id, detected_type, payload, matched_asset_id, created_at')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
   if (error) throw error
   return data ?? []
+}
+
+export interface ConfirmedPlaidLink {
+  assetId?: string
+  transactionId?: string
+  fixedIncomeLotId?: string
+}
+
+// Records the link a just-confirmed position's write created, so a later
+// plaid-sync run can find it (update in place) instead of re-detecting the
+// same account/security as new. Nothing enforces this is called exactly
+// once per row, but the DB's own unique index on
+// (plaid_item_id, external_account_id, external_security_id) throws a plain
+// 23505 on a second attempt rather than a 403, so it fails safely.
+export async function recordPlaidSyncLink(row: PendingPlaidPosition, link: ConfirmedPlaidLink): Promise<void> {
+  const { error } = await getSupabaseClient().from('plaid_synced_positions').insert({
+    plaid_item_id: row.plaid_item_id,
+    external_account_id: row.external_account_id,
+    external_security_id: row.external_security_id,
+    asset_id: link.assetId ?? null,
+    transaction_id: link.transactionId ?? null,
+    fixed_income_lot_id: link.fixedIncomeLotId ?? null,
+  })
+  if (error) throw error
 }
 
 export async function markPendingPositionConfirmed(id: string): Promise<void> {
