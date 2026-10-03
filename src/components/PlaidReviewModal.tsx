@@ -86,6 +86,18 @@ const STOCK_FIELDS: FieldConfig[] = [
   { key: 'location_name', label: 'Location', type: 'text', required: true },
 ]
 
+// A coin Plaid detected rides the 'stock' review row (detected_type 'stock',
+// payload.asset_class 'Crypto' — see add_stock_transaction's crypto branch), so
+// it only needs its own labels: no RSU/ESPP type or grant date, units rather
+// than shares, an exchange/wallet rather than a brokerage.
+const CRYPTO_FIELDS: FieldConfig[] = [
+  { key: 'symbol', label: 'Coin symbol', type: 'text', required: true },
+  { key: 'count', label: 'Units', type: 'number', required: true },
+  { key: 'cost_price', label: 'Cost/unit ($)', type: 'number', required: true },
+  { key: 'purchase_date', label: 'Purchase date', type: 'date', required: true },
+  { key: 'location_name', label: 'Exchange / wallet', type: 'text', required: true },
+]
+
 const FIELDS_BY_TYPE: Record<PendingPlaidPosition['detected_type'], FieldConfig[]> = {
   stock: STOCK_FIELDS,
   stock_plan: STOCK_FIELDS,
@@ -312,7 +324,8 @@ function PendingRow({
   onConfirm: () => void
   onSkip: () => void
 }) {
-  const fields = FIELDS_BY_TYPE[row.detected_type]
+  const isCrypto = (row.payload as { asset_class?: string }).asset_class === 'Crypto'
+  const fields = isCrypto ? CRYPTO_FIELDS : FIELDS_BY_TYPE[row.detected_type]
   const isLotBasedMatch = !!matchedName && LOT_BASED_TYPES.has(row.detected_type)
   const isFlatBalanceMatch = !!matchedName && row.detected_type === 'cash'
 
@@ -326,7 +339,7 @@ function PendingRow({
         >
           {matchedName ? (isManualMatch ? `Linked to "${matchedName}"` : `Looks like "${matchedName}"`) : 'New'}
         </span>
-        <p className="text-xs text-muted-foreground mt-1">{TYPE_LABEL[row.detected_type]}</p>
+        <p className="text-xs text-muted-foreground mt-1">{isCrypto ? 'Crypto' : TYPE_LABEL[row.detected_type]}</p>
         {!row.matched_asset_id && candidates.length > 0 && (
           <label className="text-xs space-y-1 block mt-1.5">
             <span className="text-muted-foreground">

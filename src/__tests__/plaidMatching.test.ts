@@ -1,5 +1,5 @@
 // src/__tests__/plaidMatching.test.ts
-import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot } from '../lib/plaidMatching'
+import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, perUnitCost } from '../lib/plaidMatching'
 
 const base = {
   assetType: 'Stock',
@@ -156,4 +156,38 @@ test('findMatchingLot never matches across different purchase dates', () => {
 
 test('an empty existing-lots list never matches — nothing to dedupe against, so the lot is new', () => {
   expect(findMatchingLot({ count: 10, cost_price: 150, purchase_date: '2026-01-01' }, [])).toBeNull()
+})
+
+test('normalizeCryptoSymbol strips a delimited quote currency but keeps stablecoins', () => {
+  expect(normalizeCryptoSymbol('btc')).toBe('BTC')
+  expect(normalizeCryptoSymbol('BTC-USD')).toBe('BTC')
+  expect(normalizeCryptoSymbol('eth/usdt')).toBe('ETH')
+  expect(normalizeCryptoSymbol('USDT')).toBe('USDT')
+  expect(normalizeCryptoSymbol('USDC')).toBe('USDC')
+  expect(normalizeCryptoSymbol('  ')).toBeNull()
+  expect(normalizeCryptoSymbol(null)).toBeNull()
+})
+
+test('perUnitCost divides Plaid\'s total cost basis by quantity', () => {
+  expect(perUnitCost({ cost_basis: 1000, quantity: 4 })).toBe(250)
+  expect(perUnitCost({ cost_basis: 100, quantity: 0.5 })).toBe(200)
+  expect(perUnitCost({ cost_basis: null, quantity: 4 })).toBeNull()
+  expect(perUnitCost({ cost_basis: 100, quantity: 0 })).toBeNull()
+})
+
+test('a detected coin only links to an existing Crypto asset of the same symbol', () => {
+  const assets = [
+    { id: 'stock', name: 'BTC Stock', asset_type: 'Stock', ticker: { symbol: 'BTC', kind: 'stock' } },
+    { id: 'coin', name: 'BTC', asset_type: 'Crypto', location: { name: 'Robinhood' }, ticker: { symbol: 'BTC', kind: 'crypto' } },
+    { id: 'other', name: 'ETH', asset_type: 'Crypto', ticker: { symbol: 'ETH', kind: 'crypto' } },
+  ]
+  expect(compatibleManualMatchCandidates('stock', { symbol: 'btc', asset_class: 'Crypto' }, assets).map((c) => c.id)).toEqual(['coin'])
+})
+
+test('a detected stock never links to a Crypto asset, even with the same symbol', () => {
+  const assets = [
+    { id: 'coin', name: 'BTC', asset_type: 'Crypto', ticker: { symbol: 'BTC', kind: 'crypto' } },
+    { id: 'stock', name: 'BTC Stock', asset_type: 'Stock', ticker: { symbol: 'BTC', kind: 'stock' } },
+  ]
+  expect(compatibleManualMatchCandidates('stock', { symbol: 'BTC' }, assets).map((c) => c.id)).toEqual(['stock'])
 })

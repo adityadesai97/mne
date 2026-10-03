@@ -932,7 +932,7 @@ export default function Settings() {
             <Row
               key={pos.id}
               label={`${pos.symbol ?? pos.assetName} differs from Plaid`}
-              hint={`Plaid shows ${pos.plaidQuantity} shares, ${Math.abs(pos.driftShares)} ${pos.driftShares > 0 ? 'more' : 'fewer'} than mne tracks`}
+              hint={`Plaid shows ${pos.plaidQuantity} ${pos.isCrypto ? 'units' : 'shares'}, ${Math.abs(pos.driftShares)} ${pos.driftShares > 0 ? 'more' : 'fewer'} than mne tracks`}
               right={
                 <button
                   type="button"

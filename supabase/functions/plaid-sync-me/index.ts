@@ -89,6 +89,24 @@ function assetNaturalKey(params: {
 const RETIREMENT_SUBTYPES = new Set(['401k', '403b', '401a', '457b'])
 const BOND_SECURITY_TYPES = new Set(['bond', 'tips', 'bill', 'fixed income'])
 
+// Ports of normalizeCryptoSymbol / perUnitCost from src/lib/plaidMatching.ts
+// (unit tested there) — keep in sync.
+function normalizeCryptoSymbol(raw: unknown): string | null {
+  const text = String(raw ?? '').trim().toUpperCase()
+  if (!text) return null
+  // Only a delimited quote currency is a trading pair ("BTC-USD"); a bare
+  // "USDT"/"USDC" is the coin itself and must survive.
+  const pair = text.match(/^(.+?)[-/_ ](?:USD|USDT|USDC)$/)
+  return pair ? pair[1] : text
+}
+
+function perUnitCost(holding: { cost_basis?: number | null; quantity?: number | null }): number | null {
+  const total = holding.cost_basis
+  const qty = holding.quantity
+  if (total == null || qty == null || !Number.isFinite(Number(total)) || !Number(qty)) return null
+  return Math.round((Number(total) / Number(qty)) * 1e8) / 1e8
+}
+
 interface PendingRow {
   external_account_id: string
   external_security_id: string | null
@@ -216,6 +234,43 @@ function buildPendingRows(
         const symbol: string | null = security.ticker_symbol ?? null
         const lots = Array.isArray(holding.tax_lots) ? holding.tax_lots : []
 
+        // A coin is a Stock-shaped position in mne (see CLAUDE.md → Crypto): same
+        // 'stock' review row, flagged asset_class 'Crypto' so confirming goes
+        // through the crypto branch of add_stock_transaction (CoinGecko ticker,
+        // Crypto location) instead of the Finnhub stock path.
+        if ((security.type ?? '').toLowerCase() === 'cryptocurrency') {
+          const coin = normalizeCryptoSymbol(security.ticker_symbol)
+          if (!coin) continue
+          const cryptoKey = assetNaturalKey({
+            assetType: 'Crypto',
+            name: coin,
+            locationName: institutionName,
+            ownership: 'Individual',
+            tickerSymbol: coin,
+            fixedIncomeSubtype: null,
+          })
+          const firstCryptoLot = lots[0]
+          rows.push({
+            external_account_id: account.account_id,
+            external_security_id: holding.security_id,
+            detected_type: 'stock',
+            payload: {
+              symbol: coin,
+              asset_class: 'Crypto',
+              count: firstCryptoLot?.quantity ?? holding.quantity ?? null,
+              cost_price: firstCryptoLot?.purchase_price ?? perUnitCost(holding),
+              purchase_date: firstCryptoLot?.purchase_date ?? null,
+              asset_name: coin,
+              location_name: institutionName,
+              account_type: 'Crypto',
+              ownership: 'Individual',
+              _lots: lots,
+            },
+            matched_asset_id: existingAssetKeys.get(cryptoKey) ?? null,
+          })
+          continue
+        }
+
         if (isBond) {
           const fixedIncomeSubtype = (security.type ?? '').toLowerCase() === 'bill' ? 'T-Bill' : 'Bond'
           const name = security.name || symbol || 'Bond position'
@@ -240,7 +295,7 @@ function buildPendingRows(
               account_type: 'Investment',
               ownership: 'Individual',
               count: firstLot?.quantity ?? holding.quantity ?? null,
-              cost_price: firstLot?.purchase_price ?? holding.cost_basis ?? null,
+              cost_price: firstLot?.purchase_price ?? perUnitCost(holding),
               purchase_date: firstLot?.purchase_date ?? null,
               interest_rate: null,
               maturity_date: null,
@@ -272,7 +327,7 @@ function buildPendingRows(
           payload: {
             symbol,
             count: firstLot?.quantity ?? holding.quantity ?? null,
-            cost_price: firstLot?.purchase_price ?? holding.cost_basis ?? null,
+            cost_price: firstLot?.purchase_price ?? perUnitCost(holding),
             purchase_date: firstLot?.purchase_date ?? null,
             subtype: subtypeGuess,
             grant_date: null,
@@ -359,9 +414,11 @@ interface LedgerPlan {
   skipped: Array<{ txnId: string; reason: string }>
 }
 
-const round6 = (n: number) => Math.round(n * 1e6) / 1e6
-const round4 = (n: number) => Math.round(n * 1e4) / 1e4
-const EPSILON = 1e-6
+// 8 decimals throughout: crypto units and per-unit prices need them (the lot
+// columns are numeric(20,8)/numeric(18,8) for crypto), and for stocks the
+// database simply rounds to its own narrower scale on write.
+const round8 = (n: number) => Math.round(n * 1e8) / 1e8
+const EPSILON = 1e-8
 
 interface WorkingLot extends LedgerLot {
   isNew?: boolean
@@ -396,7 +453,7 @@ function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
   // tracked lots can't cover it, nothing changes.
   function consume(txnId: string, qty: number): string | null {
     if (totalShares() + EPSILON < qty) {
-      return `only ${round6(totalShares())} shares tracked, transaction reduces ${round6(qty)}`
+      return `only ${round8(totalShares())} shares tracked, transaction reduces ${round8(qty)}`
     }
     let remaining = qty
     const fifo = liveLots().sort((a, b) => a.purchase_date.localeCompare(b.purchase_date))
@@ -408,7 +465,7 @@ function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
         lot.dirty = true
         lot.txnIds.push(txnId)
       } else {
-        lot.count = round6(lot.count - remaining)
+        lot.count = round8(lot.count - remaining)
         remaining = 0
         lot.dirty = true
         lot.txnIds.push(txnId)
@@ -438,8 +495,8 @@ function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
       }
       const ratio = (before + qty) / before
       for (const lot of liveLots()) {
-        lot.count = round6(lot.count * ratio)
-        lot.cost_price = round4(lot.cost_price / ratio)
+        lot.count = round8(lot.count * ratio)
+        lot.cost_price = round8(lot.cost_price / ratio)
         lot.dirty = true
         lot.costDirty = true
         lot.txnIds.push(id)
@@ -459,8 +516,8 @@ function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
       }
       working.push({
         id: `new:${id}`,
-        count: round6(amount),
-        cost_price: round4(price),
+        count: round8(amount),
+        cost_price: round8(price),
         purchase_date: txn.date,
         isNew: true,
         txnIds: [id],
@@ -503,16 +560,15 @@ function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
   return { ops, applied, skipped }
 }
 
-const DRIFT_TOLERANCE_SHARES = 0.0001
+const DRIFT_TOLERANCE_SHARES = 0.000001
 
 // Positive = Plaid reports more shares than mne tracks. `plaidShares` null means
 // we couldn't read Plaid's holdings this run, so nothing is known — no drift.
 function computeDrift(trackedShares: number, plaidShares: number | null): number | null {
   if (plaidShares == null) return null
-  const diff = round6(plaidShares - trackedShares)
+  const diff = round8(plaidShares - trackedShares)
   return Math.abs(diff) < DRIFT_TOLERANCE_SHARES ? 0 : diff
 }
-
 
 function shiftDate(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`)
@@ -768,7 +824,7 @@ async function syncLedger(
     .select('id, asset_type, ticker_id')
     .in('id', linked.map((l: any) => l.asset_id))
   const stockAssets = new Map<string, { id: string; ticker_id: string | null }>(
-    (assets ?? []).filter((a: any) => a.asset_type === 'Stock').map((a: any) => [a.id, a]),
+    (assets ?? []).filter((a: any) => a.asset_type === 'Stock' || a.asset_type === 'Crypto').map((a: any) => [a.id, a]),
   )
   const positions = linked.filter((l: any) => stockAssets.has(l.asset_id))
   if (positions.length === 0) return

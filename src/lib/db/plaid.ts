@@ -220,6 +220,7 @@ export interface PlaidDriftPosition {
   id: string
   assetId: string
   assetName: string
+  isCrypto: boolean
   symbol: string | null
   plaidQuantity: number
   driftShares: number
@@ -230,7 +231,7 @@ export interface PlaidDriftPosition {
 export async function listPlaidDriftPositions(): Promise<PlaidDriftPosition[]> {
   const { data, error } = await getSupabaseClient()
     .from('plaid_synced_positions')
-    .select('id, asset_id, plaid_quantity, plaid_cost_price, drift_shares, asset:assets(name, ticker:tickers(symbol, current_price))')
+    .select('id, asset_id, plaid_quantity, plaid_cost_price, drift_shares, asset:assets(name, asset_type, ticker:tickers(symbol, current_price))')
     .not('drift_shares', 'is', null)
     .neq('drift_shares', 0)
   if (error) throw error
@@ -238,6 +239,7 @@ export async function listPlaidDriftPositions(): Promise<PlaidDriftPosition[]> {
     id: r.id,
     assetId: r.asset_id,
     assetName: r.asset?.name ?? 'Position',
+    isCrypto: r.asset?.asset_type === 'Crypto',
     symbol: r.asset?.ticker?.symbol ?? null,
     plaidQuantity: Number(r.plaid_quantity ?? 0),
     driftShares: Number(r.drift_shares),
@@ -277,8 +279,8 @@ export async function resolvePlaidDrift(pos: PlaidDriftPosition): Promise<void> 
     }
     const { error } = await supabase.from('transactions').insert({
       subtype_id: subtypeId,
-      count: Math.round(pos.driftShares * 1e6) / 1e6,
-      cost_price: Math.round(cost * 1e4) / 1e4,
+      count: Math.round(pos.driftShares * 1e8) / 1e8,
+      cost_price: Math.round(cost * 1e8) / 1e8,
       purchase_date: today,
       capital_gains_status: 'Short Term',
     })

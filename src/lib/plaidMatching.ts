@@ -32,6 +32,32 @@ export function assetNaturalKey(params: AssetNaturalKeyParams): string {
   ].join('::')
 }
 
+// ─── Crypto holdings from Plaid ─────────────────────────────────────────────
+//
+// Canonical source for these two helpers — supabase/functions/plaid-sync and
+// plaid-sync-me carry hand-kept Deno ports (edge functions can't import src/).
+
+// Plaid may report a coin as "BTC", "btc", or a trading pair like "BTC-USD";
+// mne tracks the bare coin symbol (CoinGecko resolves it from there).
+export function normalizeCryptoSymbol(raw: unknown): string | null {
+  const text = String(raw ?? '').trim().toUpperCase()
+  if (!text) return null
+  // Only a delimited quote currency is a trading pair ("BTC-USD"); a bare
+  // "USDT"/"USDC" is the coin itself and must survive.
+  const pair = text.match(/^(.+?)[-/_ ](?:USD|USDT|USDC)$/)
+  return pair ? pair[1] : text
+}
+
+// Plaid's holding-level cost_basis is the holding's total cost, not a per-unit
+// price, so the per-unit figure mne stores is total / quantity. Null when
+// either is missing or the quantity is zero.
+export function perUnitCost(holding: { cost_basis?: number | null; quantity?: number | null }): number | null {
+  const total = holding.cost_basis
+  const qty = holding.quantity
+  if (total == null || qty == null || !Number.isFinite(Number(total)) || !Number(qty)) return null
+  return Math.round((Number(total) / Number(qty)) * 1e8) / 1e8
+}
+
 // ─── Manual match candidates ───────────────────────────────────────────────
 //
 // When the natural-key match above misses (e.g. an account's ownership is
@@ -49,6 +75,8 @@ export type PlaidDetectedType = 'stock' | 'cash' | 'fixed_income' | 'stock_plan'
 
 export interface PlaidPendingPayload {
   symbol?: string
+  /** 'Crypto' for a detected coin; absent for an ordinary stock lot. */
+  asset_class?: string
   asset_type?: string
   fixed_income_subtype?: string | null
 }
@@ -78,9 +106,13 @@ export function isCompatibleManualMatch(
 ): boolean {
   if (detectedType === 'stock' || detectedType === 'stock_plan') {
     const symbol = (payload.symbol ?? '').trim().toUpperCase()
+    const wantsCrypto = payload.asset_class === 'Crypto'
+    // A detected coin only links to an existing Crypto asset of the same
+    // symbol, and a detected stock never to a Crypto asset (even though both
+    // are ticker assets — see isTickerAsset).
     return (
-      candidate.asset_type === 'Stock' &&
-      candidate.ticker?.kind !== 'crypto' &&
+      candidate.asset_type === (wantsCrypto ? 'Crypto' : 'Stock') &&
+      (wantsCrypto || candidate.ticker?.kind !== 'crypto') &&
       (candidate.ticker?.symbol ?? '').trim().toUpperCase() === symbol
     )
   }

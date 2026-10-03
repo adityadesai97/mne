@@ -87,6 +87,14 @@ test('a buy with no price is skipped rather than costed at zero', () => {
 test('computeDrift reports Plaid minus tracked shares and ignores rounding noise', () => {
   expect(computeDrift(10, 12)).toBe(2)
   expect(computeDrift(10, 7.5)).toBe(-2.5)
-  expect(computeDrift(10, 10.00001)).toBe(0)
+  expect(computeDrift(10, 10.0000001)).toBe(0)
+  expect(computeDrift(10, 10.00001)).toBe(0.00001)
   expect(computeDrift(10, null)).toBeNull()
+})
+
+test('crypto-sized quantities and prices keep 8 decimals', () => {
+  const plan = planLedger([], [txn({ investment_transaction_id: 'c', quantity: 0.00012345, price: 0.00001234 })])
+  expect(plan.ops).toEqual([
+    { kind: 'add_lot', txnId: 'c', count: 0.00012345, cost_price: 0.00001234, purchase_date: '2026-09-01' },
+  ])
 })

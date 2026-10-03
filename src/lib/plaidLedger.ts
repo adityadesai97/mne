@@ -36,9 +36,11 @@ export interface LedgerPlan {
   skipped: Array<{ txnId: string; reason: string }>
 }
 
-const round6 = (n: number) => Math.round(n * 1e6) / 1e6
-const round4 = (n: number) => Math.round(n * 1e4) / 1e4
-const EPSILON = 1e-6
+// 8 decimals throughout: crypto units and per-unit prices need them (the lot
+// columns are numeric(20,8)/numeric(18,8) for crypto), and for stocks the
+// database simply rounds to its own narrower scale on write.
+const round8 = (n: number) => Math.round(n * 1e8) / 1e8
+const EPSILON = 1e-8
 
 interface WorkingLot extends LedgerLot {
   isNew?: boolean
@@ -73,7 +75,7 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
   // tracked lots can't cover it, nothing changes.
   function consume(txnId: string, qty: number): string | null {
     if (totalShares() + EPSILON < qty) {
-      return `only ${round6(totalShares())} shares tracked, transaction reduces ${round6(qty)}`
+      return `only ${round8(totalShares())} shares tracked, transaction reduces ${round8(qty)}`
     }
     let remaining = qty
     const fifo = liveLots().sort((a, b) => a.purchase_date.localeCompare(b.purchase_date))
@@ -85,7 +87,7 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
         lot.dirty = true
         lot.txnIds.push(txnId)
       } else {
-        lot.count = round6(lot.count - remaining)
+        lot.count = round8(lot.count - remaining)
         remaining = 0
         lot.dirty = true
         lot.txnIds.push(txnId)
@@ -115,8 +117,8 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
       }
       const ratio = (before + qty) / before
       for (const lot of liveLots()) {
-        lot.count = round6(lot.count * ratio)
-        lot.cost_price = round4(lot.cost_price / ratio)
+        lot.count = round8(lot.count * ratio)
+        lot.cost_price = round8(lot.cost_price / ratio)
         lot.dirty = true
         lot.costDirty = true
         lot.txnIds.push(id)
@@ -136,8 +138,8 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
       }
       working.push({
         id: `new:${id}`,
-        count: round6(amount),
-        cost_price: round4(price),
+        count: round8(amount),
+        cost_price: round8(price),
         purchase_date: txn.date,
         isNew: true,
         txnIds: [id],
@@ -180,12 +182,12 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
   return { ops, applied, skipped }
 }
 
-export const DRIFT_TOLERANCE_SHARES = 0.0001
+export const DRIFT_TOLERANCE_SHARES = 0.000001
 
 // Positive = Plaid reports more shares than mne tracks. `plaidShares` null means
 // we couldn't read Plaid's holdings this run, so nothing is known — no drift.
 export function computeDrift(trackedShares: number, plaidShares: number | null): number | null {
   if (plaidShares == null) return null
-  const diff = round6(plaidShares - trackedShares)
+  const diff = round8(plaidShares - trackedShares)
   return Math.abs(diff) < DRIFT_TOLERANCE_SHARES ? 0 : diff
 }
