@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, Pencil, Trash2, Link2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TaxLotList } from '@/components/TaxLotList'
@@ -14,6 +14,7 @@ import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
   isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset,
+  getPlaidSyncInfo,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { revealUp } from '@/lib/motionPresets'
@@ -237,6 +238,7 @@ export default function AssetDetail() {
   const isStock = isTickerAsset(asset)
   const isFixedIncome = asset.asset_type === 'Fixed Income'
   const isTradable = isTradableFixedIncome(asset)
+  const plaidSync = getPlaidSyncInfo(asset)
   const fixedIncomeLots = asset.fixed_income_lots ?? []
   const lotUnits = isTradable ? computeFixedIncomeLotCount(asset) : 0
   const expectedReturn = isTradable ? computeFixedIncomeExpectedReturn(asset) : null
@@ -462,9 +464,15 @@ export default function AssetDetail() {
                     <span className={hiddenValueClass(hideValues, `font-medium tabular-nums ${tickerPriceChangeClass}`)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>
                   </p>
                 )}
-                {(asset.ownership || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
+                {(asset.ownership || plaidSync.synced || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {asset.ownership && <Badge variant="secondary">{asset.ownership}</Badge>}
+                    {plaidSync.synced && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Link2 size={11} />
+                        Synced via Plaid{plaidSync.institutionName ? ` (${plaidSync.institutionName})` : ''}
+                      </Badge>
+                    )}
                     {isFixedIncome && asset.interest_rate != null && (
                       <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% rate</Badge>
                     )}

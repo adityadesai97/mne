@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
-import { Briefcase, Landmark, Banknote, Shield, Wallet, Bitcoin, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset } from '@/lib/portfolio'
+import { Badge } from '@/components/ui/badge'
+import { Briefcase, Landmark, Banknote, Shield, Wallet, Bitcoin, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight, Link2 } from 'lucide-react'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset, getPlaidSyncInfo } from '@/lib/portfolio'
 import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
 import { getLogoColor } from '@/lib/logoColor'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
@@ -113,6 +114,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
   const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
   const unitCount = isTradable ? computeFixedIncomeLotCount(asset) : 0
+  const plaidSync = getPlaidSyncInfo(asset)
   const [hideValues] = useHideValues()
 
   const fallbackColor = isStock
@@ -155,6 +157,15 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         worth printing even while the price itself is pending. */}
                     {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} ${asset.asset_type === 'Crypto' ? 'coins' : 'shares'}` : ''}{isTradable ? ` · ${fmtShares(unitCount)} units` : ''}
                   </p>
+                  {plaidSync.synced && (
+                    <Badge
+                      variant="secondary"
+                      className="mt-1 gap-0.5 text-[10px] px-1.5 py-0"
+                      title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
+                    >
+                      <Link2 size={10} /> Synced
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="text-right">
@@ -214,6 +225,14 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
           <div className="mt-3 min-w-0">
             <p className="font-semibold truncate [text-shadow:0_1px_2px_rgba(0,0,0,0.15)]">{asset.name}</p>
             <p className="text-white/70 text-xs truncate">{asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}</p>
+            {plaidSync.synced && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-white/20 rounded-full px-1.5 py-0.5 mt-1"
+                title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
+              >
+                <Link2 size={9} /> Synced
+              </span>
+            )}
           </div>
 
           <div className="mt-auto pt-3">

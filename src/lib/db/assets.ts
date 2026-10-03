@@ -1,15 +1,23 @@
 import { getSupabaseClient } from '../supabase'
 
+// plaid_synced_positions is nested in three places since it can point at an
+// asset directly (flat-balance types), a transaction (stock tax lots), or a
+// fixed_income_lot (Bond/T-Bill lots) — see src/lib/portfolio.ts's
+// getPlaidSyncInfo() for how these are collapsed into one "is this asset
+// Plaid-synced" answer.
+const ASSET_SELECT = `
+  *,
+  location:locations(*),
+  ticker:tickers(*, ticker_themes(theme:themes(*))),
+  stock_subtypes(*, transactions(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))), rsu_grants(*)),
+  fixed_income_lots(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))),
+  plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))
+`
+
 export async function getAllAssets() {
   const { data, error } = await getSupabaseClient()
     .from('assets')
-    .select(`
-      *,
-      location:locations(*),
-      ticker:tickers(*, ticker_themes(theme:themes(*))),
-      stock_subtypes(*, transactions(*), rsu_grants(*)),
-      fixed_income_lots(*)
-    `)
+    .select(ASSET_SELECT)
     .order('name')
   if (error) throw error
   return data
@@ -43,13 +51,7 @@ export async function deleteAsset(id: string) {
 export async function getAssetById(id: string) {
   const { data, error } = await getSupabaseClient()
     .from('assets')
-    .select(`
-      *,
-      location:locations(*),
-      ticker:tickers(*, ticker_themes(theme:themes(*))),
-      stock_subtypes(*, transactions(*), rsu_grants(*)),
-      fixed_income_lots(*)
-    `)
+    .select(ASSET_SELECT)
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
