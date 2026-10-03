@@ -15,16 +15,17 @@ export function groupByAssetType(assets: any[], activeSubtypes: Set<string>) {
 }
 
 function filteredStockValue(asset: any, activeSubtypes: Set<string>): number {
-  if (!isTickerAsset(asset)) return asset.price ?? 0
-  const lots = (asset.stock_subtypes ?? [])
+  // Everything that isn't a ticker position (cash, 401k, HSA, CD/Deposit, and
+  // lot-based Bond/T-Bill) uses the same valuation as net worth, so the
+  // allocation total reconciles with it.
+  if (!isTickerAsset(asset)) return computeAssetValue(asset)
+  const price = asset.ticker?.current_price
+  // No live price → net worth counts the position as 0, so the chart does too.
+  if (price == null) return 0
+  const shares = (asset.stock_subtypes ?? [])
     .filter((st: any) => activeSubtypes.has(st.subtype))
     .flatMap((st: any) => st.transactions ?? [])
-  const price = asset.ticker?.current_price
-  if (!price) {
-    // No live price yet — show cost basis so stocks still appear in charts
-    return lots.reduce((sum: number, t: any) => sum + netCount(t) * Number(t.cost_price), 0)
-  }
-  const shares = lots.reduce((sum: number, t: any) => sum + netCount(t), 0)
+    .reduce((sum: number, t: any) => sum + netCount(t), 0)
   return Math.round(price * shares * 100) / 100
 }
 
@@ -58,7 +59,10 @@ export function computeCapitalGainsExposure(assets: any[]) {
   let longTerm = 0
   for (const a of assets) {
     if (!isTickerAsset(a)) continue
-    const price = a.ticker?.current_price ?? 0
+    // No live price → no meaningful gain (treating it as $0 would report the
+    // whole cost basis as a loss).
+    const price = a.ticker?.current_price
+    if (price == null) continue
     for (const st of a.stock_subtypes ?? []) {
       for (const t of st.transactions ?? []) {
         const gain = netCount(t) * (price - Number(t.cost_price))

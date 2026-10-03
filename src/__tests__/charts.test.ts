@@ -85,6 +85,24 @@ describe('groupByAssetType', () => {
   })
 })
 
+test('allocation includes lot-based Bond/T-Bill and matches net worth', () => {
+  const tbill = {
+    asset_type: 'Fixed Income', fixed_income_subtype: 'T-Bill', name: 'T-Bill', price: null, ticker: null,
+    location: { name: 'Fidelity' }, stock_subtypes: [],
+    fixed_income_lots: [{ count: 10, cost_price: 98, purchase_date: '2026-01-01' }],
+  }
+  const all = new Set(['Market', 'ESPP', 'RSU'])
+  const result = groupByAssetType([stockAsset, cashAsset, tbill], all)
+  expect(result.find(g => g.type === 'Fixed Income')!.value).toBe(980)
+  expect(result.reduce((s, g) => s + g.value, 0)).toBe(3000 + 5000 + 980)
+})
+
+test('allocation and capital gains ignore a ticker with no price', () => {
+  const unpriced = { ...stockAsset, ticker: { symbol: 'X', current_price: null } }
+  expect(groupByAssetType([unpriced], new Set(['Market', 'RSU']))).toEqual([])
+  expect(computeCapitalGainsExposure([unpriced])).toEqual({ shortTerm: 0, longTerm: 0 })
+})
+
 // ── groupByLocation ───────────────────────────────────────────
 describe('groupByLocation', () => {
   test('sums value by location name', () => {
