@@ -51,6 +51,15 @@ const pendingStockMatched = {
   created_at: '2026-09-01T00:00:00Z',
 }
 
+const pendingCashMatched = {
+  id: 'pending-3',
+  plaid_item_id: 'item-1',
+  detected_type: 'cash' as const,
+  payload: { name: 'Existing Fidelity Stock', price: 1500, location_name: 'Fidelity', asset_type: 'Cash' },
+  matched_asset_id: 'asset-1',
+  created_at: '2026-09-01T00:00:00Z',
+}
+
 beforeEach(() => {
   vi.mocked(listPendingPositions).mockReset()
   vi.mocked(markPendingPositionConfirmed).mockReset().mockResolvedValue(undefined)
@@ -69,7 +78,45 @@ test('loads pending positions and labels new vs matched rows', async () => {
   render(<PlaidReviewModal open={true} onClose={() => {}} />)
 
   expect(await screen.findByText('New')).toBeInTheDocument()
-  expect(await screen.findByText('Will update "Existing Fidelity Stock"')).toBeInTheDocument()
+  expect(await screen.findByText('Looks like "Existing Fidelity Stock"')).toBeInTheDocument()
+})
+
+test('a matched flat-balance row reconciles via update_asset_value, not a duplicate add_cash_asset insert', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingCashMatched])
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
+  expect(confirmButton).toBeEnabled() // flat-balance matches never require the duplicate-risk checkbox
+  await user.click(confirmButton)
+
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'update_asset_value',
+      { asset_name: 'Existing Fidelity Stock', price: 1500 },
+      'user-1',
+    )
+  })
+  expect(executeTool).not.toHaveBeenCalledWith('add_cash_asset', expect.anything(), expect.anything())
+})
+
+test('a matched lot-based row cannot be confirmed until the duplicate-risk checkbox is checked', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingStockMatched])
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
+  expect(confirmButton).toBeDisabled()
+  expect(executeTool).not.toHaveBeenCalled()
+
+  const checkbox = screen.getByRole('checkbox')
+  await user.click(checkbox)
+  expect(confirmButton).toBeEnabled()
+
+  await user.click(confirmButton)
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith('add_stock_transaction', expect.objectContaining({ symbol: 'AAPL' }), 'user-1')
+  })
 })
 
 test('confirming a row calls executeTool with the tool matching its detected type, then marks it confirmed', async () => {

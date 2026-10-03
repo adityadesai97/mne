@@ -31,6 +31,25 @@ const TOOL_FOR_TYPE: Record<PendingPlaidPosition['detected_type'], string> = {
   fixed_income: 'add_cash_asset',
 }
 
+// add_stock_transaction/add_cash_asset are additive tools (they insert a
+// new tax lot / a new asset row respectively) — neither one updates an
+// existing position in place. That's fine for a brand-new detected
+// position, but wrong for a row matched to something the user already
+// tracks manually: inserting on top of it would double-count a balance or
+// a share count rather than reconciling it.
+//
+// For flat-balance types (Cash/401k/HSA/CD — detected_type 'cash'), a
+// matched row is safe to route through update_asset_value instead, which
+// genuinely updates the existing asset's value in place.
+//
+// For lot-based types (Stock, Bond/T-Bill), there's no safe automatic
+// merge — the existing manual lots and Plaid's reported lot(s) could be
+// the same purchase, different purchases, or a true duplicate, and only
+// the user can tell. Those rows require an explicit acknowledgment below
+// before Confirm is enabled, rather than silently reconciling or silently
+// double-counting.
+const LOT_BASED_TYPES = new Set<PendingPlaidPosition['detected_type']>(['stock', 'stock_plan', 'fixed_income'])
+
 const TYPE_LABEL: Record<PendingPlaidPosition['detected_type'], string> = {
   stock: 'Stock',
   stock_plan: 'Stock plan (RSU/ESPP) — check the type below',
@@ -84,6 +103,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [acknowledgedDuplicateRisk, setAcknowledgedDuplicateRisk] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!open) return
@@ -118,8 +138,20 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   }
 
   async function handleConfirm(row: PendingPlaidPosition) {
-    const toolName = TOOL_FOR_TYPE[row.detected_type]
-    const input: Record<string, unknown> = { ...edits[row.id] }
+    const isLotBasedMatch = row.matched_asset_id && LOT_BASED_TYPES.has(row.detected_type)
+    if (isLotBasedMatch && !acknowledgedDuplicateRisk[row.id]) {
+      setErrors((prev) => ({ ...prev, [row.id]: 'Check the box above to confirm this won’t double-count an existing position.' }))
+      return
+    }
+
+    // A matched flat-balance position (Cash/401k/HSA/CD) can be reconciled
+    // safely: update_asset_value overwrites the existing asset's value in
+    // place instead of inserting a duplicate row the way add_cash_asset would.
+    const isFlatBalanceMatch = row.matched_asset_id && row.detected_type === 'cash'
+    const toolName = isFlatBalanceMatch ? 'update_asset_value' : TOOL_FOR_TYPE[row.detected_type]
+    const input: Record<string, unknown> = isFlatBalanceMatch
+      ? { asset_name: matchedNames[row.matched_asset_id!], price: edits[row.id]?.price }
+      : { ...edits[row.id] }
     delete input._lots
 
     const validationError = validateWriteToolInput(toolName, input)
@@ -184,6 +216,10 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
                 matchedName={row.matched_asset_id ? matchedNames[row.matched_asset_id] : undefined}
                 error={errors[row.id]}
                 busy={busyId === row.id}
+                acknowledgedDuplicateRisk={!!acknowledgedDuplicateRisk[row.id]}
+                onAcknowledgeDuplicateRiskChange={(checked) =>
+                  setAcknowledgedDuplicateRisk((prev) => ({ ...prev, [row.id]: checked }))
+                }
                 onFieldChange={(key, value) => setField(row.id, key, value)}
                 onConfirm={() => handleConfirm(row)}
                 onSkip={() => handleSkip(row)}
@@ -202,6 +238,8 @@ function PendingRow({
   matchedName,
   error,
   busy,
+  acknowledgedDuplicateRisk,
+  onAcknowledgeDuplicateRiskChange,
   onFieldChange,
   onConfirm,
   onSkip,
@@ -211,11 +249,15 @@ function PendingRow({
   matchedName?: string
   error?: string
   busy: boolean
+  acknowledgedDuplicateRisk: boolean
+  onAcknowledgeDuplicateRiskChange: (checked: boolean) => void
   onFieldChange: (key: string, value: unknown) => void
   onConfirm: () => void
   onSkip: () => void
 }) {
   const fields = FIELDS_BY_TYPE[row.detected_type]
+  const isLotBasedMatch = !!matchedName && LOT_BASED_TYPES.has(row.detected_type)
+  const isFlatBalanceMatch = !!matchedName && row.detected_type === 'cash'
 
   return (
     <div className="rounded-md border border-border/70 p-3 space-y-2">
@@ -225,9 +267,32 @@ function PendingRow({
             matchedName ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
           }`}
         >
-          {matchedName ? `Will update "${matchedName}"` : 'New'}
+          {matchedName ? `Looks like "${matchedName}"` : 'New'}
         </span>
         <p className="text-xs text-muted-foreground mt-1">{TYPE_LABEL[row.detected_type]}</p>
+        {isFlatBalanceMatch && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Confirming updates "{matchedName}"'s value — it won't create a duplicate.
+          </p>
+        )}
+        {isLotBasedMatch && (
+          <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              This looks like a position you may already track manually as "{matchedName}". Confirming
+              <strong> adds this as an additional lot</strong> rather than replacing anything — if it's the
+              same purchase you already entered, confirming will double-count it. Skip this row instead if
+              you're unsure, and adjust "{matchedName}" by hand if needed.
+            </p>
+            <label className="flex items-center gap-1.5 text-[11px] text-foreground">
+              <input
+                type="checkbox"
+                checked={acknowledgedDuplicateRisk}
+                onChange={(e) => onAcknowledgeDuplicateRiskChange(e.target.checked)}
+              />
+              This is a new/different lot, not a duplicate of "{matchedName}"
+            </label>
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
         {fields.map((field) => (
@@ -268,7 +333,7 @@ function PendingRow({
       <div className="flex gap-2 pt-1">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || (isLotBasedMatch && !acknowledgedDuplicateRisk)}
           onClick={onConfirm}
           className="flex-1 bg-primary text-primary-foreground rounded-md py-1.5 text-xs font-medium disabled:opacity-50"
         >
