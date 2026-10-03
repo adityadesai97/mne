@@ -43,6 +43,38 @@ export function computeFixedIncomeLotCount(asset: AssetTyped): number {
   return (asset.fixed_income_lots ?? []).reduce((sum, lot) => sum + Number(lot.count), 0)
 }
 
+type PlaidSyncedPosition = { plaid_item: { institution_name: string | null; last_synced_at: string | null } | null }
+type PlaidSyncableAsset = {
+  plaid_synced_positions?: PlaidSyncedPosition[] | null
+  stock_subtypes?: { transactions: { plaid_synced_positions?: PlaidSyncedPosition[] | null }[] | null }[] | null
+  fixed_income_lots?: { plaid_synced_positions?: PlaidSyncedPosition[] | null }[] | null
+}
+
+export interface PlaidSyncInfo {
+  synced: boolean
+  institutionName: string | null
+  lastSyncedAt: string | null
+}
+
+// plaid_synced_positions can hang off the asset directly (flat-balance types),
+// off one of its transactions (stock tax lots), or off one of its
+// fixed_income_lots (Bond/T-Bill lots) — see ASSET_SELECT in db/assets.ts for
+// how all three are fetched in one query. This collapses them into one
+// "is this asset Plaid-synced, and from where" answer for display.
+export function getPlaidSyncInfo(asset: PlaidSyncableAsset): PlaidSyncInfo {
+  const rows: PlaidSyncedPosition[] = [
+    ...(asset.plaid_synced_positions ?? []),
+    ...(asset.stock_subtypes ?? []).flatMap((st) => st.transactions ?? []).flatMap((t) => t.plaid_synced_positions ?? []),
+    ...(asset.fixed_income_lots ?? []).flatMap((lot) => lot.plaid_synced_positions ?? []),
+  ]
+  const withItem = rows.find((r) => r.plaid_item != null)
+  return {
+    synced: rows.length > 0,
+    institutionName: withItem?.plaid_item?.institution_name ?? null,
+    lastSyncedAt: withItem?.plaid_item?.last_synced_at ?? null,
+  }
+}
+
 // There's no live market feed for bonds/bills, so a tradable Fixed Income
 // position is valued at cost (sum of lot count × cost per unit) rather than
 // marked to market — the same "no live price, so hold at what was paid"
