@@ -18,12 +18,18 @@ export async function getPlaidCredentialsStatus(): Promise<PlaidCredentialsStatu
   if (!user) return { configured: false, clientId: null, plaidEnv: 'production' }
   const { data, error } = await getSupabaseClient()
     .from('plaid_credentials')
-    .select('client_id, plaid_env')
+    .select('client_id, plaid_env, secret_set')
     .eq('user_id', user.id)
     .maybeSingle()
   if (error) throw error
+  // "Configured" requires both — client_id alone isn't enough. The secret
+  // table has no select policy at all (see savePlaidCredentials), so
+  // secret_set is the only way the client can know whether a secret
+  // actually made it to the database; a client_id can save successfully
+  // while the secret write fails, and if "configured" only checked
+  // client_id, that half-saved state would look fully configured.
   return {
-    configured: !!data?.client_id,
+    configured: !!data?.client_id && !!data?.secret_set,
     clientId: data?.client_id ?? null,
     plaidEnv: data?.plaid_env ?? 'production',
   }
@@ -64,6 +70,15 @@ export async function savePlaidCredentials(clientId: string, plaidEnv: string, s
         .insert({ user_id: user.id, secret, updated_at: new Date().toISOString() })
       if (insertError) throw insertError
     }
+
+    // plaid_credential_secrets has no select policy, so this flag on the
+    // (readable) plaid_credentials row is the only way getPlaidCredentialsStatus
+    // can tell the secret actually made it into the database.
+    const { error: flagError } = await getSupabaseClient()
+      .from('plaid_credentials')
+      .update({ secret_set: true })
+      .eq('user_id', user.id)
+    if (flagError) throw flagError
   }
 }
 

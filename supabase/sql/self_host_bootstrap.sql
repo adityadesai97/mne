@@ -274,6 +274,12 @@ create table if not exists public.plaid_credentials (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- plaid_credential_secrets has no select policy by design, so the client
+-- can't check directly whether a secret exists -- this tracks it instead.
+alter table public.plaid_credentials add column if not exists secret_set boolean not null default false;
+update public.plaid_credentials
+set secret_set = true
+where user_id in (select user_id from public.plaid_credential_secrets) and secret_set = false;
 
 create table if not exists public.plaid_credential_secrets (
   user_id uuid primary key references public.plaid_credentials(user_id) on delete cascade,
