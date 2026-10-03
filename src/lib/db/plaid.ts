@@ -43,14 +43,27 @@ export async function savePlaidCredentials(clientId: string, plaidEnv: string, s
 
   // Only sent when the user actually typed a new secret — "rotate" leaves
   // an existing one in place if the field was left blank.
+  //
+  // Deliberately not .upsert(): Postgres requires SELECT privilege on a
+  // table to use INSERT ... ON CONFLICT DO UPDATE (to detect the conflict),
+  // and plaid_credential_secrets has no select policy at all by design —
+  // so an upsert here gets a real 403 insufficient_privilege, which the
+  // app's global 403-on-/rest/v1/ handler (src/lib/supabase.ts) treats as a
+  // dead session and force-signs the user out. A plain UPDATE (filtered by
+  // its own USING policy, no SELECT needed) falling back to a plain INSERT
+  // avoids the conflict-detection path entirely.
   if (secret) {
-    const { error: secretError } = await getSupabaseClient()
+    const { error: updateError, count } = await getSupabaseClient()
       .from('plaid_credential_secrets')
-      .upsert(
-        { user_id: user.id, secret, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' },
-      )
-    if (secretError) throw secretError
+      .update({ secret, updated_at: new Date().toISOString() }, { count: 'exact' })
+      .eq('user_id', user.id)
+    if (updateError) throw updateError
+    if (!count) {
+      const { error: insertError } = await getSupabaseClient()
+        .from('plaid_credential_secrets')
+        .insert({ user_id: user.id, secret, updated_at: new Date().toISOString() })
+      if (insertError) throw insertError
+    }
   }
 }
 

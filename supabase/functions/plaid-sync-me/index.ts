@@ -8,6 +8,24 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // plaid-create-link-token/index.ts for why this is duplicated rather than
 // shared via an import, and plaid-sync/index.ts for the field-shape caveat
 // on Plaid's holdings/balance responses. Keep both copies in sync.
+//
+// Deployed with verify_jwt:false despite being user-invoked — see
+// plaid-create-link-token/index.ts for why (the gateway's own JWT check on
+// CORS preflight OPTIONS requests breaks browser calls; auth is checked
+// manually below instead).
+
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
 
 function plaidBaseUrl(env: string) {
   return env === 'sandbox' ? 'https://sandbox.plaid.com' : 'https://production.plaid.com'
@@ -387,6 +405,10 @@ async function syncOneItem(
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   const authHeader = req.headers.get('Authorization') ?? ''
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -395,7 +417,7 @@ Deno.serve(async (req) => {
   )
   const { data: { user } } = await userClient.auth.getUser()
   if (!user) {
-    return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 })
+    return jsonResponse({ error: 'Not authenticated' }, 401)
   }
 
   const supabase = createClient(
@@ -405,7 +427,7 @@ Deno.serve(async (req) => {
 
   const creds = await getPlaidCredentials(supabase, user.id)
   if (!creds) {
-    return new Response(JSON.stringify({ error: 'Plaid credentials not configured.' }), { status: 400 })
+    return jsonResponse({ error: 'Plaid credentials not configured.' }, 400)
   }
 
   const { data: items } = await supabase
@@ -418,5 +440,5 @@ Deno.serve(async (req) => {
     pendingCount += await syncOneItem(supabase, item, creds)
   }
 
-  return new Response(JSON.stringify({ ok: true, pendingCount }))
+  return jsonResponse({ ok: true, pendingCount })
 })
