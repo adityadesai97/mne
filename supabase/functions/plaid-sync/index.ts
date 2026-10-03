@@ -956,12 +956,15 @@ async function syncOneItem(
   for (const row of rows) {
     // Already confirmed in a previous sync: update the linked row's numeric
     // fields in place instead of re-flagging it for review.
+    // NULL never matches .eq(col, ''), so a null security id (cash balances) needs
+    // an explicit IS NULL — otherwise a linked/pending cash row is never found
+    // and gets re-staged on every sync.
     const { data: synced } = await supabase
       .from('plaid_synced_positions')
       .select('id, asset_id, transaction_id, fixed_income_lot_id')
       .eq('plaid_item_id', item.id)
       .eq('external_account_id', row.external_account_id)
-      .eq('external_security_id', row.external_security_id ?? '')
+      .filter('external_security_id', row.external_security_id == null ? 'is' : 'eq', row.external_security_id)
       .maybeSingle()
 
     if (synced) {
@@ -983,7 +986,7 @@ async function syncOneItem(
       .select('id')
       .eq('plaid_item_id', item.id)
       .eq('external_account_id', row.external_account_id)
-      .eq('external_security_id', row.external_security_id ?? '')
+      .filter('external_security_id', row.external_security_id == null ? 'is' : 'eq', row.external_security_id)
       .eq('status', 'pending')
       .maybeSingle()
 
