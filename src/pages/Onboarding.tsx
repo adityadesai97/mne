@@ -4,6 +4,9 @@ import { config } from '@/store/config'
 import type { LLMProvider } from '@/store/config'
 import { isSupabaseReady, getSupabaseClient } from '@/lib/supabase'
 import { loadApiKeys, saveSettings } from '@/lib/db/settings'
+import { getPlaidCredentialsStatus, savePlaidCredentials, createPlaidLinkToken, exchangePlaidPublicToken } from '@/lib/db/plaid'
+import { openPlaidLink } from '@/lib/plaidLink'
+import { showAppAlert } from '@/lib/appAlerts'
 import Landing from './Landing'
 
 interface Props { onComplete: () => void }
@@ -89,7 +92,7 @@ function PrimaryBtn({ children, onClick, disabled }: { children: React.ReactNode
 }
 
 export default function Onboarding({ onComplete }: Props) {
-  const [step, setStep] = useState<'env' | 'checking' | 'auth' | 'apikeys'>(
+  const [step, setStep] = useState<'env' | 'checking' | 'auth' | 'apikeys' | 'plaid'>(
     () => isSupabaseReady() ? 'checking' : 'env'
   )
   const showLandingAsHome = isFlagEnabled(import.meta.env.VITE_LANDING_AS_HOME)
@@ -98,6 +101,9 @@ export default function Onboarding({ onComplete }: Props) {
   const [finnhubKey, setFinnhubKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [plaidSubStep, setPlaidSubStep] = useState<'credentials' | 'connect'>('credentials')
+  const [plaidClientId, setPlaidClientId] = useState('')
+  const [plaidSecret, setPlaidSecret] = useState('')
 
   // When we land on 'checking', verify if a session already exists.
   // Uses onAuthStateChange instead of getSession() so we catch the async
@@ -128,7 +134,17 @@ export default function Onboarding({ onComplete }: Props) {
       }
 
       const keys = await loadApiKeys()
-      if (keys) { config.save(keys); config.clearSignedOut(); onComplete(); return }
+      if (keys) {
+        config.save(keys)
+        config.clearSignedOut()
+        // Plaid is optional and separate from the required API keys above —
+        // only skip straight past it for a returning user who's already
+        // configured it (or explicitly skipped it before).
+        const plaidStatus = await getPlaidCredentialsStatus().catch(() => ({ configured: false }))
+        if (plaidStatus.configured || config.plaidOnboardingSeen) { onComplete(); return }
+        setStep('plaid')
+        return
+      }
       config.clearSignedOut()
       setStep('apikeys')
     }
@@ -177,9 +193,56 @@ export default function Onboarding({ onComplete }: Props) {
         llmProvider:   provider,
         finnhubApiKey: finnhubKey,
       })
-      onComplete()
+      setLoading(false)
+      setStep('plaid')
     } catch (e: any) {
       setError(e.message ?? 'Failed to save API keys')
+      setLoading(false)
+    }
+  }
+
+  function finishPlaidStep() {
+    config.save({ plaidOnboardingSeen: true })
+    onComplete()
+  }
+
+  async function handleSavePlaidCredentials() {
+    if (!plaidClientId || !plaidSecret) { setError('Both fields are required'); return }
+    setLoading(true)
+    setError('')
+    try {
+      await savePlaidCredentials(plaidClientId, 'production', plaidSecret)
+      setLoading(false)
+      setPlaidSubStep('connect')
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to save Plaid credentials')
+      setLoading(false)
+    }
+  }
+
+  async function handleConnectPlaidAccount() {
+    setLoading(true)
+    setError('')
+    try {
+      const linkToken = await createPlaidLinkToken()
+      await openPlaidLink(linkToken, {
+        onSuccess: (publicToken, metadata) => {
+          exchangePlaidPublicToken(publicToken, metadata.institution?.institution_id ?? null, metadata.institution?.name ?? null)
+            .then(({ pendingCount }) => {
+              showAppAlert(
+                pendingCount > 0
+                  ? `Connected — ${pendingCount} position${pendingCount !== 1 ? 's' : ''} to review in Settings`
+                  : 'Account connected',
+                { variant: 'success' },
+              )
+            })
+            .catch((e: Error) => showAppAlert(e.message || 'Failed to finish connecting that account', { variant: 'error' }))
+            .finally(() => finishPlaidStep())
+        },
+        onExit: () => setLoading(false),
+      })
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to start Plaid Link')
       setLoading(false)
     }
   }
@@ -286,6 +349,68 @@ export default function Onboarding({ onComplete }: Props) {
       <PrimaryBtn onClick={handleSaveApiKeys} disabled={loading}>
         {loading ? 'Saving…' : 'Continue'}
       </PrimaryBtn>
+    </div>
+  )
+
+  if (step === 'plaid' && plaidSubStep === 'credentials') return wrap(
+    <div className="space-y-4">
+      <div className="mb-6">
+        <h1 className="font-syne text-xl font-semibold text-foreground">Connect accounts (optional)</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          mne can pull your stock, 401k, cash, and bond/T-bill positions from Plaid instead of you entering them
+          by hand. This needs your own free Plaid developer account — a short signup, not a copy-paste key like
+          the ones above — and stays entirely optional; you can set this up later from Settings instead.
+        </p>
+      </div>
+      <Field
+        id="plaidClientId"
+        label="Plaid Client ID"
+        placeholder="66..."
+        value={plaidClientId}
+        onChange={setPlaidClientId}
+        hint={{ text: 'Get credentials', href: 'https://dashboard.plaid.com/team/keys' }}
+      />
+      <Field
+        id="plaidSecret"
+        label="Plaid Secret"
+        placeholder="production secret"
+        value={plaidSecret}
+        onChange={setPlaidSecret}
+      />
+      {error && <p className="text-destructive text-xs">{error}</p>}
+      <PrimaryBtn onClick={handleSavePlaidCredentials} disabled={loading}>
+        {loading ? 'Saving…' : 'Save & continue'}
+      </PrimaryBtn>
+      <button
+        onClick={finishPlaidStep}
+        disabled={loading}
+        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+      >
+        Skip for now
+      </button>
+    </div>
+  )
+
+  if (step === 'plaid' && plaidSubStep === 'connect') return wrap(
+    <div className="space-y-4">
+      <div className="mb-6">
+        <h1 className="font-syne text-xl font-semibold text-foreground">Connect an account</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Credentials saved. Connect your first brokerage or bank account now, or do it later from Settings —
+          you can add up to 10 free connections.
+        </p>
+      </div>
+      {error && <p className="text-destructive text-xs">{error}</p>}
+      <PrimaryBtn onClick={handleConnectPlaidAccount} disabled={loading}>
+        {loading ? 'Opening…' : 'Connect an account'}
+      </PrimaryBtn>
+      <button
+        onClick={finishPlaidStep}
+        disabled={loading}
+        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+      >
+        Skip for now
+      </button>
     </div>
   )
 }

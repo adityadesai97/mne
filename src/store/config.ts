@@ -10,6 +10,7 @@ const KEYS = {
   theme: 'mne_theme',
   assetView: 'mne_asset_view',
   hideValues: 'mne_hide_values',
+  plaidOnboardingSeen: 'mne_plaid_onboarding_seen',
 }
 const LEGACY_CONNECTION_KEYS = ['mne_supabase_url', 'mne_supabase_anon_key', 'mne_last_user_id']
 const LEGACY_PROVIDER_KEYS = ['mne_gemini_api_key']
@@ -32,6 +33,11 @@ export const config = {
   // the (much tighter) keyless rate limit.
   get coingeckoApiKey() { return localStorage.getItem(KEYS.coingeckoApiKey) ?? '' },
   get needsSignIn() { return localStorage.getItem(KEYS.needsSignIn) === 'true' },
+  // Whether the onboarding wizard's optional Plaid step has already been
+  // shown (completed or explicitly skipped) — not a credential, just a
+  // "don't re-prompt" flag. Actual Plaid connection state lives in the
+  // plaid_credentials/plaid_items DB tables, not here.
+  get plaidOnboardingSeen() { return localStorage.getItem(KEYS.plaidOnboardingSeen) === 'true' },
   get isConfigured() {
     return !!(this.activeApiKey && this.finnhubApiKey && !this.needsSignIn)
   },
@@ -41,17 +47,19 @@ export const config = {
     llmProvider?: LLMProvider
     finnhubApiKey?: string
     coingeckoApiKey?: string
+    plaidOnboardingSeen?: boolean
   }) {
     if (data.claudeApiKey !== undefined) localStorage.setItem(KEYS.claudeApiKey, data.claudeApiKey)
     if (data.groqApiKey !== undefined) localStorage.setItem(KEYS.groqApiKey, data.groqApiKey)
     if (data.llmProvider !== undefined) localStorage.setItem(KEYS.llmProvider, data.llmProvider)
     if (data.finnhubApiKey !== undefined) localStorage.setItem(KEYS.finnhubApiKey, data.finnhubApiKey)
     if (data.coingeckoApiKey !== undefined) localStorage.setItem(KEYS.coingeckoApiKey, data.coingeckoApiKey)
+    if (data.plaidOnboardingSeen !== undefined) localStorage.setItem(KEYS.plaidOnboardingSeen, data.plaidOnboardingSeen ? 'true' : 'false')
   },
   setLLMProvider(provider: LLMProvider) { localStorage.setItem(KEYS.llmProvider, provider) },
   markSignedOut() {
     localStorage.setItem(KEYS.needsSignIn, 'true')
-    ;[KEYS.claudeApiKey, KEYS.groqApiKey, KEYS.llmProvider, KEYS.finnhubApiKey, KEYS.coingeckoApiKey]
+    ;[KEYS.claudeApiKey, KEYS.groqApiKey, KEYS.llmProvider, KEYS.finnhubApiKey, KEYS.coingeckoApiKey, KEYS.plaidOnboardingSeen]
       .forEach(k => localStorage.removeItem(k))
     LEGACY_PROVIDER_KEYS.forEach(k => localStorage.removeItem(k))
     LEGACY_CONNECTION_KEYS.forEach(k => localStorage.removeItem(k))

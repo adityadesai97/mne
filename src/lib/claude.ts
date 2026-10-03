@@ -2628,6 +2628,8 @@ function cryptoPriceToText(value: unknown): string {
   return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`
 }
 
+// Exported alongside executeTool so PlaidReviewModal can run the same
+// required-field checks before writing a confirmed position.
 export function validateWriteToolInput(toolName: string, input: any): string | null {
   if (toolName === 'sell_crypto') {
     if (!input.symbol || !String(input.symbol).trim()) return 'Coin symbol is required'
@@ -2859,7 +2861,10 @@ export function confirmationMessageFor(toolName: string, input: any): string {
   }
 }
 
-async function executeTool(toolName: string, input: any, userId: string): Promise<void> {
+// Exported so PlaidReviewModal can reuse the exact same find-or-create
+// ticker/location/asset/subtype write logic when the user confirms a
+// synced Plaid position, instead of duplicating it.
+export async function executeTool(toolName: string, input: any, userId: string): Promise<void> {
   const supabase = getSupabaseClient()
 
   if (toolName === 'add_ticker_to_watchlist') {
