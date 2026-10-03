@@ -18,6 +18,8 @@ import {
   getPlaidCredentialsStatus,
   savePlaidCredentials,
   listPlaidItems,
+  listPlaidDriftPositions,
+  resolvePlaidDrift,
   removePlaidItem,
   createPlaidLinkToken,
   exchangePlaidPublicToken,
@@ -25,6 +27,7 @@ import {
   getPendingPlaidPositionsCount,
   PLAID_ITEM_LIMIT,
   type PlaidItem,
+  type PlaidDriftPosition,
 } from '@/lib/db/plaid'
 import { openPlaidLink } from '@/lib/plaidLink'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -134,6 +137,8 @@ export default function Settings() {
   const [plaidSyncing, setPlaidSyncing] = useState(false)
   const [plaidRemovingId, setPlaidRemovingId] = useState<string | null>(null)
   const [plaidPendingCount, setPlaidPendingCount] = useState(0)
+  const [plaidDrift, setPlaidDrift] = useState<PlaidDriftPosition[]>([])
+  const [plaidResolvingId, setPlaidResolvingId] = useState<string | null>(null)
   const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
   const [plaidError, setPlaidError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -273,14 +278,16 @@ export default function Settings() {
 
   async function refreshPlaidData() {
     try {
-      const [status, items, pendingCount] = await Promise.all([
+      const [status, items, pendingCount, drift] = await Promise.all([
         getPlaidCredentialsStatus(),
         listPlaidItems(),
         getPendingPlaidPositionsCount(),
+        listPlaidDriftPositions().catch(() => [] as PlaidDriftPosition[]),
       ])
       setPlaidStatus(status)
       setPlaidItems(items)
       setPlaidPendingCount(pendingCount)
+      setPlaidDrift(drift)
     } catch (e) {
       // Plaid tables may not exist yet on an older self-hosted schema —
       // fail quietly rather than blocking the rest of Settings.
@@ -345,6 +352,18 @@ export default function Settings() {
       setPlaidError(e.message ?? 'Sync failed')
     } finally {
       setPlaidSyncing(false)
+    }
+  }
+
+  async function handleResolvePlaidDrift(pos: PlaidDriftPosition) {
+    setPlaidResolvingId(pos.id)
+    try {
+      await resolvePlaidDrift(pos)
+      await refreshPlaidData()
+    } catch (e: any) {
+      showAppAlert(e.message ?? 'Failed to update position', { variant: 'error' })
+    } finally {
+      setPlaidResolvingId(null)
     }
   }
 
@@ -909,13 +928,30 @@ export default function Settings() {
               onClick={() => setPlaidReviewOpen(true)}
             />
           )}
+          {plaidDrift.map(pos => (
+            <Row
+              key={pos.id}
+              label={`${pos.symbol ?? pos.assetName} differs from Plaid`}
+              hint={`Plaid shows ${pos.plaidQuantity} ${pos.isCrypto ? 'units' : 'shares'}, ${Math.abs(pos.driftShares)} ${pos.driftShares > 0 ? 'more' : 'fewer'} than mne tracks`}
+              right={
+                <button
+                  type="button"
+                  disabled={plaidResolvingId === pos.id}
+                  onClick={() => void handleResolvePlaidDrift(pos)}
+                  className="text-primary hover:underline flex-shrink-0 text-xs disabled:opacity-50"
+                >
+                  {plaidResolvingId === pos.id ? 'Updating…' : 'Match Plaid'}
+                </button>
+              }
+            />
+          ))}
           {plaidItems.map(item => (
             <Row
               key={item.id}
               label={item.institution_name || 'Connected account'}
               hint={
                 item.status !== 'active'
-                  ? `Needs attention (${item.status})`
+                  ? `Needs attention${item.last_error ? `: ${item.last_error}` : ` (${item.status})`}`
                   : item.last_synced_at
                     ? `Last synced ${formatDateMDY(item.last_synced_at)}`
                     : 'Not yet synced'
