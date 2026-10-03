@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { deleteTicker, getAllTickers, refreshAllPrices, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
+import { isTickerAsset } from '@/lib/portfolio'
+import { ensureCryptoTicker } from '@/lib/db/cryptoTickers'
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
@@ -39,6 +41,7 @@ export default function Watchlist() {
   const [loaded, setLoaded] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [symbol, setSymbol] = useState('')
+  const [isCrypto, setIsCrypto] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -58,7 +61,7 @@ export default function Watchlist() {
     const [allTickers, allAssets] = await Promise.all([getAllTickers(), getAllAssets()])
     const stockCountsByTicker = new Map<string, number>()
     for (const asset of allAssets ?? []) {
-      if (asset.asset_type !== 'Stock' || !asset.ticker_id) continue
+      if (!isTickerAsset(asset) || !asset.ticker_id) continue
       stockCountsByTicker.set(asset.ticker_id, (stockCountsByTicker.get(asset.ticker_id) ?? 0) + 1)
     }
     const enriched = (allTickers ?? []).map((ticker: any) => ({
@@ -93,6 +96,15 @@ export default function Watchlist() {
     try {
       const { data: { user } } = await getSupabaseClient().auth.getUser()
       if (!user) throw new Error('Not authenticated')
+      if (isCrypto) {
+        // Crypto is priced from CoinGecko, not Finnhub — resolving the coin,
+        // quote, history and theme all live in ensureCryptoTicker.
+        await ensureCryptoTicker(user.id, trimmed, { watchlistOnly: true })
+        setSymbol('')
+        setShowForm(false)
+        await loadTickers()
+        return
+      }
       const newTicker = await upsertTicker({ user_id: user.id, symbol: trimmed, watchlist_only: true })
       await Promise.allSettled([
         autoAssignThemesForTickerIfEnabled({
@@ -187,7 +199,7 @@ export default function Watchlist() {
         </div>
         <motion.button
           whileTap={{ scale: 0.9 }}
-          onClick={() => { setShowForm(v => !v); setError(null); setSymbol('') }}
+          onClick={() => { setShowForm(v => !v); setError(null); setSymbol(''); setIsCrypto(false) }}
           className="bg-primary/10 hover:bg-primary/20 text-foreground rounded-full p-1.5 transition-colors"
           aria-label={showForm ? 'Cancel' : 'Add ticker'}
         >
@@ -225,7 +237,7 @@ export default function Watchlist() {
                     type="text"
                     value={symbol}
                     onChange={e => setSymbol(e.target.value)}
-                    placeholder="Symbol, e.g. AAPL"
+                    placeholder={isCrypto ? 'Symbol, e.g. BTC' : 'Symbol, e.g. AAPL'}
                     className="w-full bg-muted/70 rounded-lg pl-8 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent focus:border-primary/40 focus:bg-background transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
                   />
                 </div>
@@ -237,6 +249,10 @@ export default function Watchlist() {
                   {submitting ? 'Adding…' : 'Add'}
                 </button>
               </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground select-none">
+                <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
+                Cryptocurrency (priced via CoinGecko)
+              </label>
               {error && <p className="text-xs text-destructive">{error}</p>}
             </div>
           </motion.form>

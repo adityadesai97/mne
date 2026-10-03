@@ -16,7 +16,8 @@ import { syncFinnhubKey } from '@/lib/db/settings'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
-import { subscribeToResumeConversationRequests } from '@/lib/commandBarBridge'
+import { subscribeToResumeConversationRequests, subscribeToExplanationRequests, subscribeToPrefillRequests } from '@/lib/commandBarBridge'
+import type { PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 import { getPendingPlaidPositionsCount } from '@/lib/db/plaid'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 
@@ -122,6 +123,8 @@ export default function AppLayout() {
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
+  const [pendingExplanationSlot, setPendingExplanationSlot] = useState<PortfolioInsightSlot | null>(null)
+  const [pendingPrefill, setPendingPrefill] = useState<string | null>(null)
   const [safeInsets, setSafeInsets] = useState(() => readSafeAreaInsets())
   const [plaidPendingCount, setPlaidPendingCount] = useState(0)
   const [plaidBannerDismissed, setPlaidBannerDismissed] = useState(false)
@@ -142,6 +145,24 @@ export default function AppLayout() {
   useEffect(() => {
     return subscribeToResumeConversationRequests((conversationId) => {
       setResumeConversationId(conversationId)
+      setCmdOpen(true)
+    })
+  }, [])
+
+  // Same bridge, for the Portfolio Pulse carousel — it has no existing
+  // conversation to resume, just a request to open the command bar and let
+  // it fetch/generate the clicked card's own explanation.
+  useEffect(() => {
+    return subscribeToExplanationRequests((slot) => {
+      setPendingExplanationSlot(slot)
+      setCmdOpen(true)
+    })
+  }, [])
+
+  // Portfolio Pulse event cards: open the command bar with a question typed in.
+  useEffect(() => {
+    return subscribeToPrefillRequests((text) => {
+      setPendingPrefill(text)
       setCmdOpen(true)
     })
   }, [])
@@ -300,6 +321,10 @@ export default function AppLayout() {
         onClose={() => setCmdOpen(false)}
         resumeConversationId={resumeConversationId}
         onResumeHandled={() => setResumeConversationId(null)}
+        startExplanationRequest={pendingExplanationSlot}
+        onExplanationRequestHandled={() => setPendingExplanationSlot(null)}
+        prefillQuery={pendingPrefill}
+        onPrefillHandled={() => setPendingPrefill(null)}
       />
       {cgAlert && (
         <div

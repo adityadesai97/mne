@@ -93,6 +93,7 @@ vi.mock('../lib/db/transactions', () => ({
 vi.mock('../lib/db/settings', () => ({
   syncFinnhubKey: () => Promise.resolve(),
   getSettings: () => Promise.resolve(null),
+  getUserSettings: () => Promise.resolve(null),
   saveSettings: () => Promise.resolve(),
 }))
 

@@ -2,11 +2,17 @@ import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
 import { X, Paperclip, Sparkles, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
-import { runCommand, type AgentTrace, type Message } from '@/lib/claude'
+import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
-import { saveConversation, getConversation, type ConversationMessage } from '@/lib/db/conversations'
+import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage, type ConversationOrigin, type ConversationMessageExplanationDetail } from '@/lib/db/conversations'
+import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
+import { config } from '@/store/config'
+import { MODEL_FOR_PROVIDER } from '@/lib/llm'
+import { TokenUsageInfo } from '@/components/TokenUsageInfo'
+import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
+import { generatePortfolioExplanation, explanationTriggerQuestion, stripSources, type PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 import {
   Table as FluidTable,
   TableHeader as FluidTableHeader,
@@ -29,8 +35,10 @@ function normalizeErrorMessage(message: string): string {
   return message
 }
 
+const MARKDOWN_LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/
+
 function parseInlineMd(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i}>{part.slice(2, -2)}</strong>
@@ -43,6 +51,14 @@ function parseInlineMd(text: string): React.ReactNode {
         <code key={i} className="px-1 py-0.5 rounded bg-muted text-[0.92em] font-mono">
           {part.slice(1, -1)}
         </code>
+      )
+    }
+    const link = MARKDOWN_LINK_RE.exec(part)
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          {link[1]}
+        </a>
       )
     }
     return <Fragment key={i}>{part}</Fragment>
@@ -317,7 +333,7 @@ function ThinkingBubble({ streamingText }: { streamingText: string }) {
 
 type DisplayMessage =
   | { id: number; role: 'user'; content: string }
-  | { id: number; role: 'assistant'; kind: 'text'; content: string; trace?: AgentTrace }
+  | { id: number; role: 'assistant'; kind: 'text'; content: string; trace?: AgentTrace; explanationDetail?: ConversationMessageExplanationDetail }
   | { id: number; role: 'assistant'; kind: 'action'; action: any }
 
 /** A one-line human-readable summary of a non-text agent action, for
@@ -343,7 +359,7 @@ function summarizeAction(action: any): string {
 function serializeDisplayMessages(messages: DisplayMessage[]): ConversationMessage[] {
   return messages.map((m): ConversationMessage => {
     if (m.role === 'user') return { role: 'user', content: m.content }
-    if (m.kind === 'text') return { role: 'assistant', content: m.content }
+    if (m.kind === 'text') return { role: 'assistant', content: m.content, ...(m.explanationDetail ? { explanationDetail: m.explanationDetail } : {}) }
     return { role: 'assistant', content: summarizeAction(m.action) }
   })
 }
@@ -357,9 +373,20 @@ interface Props {
   /** Called once the resume request above has been consumed (loaded or
    *  failed) so the caller can clear it. */
   onResumeHandled?: () => void
+  /** Set by the Portfolio Pulse carousel to open the panel and have it
+   *  fetch/generate the clicked card's own explanation as a fresh
+   *  conversation (there's nothing to resume — see commandBarBridge.ts). */
+  startExplanationRequest?: PortfolioInsightSlot | null
+  /** Called once the explanation request above has been consumed. */
+  onExplanationRequestHandled?: () => void
+  /** Set by a Portfolio Pulse event card: a question to type into the input
+   *  (not submit) when the panel opens. */
+  prefillQuery?: string | null
+  /** Called once the prefill above has been placed in the input. */
+  onPrefillHandled?: () => void
 }
 
-export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled }: Props) {
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled }: Props) {
   const [query, setQuery] = useState('')
   const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
@@ -382,6 +409,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   // which every later exchange updates the same row instead of creating a
   // new one.
   const conversationIdRef = useRef<string | null>(null)
+  // Which surface this thread started from — 'portfolio_explanation' when
+  // resumed from the Home page card (see the resume effect below), else the
+  // 'command_bar' default for a normal typed turn. Threaded into feedback
+  // (FeedbackForm) so it's evident on review where the conversation began.
+  const conversationOriginRef = useRef<ConversationOrigin>('command_bar')
 
   const handleClose = () => {
     if (writesDone) {
@@ -488,8 +520,20 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       resetStream()
       msgIdRef.current = 0
       conversationIdRef.current = null
+      conversationOriginRef.current = 'command_bar'
     }
   }, [open])
+
+  // A Portfolio Pulse event card's question: type it in and leave the
+  // sending to the user. Runs after the reset-on-close effect above, so a
+  // panel opening from closed keeps the text.
+  useEffect(() => {
+    if (!open || !prefillQuery) return
+    setQuery(prefillQuery)
+    onPrefillHandled?.()
+    // No cleanup: handling the prefill clears it, which re-runs this effect.
+    window.setTimeout(() => focusInput(), 0)
+  }, [open, prefillQuery, onPrefillHandled, focusInput])
 
   // Resuming a saved conversation from Settings' history list: load its
   // messages, show them as an already-expanded thread, and keep saving
@@ -502,10 +546,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         const conversation = await getConversation(resumeConversationId)
         if (cancelled || !conversation) return
         conversationIdRef.current = conversation.id
+        conversationOriginRef.current = conversation.origin ?? 'command_bar'
         setDisplayMessages(conversation.messages.map((m) => (
           m.role === 'user'
             ? { id: nextId(), role: 'user' as const, content: m.content }
-            : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content }
+            : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content, ...(m.explanationDetail ? { explanationDetail: m.explanationDetail } : {}) }
         )))
         setIsExpanded(true)
       } catch (e) {
@@ -517,15 +562,85 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     return () => { cancelled = true }
   }, [open, resumeConversationId])
 
-  const persistConversation = useCallback(async (messages: DisplayMessage[]) => {
+  const persistConversation = useCallback(async (messages: DisplayMessage[], usage?: AgentTrace['usage']) => {
     const serialized = serializeDisplayMessages(messages)
     if (serialized.length === 0) return
     try {
-      conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized })
+      // `origin` is only honored by saveConversation on the initial insert
+      // (no id yet) — harmless to pass on every later update of the same
+      // conversation too.
+      conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized, origin: conversationOriginRef.current })
+      if (usage && (usage.inputTokens > 0 || usage.outputTokens > 0)) {
+        const provider = config.llmProvider
+        const model = MODEL_FOR_PROVIDER[provider]
+        void incrementConversationUsage(conversationIdRef.current, usage.inputTokens, usage.outputTokens)
+        void logLlmUsage({
+          feature: 'command_bar',
+          provider,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          conversationId: conversationIdRef.current,
+        })
+      }
     } catch (e) {
       console.error('Failed to save conversation history', e)
     }
   }, [])
+
+  // Opening from a Portfolio Pulse carousel card: there's no conversation to
+  // resume, just a fresh one to start for the clicked slot. Shows the
+  // seeded question immediately (reusing the normal `loading` thinking
+  // indicator) while generatePortfolioExplanation runs — which itself
+  // decides whether to reuse that slot's cached explanation or actually
+  // call the LLM (see CLAUDE.md) — then appends the reply and persists as
+  // usual.
+  useEffect(() => {
+    if (!open || !startExplanationRequest) return
+    const slot = startExplanationRequest
+    let cancelled = false
+    ;(async () => {
+      conversationIdRef.current = null
+      conversationOriginRef.current = 'portfolio_explanation'
+      const userMessage: DisplayMessage = { id: nextId(), role: 'user', content: explanationTriggerQuestion(slot) }
+      setDisplayMessages([userMessage])
+      setIsExpanded(true)
+      setLoading(true)
+      try {
+        const row = await generatePortfolioExplanation(slot)
+        if (cancelled) return
+        const usage = (row.input_tokens || row.output_tokens)
+          ? { inputTokens: row.input_tokens ?? 0, outputTokens: row.output_tokens ?? 0 }
+          : undefined
+        const assistantMessage: DisplayMessage = {
+          id: nextId(),
+          role: 'assistant',
+          kind: 'text',
+          // stripSources: defensive against a summary generated by an
+          // older version of this feature (see portfolioExplanation.ts) —
+          // new summaries never have a Sources block to begin with.
+          content: stripSources(row.summary),
+          trace: { generatedAt: new Date().toISOString(), steps: [], usage },
+          explanationDetail: { movers: row.movers, themeMoves: row.theme_moves, marketHeadlines: row.market_headlines },
+        }
+        const updated = [userMessage, assistantMessage]
+        setDisplayMessages(updated)
+        void persistConversation(updated, usage)
+      } catch (e: any) {
+        if (cancelled) return
+        setDisplayMessages([
+          userMessage,
+          { id: nextId(), role: 'assistant', kind: 'action', action: { type: 'error', message: normalizeErrorMessage(e?.message || 'Failed to generate the explanation') } },
+        ])
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          onExplanationRequestHandled?.()
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, startExplanationRequest, persistConversation])
 
   useEffect(() => {
     if (inputRef.current) autoGrow(inputRef.current)
@@ -577,7 +692,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         ]
         setDisplayMessages(updated)
         setIsExpanded(true)
-        void persistConversation(updated)
+        void persistConversation(updated, action.trace?.usage)
       } else if (wasExpanded) {
         const updated: DisplayMessage[] = [
           ...baseMessages,
@@ -852,6 +967,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                               onDone={handleWriteDone}
                               onClose={handleClose}
                               userQuery={precedingUserMessage?.role === 'user' ? precedingUserMessage.content : undefined}
+                              conversationOrigin={conversationOriginRef.current}
                             />
                           </motion.div>
                         )
@@ -1097,14 +1213,14 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   return <p className="p-4 text-sm text-destructive">{normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
 }
 
-function MessageBubble({ message, onDone, onClose, userQuery }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string }) {
+function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string; conversationOrigin?: ConversationOrigin }) {
   const [showTrace, setShowTrace] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[80%] whitespace-pre-wrap break-words">
+        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-2xl rounded-br-md max-w-[80%] whitespace-pre-wrap break-words selection:bg-primary-foreground selection:text-primary">
           {message.content}
         </span>
       </div>
@@ -1112,6 +1228,7 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
   }
   if (message.kind === 'text') {
     const traceSteps = message.trace?.steps ?? []
+    const usage = message.trace?.usage
 
     return (
       <div className="flex items-start gap-2">
@@ -1119,7 +1236,9 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
           <Sparkles size={11} className="text-primary" aria-hidden="true" />
         </div>
         <div className="text-sm text-foreground max-w-[80%] space-y-2 bg-muted/40 rounded-2xl rounded-tl-md px-3.5 py-2.5">
-          {renderAssistantMarkdown(message.content)}
+          {message.explanationDetail
+            ? <ExplanationMessageContent content={message.content} detail={message.explanationDetail} />
+            : renderAssistantMarkdown(message.content)}
           {traceSteps.length > 0 && (
             <ThinkingSteps
               size="compact"
@@ -1151,9 +1270,16 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
               <MessageSquare size={11} aria-hidden="true" />
               Feedback
             </button>
+            <TokenUsageInfo inputTokens={usage?.inputTokens} outputTokens={usage?.outputTokens} />
           </div>
           {feedbackOpen && (
-            <FeedbackForm agentResponse={message.content} userQuery={userQuery} onDismiss={() => setFeedbackOpen(false)} />
+            <FeedbackForm
+              agentResponse={message.content}
+              userQuery={userQuery}
+              usage={usage}
+              conversationOrigin={conversationOrigin}
+              onDismiss={() => setFeedbackOpen(false)}
+            />
           )}
         </div>
       </div>
@@ -1171,7 +1297,13 @@ function MessageBubble({ message, onDone, onClose, userQuery }: { message: Displ
 /** Inline feedback form for a single agent response — free text plus an
  *  optional file attachment (e.g. a screenshot of the bad output), submitted
  *  to `command_feedback` alongside the response text itself. */
-function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: string; userQuery?: string; onDismiss: () => void }) {
+function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onDismiss }: {
+  agentResponse: string
+  userQuery?: string
+  usage?: AgentTraceUsage
+  conversationOrigin?: ConversationOrigin
+  onDismiss: () => void
+}) {
   const [text, setText] = useState('')
   const [attachment, setAttachment] = useState<CommandFeedbackAttachment | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1187,7 +1319,15 @@ function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: 
     setSubmitting(true)
     setError(null)
     try {
-      await submitCommandFeedback({ userQuery, agentResponse, feedbackText: text.trim() || null, attachment })
+      await submitCommandFeedback({
+        userQuery,
+        agentResponse,
+        feedbackText: text.trim() || null,
+        attachment,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        conversationOrigin,
+      })
       setSubmitted(true)
     } catch (e: any) {
       setError(e.message || 'Failed to submit feedback')
@@ -1198,12 +1338,17 @@ function FeedbackForm({ agentResponse, userQuery, onDismiss }: { agentResponse: 
 
   return (
     <div className="rounded-md border border-border/70 bg-muted/20 p-2.5 space-y-2">
+      {conversationOrigin === 'portfolio_explanation' && (
+        <p className="text-[10px] text-muted-foreground/70 italic">
+          This conversation started from the portfolio explanation card — that'll be noted with your feedback.
+        </p>
+      )}
       <textarea
         rows={2}
         placeholder="What was wrong, or how could this be better?"
         value={text}
         onChange={e => setText(e.target.value)}
-        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-base md:text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
       {attachment && (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">

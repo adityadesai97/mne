@@ -2,7 +2,7 @@ import type { getAllAssets } from './db/assets'
 
 export type Asset = Awaited<ReturnType<typeof getAllAssets>>[number]
 
-type Transaction = { count: number | string; cost_price: number | string; sold_at_vest?: number | string | null }
+type Transaction = { count: number | string; cost_price: number | string; sold_at_vest?: number | string | null; purchase_date?: string | null }
 type StockSubtype = { transactions: Transaction[] | null; rsu_grants: unknown[] | null }
 type FixedIncomeLot = { count: number | string; cost_price: number | string; purchase_date: string }
 
@@ -21,6 +21,15 @@ export type AssetTyped = {
   maturity_date?: string | null
   face_value?: number | null
   fixed_income_lots?: FixedIncomeLot[] | null
+}
+
+// Stock and Crypto share the same ticker-plus-tax-lots model (shares/units ×
+// tickers.current_price, cost basis per lot, mark-to-market P&L); only how the
+// ticker is priced differs (Finnhub vs CoinGecko — see tickers.kind). Anything
+// that's about "a position valued off a live ticker price" should key off this
+// rather than asset_type === 'Stock'.
+export function isTickerAsset(asset: { asset_type?: string | null }): boolean {
+  return asset.asset_type === 'Stock' || asset.asset_type === 'Crypto'
 }
 
 // Bond and T-Bill are tradable Fixed Income subtypes — bought in lots (like
@@ -45,7 +54,7 @@ export function computeFixedIncomeCostBasis(asset: AssetTyped): number {
 }
 
 export function computeAssetValue(asset: AssetTyped): number {
-  if (asset.asset_type === 'Stock') {
+  if (isTickerAsset(asset)) {
     if (asset.ticker?.current_price == null) return 0
     const price = asset.ticker.current_price
     const shares = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
@@ -69,12 +78,12 @@ export function computeShareCount(asset: AssetTyped): number {
     .reduce((sum, t) => sum + netCount(t), 0) ?? 0
 }
 
-// P&L is a stock-only concept — non-stock assets (Cash, 401k, Fixed Income, HSA, etc.)
+// P&L is a ticker-asset (stock/crypto) concept — other assets (Cash, 401k, Fixed Income, HSA, etc.)
 // have no cost basis and must never contribute a gain/loss figure. A tradable
 // Fixed Income lot's projected return is computeFixedIncomeExpectedReturn,
 // a held-to-maturity figure, not a mark-to-market gain/loss.
 export function computeUnrealizedGain(asset: AssetTyped): number {
-  if (asset.asset_type !== 'Stock') return 0
+  if (!isTickerAsset(asset)) return 0
   return computeAssetValue(asset) - computeCostBasis(asset)
 }
 
@@ -82,25 +91,83 @@ export function computeTotalNetWorth(assets: AssetTyped[]): number {
   return assets.reduce((sum, a) => sum + computeAssetValue(a), 0)
 }
 
-export type DailyChange = { dollarChange: number; percentChange: number }
+export type DailyChange = {
+  dollarChange: number
+  percentChange: number
+  /** Every lot in the position was bought today, so the move is the
+   *  position's return since purchase rather than the asset's move since the
+   *  last close. Absent otherwise. */
+  sinceBuy?: true
+}
 
-// Today's move for a single stock position, derived from the ticker's last
-// refreshed quote (current_price vs previous_close) rather than the net
-// worth snapshot series — this reflects live prices even before today's
-// snapshot has been recorded. Returns null when there isn't enough data to
-// compute a change (non-stock asset, no shares held, or previous_close not
-// yet populated by a price refresh).
-export function computeDailyChange(asset: AssetTyped): DailyChange | null {
-  if (asset.asset_type !== 'Stock') return null
+/** Today's date (YYYY-MM-DD) in the user's local time zone — purchase dates
+ *  are typed in as the user's own calendar date, so "bought today" must be
+ *  judged against the local date, not UTC. */
+export function localDateKey(date: Date = new Date()): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+export type DailyPosition = {
+  /** Σ units × (currentPrice − anchor), unrounded. */
+  dollarChange: number
+  /** Σ units × anchor — the value the move is measured against. */
+  startValue: number
+  allBoughtToday: boolean
+}
+
+/** Today's move for a position, measured on what the user held: a lot bought
+ *  before today is anchored at the ticker's previous_close, but a lot bought
+ *  *today* is anchored at its own cost price — those units weren't in the
+ *  portfolio for the earlier part of the day, so the move from the last close
+ *  up to the moment of purchase isn't the portfolio's move. A lot with no
+ *  purchase date, or with no usable cost basis, keeps the previous_close
+ *  anchor. For crypto, previous_close is the price 24h ago and purchase dates
+ *  are whole days, so "bought today" (local calendar day) is an approximation
+ *  of "bought within the last 24h". */
+export function computeDailyPosition(asset: AssetTyped, today: string = localDateKey()): DailyPosition | null {
+  if (!isTickerAsset(asset)) return null
   const currentPrice = asset.ticker?.current_price
   const previousClose = asset.ticker?.previous_close
   if (currentPrice == null || previousClose == null || previousClose === 0) return null
-  const shares = computeShareCount(asset)
-  if (shares <= 0) return null
-  const priceDelta = currentPrice - previousClose
+
+  let dollarChange = 0
+  let startValue = 0
+  let units = 0
+  let allBoughtToday = true
+  for (const lot of (asset.stock_subtypes ?? []).flatMap((st) => st.transactions ?? [])) {
+    const lotUnits = netCount(lot)
+    if (lotUnits <= 0) continue
+    const costPrice = Number(lot.cost_price)
+    const boughtToday = typeof lot.purchase_date === 'string' && lot.purchase_date >= today && costPrice > 0
+    const anchor = boughtToday ? costPrice : previousClose
+    dollarChange += lotUnits * (currentPrice - anchor)
+    startValue += lotUnits * anchor
+    units += lotUnits
+    if (!boughtToday) allBoughtToday = false
+  }
+  if (units <= 0 || startValue <= 0) return null
+  return { dollarChange, startValue, allBoughtToday }
+}
+
+// Today's move for a single position, derived from the ticker's last
+// refreshed quote (current_price vs previous_close) rather than the net
+// worth snapshot series — this reflects live prices even before today's
+// snapshot has been recorded. Measured on what the user held (see
+// computeDailyPosition): a lot bought today counts only from its purchase
+// price. Returns null when there isn't enough data to compute a change
+// (non-ticker asset, no shares held, or previous_close not yet populated by
+// a price refresh). With no lot bought today this is exactly
+// shares × (current − previous_close) and (current − previous_close) /
+// previous_close, as before.
+export function computeDailyChange(asset: AssetTyped, today: string = localDateKey()): DailyChange | null {
+  const position = computeDailyPosition(asset, today)
+  if (!position) return null
   return {
-    dollarChange: Math.round(priceDelta * shares * 100) / 100,
-    percentChange: (priceDelta / previousClose) * 100,
+    dollarChange: Math.round(position.dollarChange * 100) / 100,
+    percentChange: (position.dollarChange * 100) / position.startValue,
+    ...(position.allBoughtToday ? { sinceBuy: true as const } : {}),
   }
 }
 

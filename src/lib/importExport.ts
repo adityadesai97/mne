@@ -50,6 +50,9 @@ type ParsedTicker = {
   lastUpdated: string | null
   logo: string | null
   watchlistOnly: boolean
+  // How the ticker is priced — absent in older exports, meaning 'stock'.
+  kind?: 'stock' | 'crypto'
+  coingeckoId?: string | null
 }
 
 type ParsedTickerTheme = {
@@ -313,6 +316,7 @@ function normalizeAssetType(value: unknown): string {
   if (normalized === 'cash') return 'Cash'
   if (normalized === 'hsa') return 'HSA'
   if (normalized === 'stock') return 'Stock'
+  if (normalized === 'crypto' || normalized === 'cryptocurrency') return 'Crypto'
   return asString(value) || 'Other'
 }
 
@@ -353,6 +357,7 @@ function normalizeAccountType(value: unknown): string {
   if (normalized.includes('check')) return 'Checking'
   if (normalized.includes('sav')) return 'Savings'
   if (normalized.includes('misc')) return 'Misc'
+  if (normalized.includes('crypto')) return 'Crypto'
   return raw || 'Investment'
 }
 
@@ -424,6 +429,8 @@ function normalizeTicker(rawTicker: unknown): ParsedTicker | null {
     lastUpdated: toIsoDate(rawTicker.lastUpdated ?? rawTicker.last_updated),
     logo: asString(rawTicker.logo) || null,
     watchlistOnly: asBoolean(rawTicker.watchlistOnly ?? rawTicker.watchlist_only, false),
+    kind: asString(rawTicker.kind).toLowerCase() === 'crypto' ? 'crypto' : 'stock',
+    coingeckoId: asString(rawTicker.coingeckoId ?? rawTicker.coingecko_id) || null,
   }
 }
 
@@ -1233,7 +1240,7 @@ export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
   XLSX.utils.book_append_sheet(wb, toSheet(payload.data.themes, ['id', 'name']), SHEET.themes)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.tickers,
-    ['id', 'symbol', 'currentPrice', 'lastUpdated', 'logo', 'watchlistOnly'],
+    ['id', 'symbol', 'currentPrice', 'lastUpdated', 'logo', 'watchlistOnly', 'kind', 'coingeckoId'],
   ), SHEET.tickers)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.tickerThemes,
@@ -1660,6 +1667,8 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       lastUpdated?: string | null
       logo?: string | null
       watchlistOnly?: boolean
+      kind?: 'stock' | 'crypto'
+      coingeckoId?: string | null
     }): Promise<string | null> {
       throwIfImportAborted(signal)
       const symbol = asString(params.symbol).toUpperCase()
@@ -1683,6 +1692,9 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         last_updated: params.lastUpdated ?? null,
         logo: params.logo ?? null,
         watchlist_only: asBoolean(params.watchlistOnly, true),
+        // Only set on crypto so re-importing never flips an existing ticker's
+        // kind back to 'stock' (the column default) via the upsert.
+        ...(params.kind === 'crypto' ? { kind: 'crypto', coingecko_id: params.coingeckoId ?? null } : {}),
       }
 
       const { data: tickerRow, error } = await supabase
@@ -1719,6 +1731,8 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         lastUpdated: ticker.lastUpdated,
         logo: ticker.logo,
         watchlistOnly: ticker.watchlistOnly,
+        kind: ticker.kind,
+        coingeckoId: ticker.coingeckoId,
       })
     }
 
@@ -1728,7 +1742,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         ? locationIdBySourceId.get(asset.locationId) ?? await ensureLocation(asset.locationName, asset.accountType, asset.locationId)
         : await ensureLocation(asset.locationName, asset.accountType)
 
-      const isStock = asset.assetType === 'Stock'
+      const isStock = asset.assetType === 'Stock' || asset.assetType === 'Crypto'
       let tickerId: string | null = null
       if (isStock) {
         throwIfImportAborted(signal)

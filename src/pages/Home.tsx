@@ -7,7 +7,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
-import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange } from '@/lib/portfolio'
+import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
@@ -20,6 +20,7 @@ import { revealUp } from '@/lib/motionPresets'
 import { colorForAssetType } from '@/lib/typeColors'
 import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -290,7 +291,7 @@ export default function Home() {
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
   // equal to the sum of the individual P/L numbers the user sees elsewhere.
-  const stockAssets = assets.filter((asset) => asset.asset_type === 'Stock')
+  const stockAssets = assets.filter((asset) => isTickerAsset(asset))
   const stockTotalCost = stockAssets.reduce((sum, asset) => sum + computeCostBasis(asset), 0)
   const stockGainLoss = stockAssets.reduce((sum, asset) => sum + computeUnrealizedGain(asset), 0)
   const stockGainLossPercent = stockTotalCost > 0 ? (stockGainLoss / stockTotalCost) * 100 : 0
@@ -354,15 +355,19 @@ export default function Home() {
     return [...dailyMovers].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 5)
   }, [dailyMovers, moverSort])
 
-  // Today's change, from the tail of the net worth series (today's snapshot
-  // vs yesterday's, one row per day) — drives both the ambient glow's color
-  // and the daily change figure shown under the hero number.
-  const previousNetWorthValue = netWorthValues.length >= 2 ? netWorthValues[netWorthValues.length - 2] : null
-  const todayChange = netWorthValues.length >= 2
-    ? netWorthValues[netWorthValues.length - 1] - previousNetWorthValue!
-    : 0
-  const todayChangePercent = previousNetWorthValue ? (todayChange / previousNetWorthValue) * 100 : 0
-  const hasMood = netWorthValues.length >= 2 && todayChange !== 0
+  // Today's change: the sum of each stock position's (current price − last
+  // close) move — the same computeDailyChange basis Portfolio Pulse uses
+  // (via computeMovers), so the hero and the explanation card always agree.
+  // Deliberately NOT derived from the net worth snapshot series anymore —
+  // that compared today's live net worth to whatever net worth happened to
+  // be recorded the last time the app was open yesterday (recordDailySnapshot
+  // overwrites "today"'s row on every visit), which could be any point in
+  // yesterday's session rather than its actual close, and silently understated
+  // or overstated the real move depending on when that was. Drives both the
+  // ambient glow's color and the daily change figure under the hero number.
+  const todayChange = dailyMovers.reduce((sum, m) => sum + m.dollarChange, 0)
+  const todayChangePercent = totalValue > 0 ? (todayChange / totalValue) * 100 : 0
+  const hasMood = dailyMovers.length > 0 && todayChange !== 0
   const moodIsPositive = todayChange >= 0
 
   // Short rotating one-liners for the insight ticker — all derived from data
@@ -655,6 +660,13 @@ export default function Home() {
             {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
+
+        {/* PORTFOLIO PULSE — placed after Allocation/P&L (not right below the
+            Net Worth hero) so the grid's auto-placement fills the 2x2 gap
+            beside the hero with those two cards first, same as without this
+            card; a col-span-6 item any earlier pushes the placement cursor
+            past that gap and leaves it permanently empty. */}
+        <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />
 
         {/* DAILY MOVERS */}
         {dailyMovers.length > 0 && (

@@ -120,7 +120,7 @@ export default function Settings() {
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
   const [hideValues, setHideValues] = useHideValues()
   const [editingKeys, setEditingKeys] = useState(false)
-  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' })
+  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
   const [providerWarning, setProviderWarning] = useState('')
@@ -255,11 +255,13 @@ export default function Settings() {
       const dbRow: Record<string, string> = { user_id: user.id, finnhub_api_key: mergedFinnhub }
       if (keyDraft.claudeApiKey) dbRow.claude_api_key = keyDraft.claudeApiKey
       if (keyDraft.groqApiKey)   dbRow.groq_api_key   = keyDraft.groqApiKey
+      if (keyDraft.coingeckoApiKey) dbRow.coingecko_api_key = keyDraft.coingeckoApiKey
       await saveSettings(dbRow)
       config.save({
         claudeApiKey:  keyDraft.claudeApiKey  || config.claudeApiKey,
         groqApiKey:    keyDraft.groqApiKey    || config.groqApiKey,
         finnhubApiKey: mergedFinnhub,
+        coingeckoApiKey: keyDraft.coingeckoApiKey || config.coingeckoApiKey,
       })
       setEditingKeys(false)
     } catch (e: any) {
@@ -569,7 +571,12 @@ export default function Settings() {
                   className="flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <p className="text-sm font-medium truncate">{c.title}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{formatDateMDY(c.updated_at)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {formatDateMDY(c.updated_at)}
+                    {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
+                      <span className="tabular-nums"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
+                    )}
+                  </p>
                 </button>
                 <button
                   type="button"
@@ -791,6 +798,22 @@ export default function Settings() {
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
             />
           </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CoinGecko API Key <span className="normal-case tracking-normal">(optional)</span></label>
+              <a href="https://www.coingecko.com/en/api/pricing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+                Get key <ExternalLink size={9} />
+              </a>
+            </div>
+            <input
+              type="password"
+              placeholder="CG-..."
+              value={keyDraft.coingeckoApiKey}
+              onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
+              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+            <p className="text-[11px] text-muted-foreground">Crypto prices work without one, but a free Demo key avoids CoinGecko's tight keyless rate limit and powers crypto price alerts.</p>
+          </div>
           {keyError && <p className="text-xs text-destructive">{keyError}</p>}
           <div className="flex gap-2">
             <button
@@ -812,7 +835,7 @@ export default function Settings() {
         <div className="bg-card rounded-xl overflow-hidden">
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
-            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
+            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
           >
             <p className="text-sm font-medium flex-1">Update API keys</p>
             <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />

@@ -571,3 +571,34 @@ test('"All data" scope round-trips net worth snapshots and conversation history'
     { role: 'assistant', content: 'Your net worth is $10,500.' },
   ])
 })
+
+test('crypto tickers and assets round-trip through serialize/parse', () => {
+  const payload = serializeForExport({
+    assets: [{
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'BTC',
+      asset_type: 'Crypto',
+      location: { id: '22222222-2222-4222-8222-222222222222', name: 'Coinbase', account_type: 'Crypto' },
+      ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'BTC', current_price: 60000, kind: 'crypto', coingecko_id: 'bitcoin' },
+      stock_subtypes: [{
+        id: '44444444-4444-4444-8444-444444444444',
+        subtype: 'Market',
+        transactions: [{ count: 0.12345678, cost_price: 30000.5, purchase_date: '2025-01-02', capital_gains_status: 'Long Term' }],
+        rsu_grants: [],
+      }],
+    }],
+    tickers: [{ id: '33333333-3333-4333-8333-333333333333', symbol: 'BTC', current_price: 60000, kind: 'crypto', coingecko_id: 'bitcoin' }],
+    themes: [],
+  } as any)
+
+  expect(payload.data.assets[0].assetType).toBe('Crypto')
+  expect(payload.data.tickers[0]).toMatchObject({ symbol: 'BTC', kind: 'crypto', coingeckoId: 'bitcoin' })
+
+  const wb = buildExportWorkbook(payload)
+  const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const parsed = parseWorkbookImport(buffer)
+  expect(parsed.tickers[0]).toMatchObject({ symbol: 'BTC', kind: 'crypto', coingeckoId: 'bitcoin' })
+  expect(parsed.assets[0].assetType).toBe('Crypto')
+  expect(parsed.locations[0]).toMatchObject({ name: 'Coinbase', accountType: 'Crypto' })
+  expect(parsed.assets[0].stockSubtypes[0].transactions[0].count).toBeCloseTo(0.12345678, 8)
+})

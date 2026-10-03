@@ -36,6 +36,11 @@ create unique index if not exists tickers_user_id_symbol_key
 alter table public.tickers add column if not exists logo text;
 alter table public.tickers add column if not exists watchlist_only boolean not null default false;
 alter table public.tickers add column if not exists previous_close numeric(12,4);
+-- How a ticker is priced: 'stock' → Finnhub, 'crypto' → CoinGecko (via coingecko_id).
+alter table public.tickers add column if not exists kind text not null default 'stock';
+alter table public.tickers drop constraint if exists tickers_kind_check;
+alter table public.tickers add constraint tickers_kind_check check (kind in ('stock', 'crypto'));
+alter table public.tickers add column if not exists coingecko_id text;
 
 create table if not exists public.themes (
   id uuid primary key default gen_random_uuid(),
@@ -106,7 +111,7 @@ update public.assets set fixed_income_subtype = 'Deposit', asset_type = 'Fixed I
 
 alter table public.assets
   add constraint assets_asset_type_check
-  check (asset_type in ('Stock', '401k', 'Fixed Income', 'Cash', 'HSA'));
+  check (asset_type in ('Stock', 'Crypto', '401k', 'Fixed Income', 'Cash', 'HSA'));
 
 do $$
 begin
@@ -342,7 +347,11 @@ alter table public.user_settings add column if not exists vest_alerts_enabled bo
 alter table public.user_settings add column if not exists capital_gains_alerts_enabled boolean not null default true;
 alter table public.user_settings add column if not exists llm_provider text not null default 'claude';
 alter table public.user_settings add column if not exists groq_api_key text;
+alter table public.user_settings add column if not exists coingecko_api_key text;
 alter table public.user_settings drop column if exists tax_harvest_threshold;
+-- Was a toggle for the (now removed) background generation path; the
+-- feature is on-demand only now, so there's nothing to opt in/out of.
+alter table public.user_settings drop column if exists portfolio_explanation_enabled;
 
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),
@@ -361,6 +370,20 @@ create table if not exists public.net_worth_snapshots (
 create unique index if not exists net_worth_snapshots_user_id_date_key
   on public.net_worth_snapshots (user_id, date);
 
+-- One row per (user, ticker, day) — backs weekly/monthly/yearly/custom
+-- timeframe stock and sector moves in the Portfolio Pulse carousel.
+create table if not exists public.ticker_price_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker_id uuid not null references public.tickers(id) on delete cascade,
+  date date not null,
+  price numeric(12,4) not null
+);
+create unique index if not exists ticker_price_history_user_ticker_date_key
+  on public.ticker_price_history (user_id, ticker_id, date);
+create index if not exists ticker_price_history_ticker_date_idx
+  on public.ticker_price_history (ticker_id, date desc);
+
 -- Feedback on individual command bar agent responses. Attachment is stored
 -- inline as base64 (small user-supplied files, e.g. a screenshot) rather
 -- than requiring a Supabase Storage bucket for self-hosters.
@@ -375,6 +398,9 @@ create table if not exists public.command_feedback (
   attachment_content text,
   created_at timestamptz not null default now()
 );
+alter table public.command_feedback add column if not exists input_tokens int;
+alter table public.command_feedback add column if not exists output_tokens int;
+alter table public.command_feedback add column if not exists conversation_origin text not null default 'command_bar';
 
 -- Command bar conversation history. `messages` is a JSONB array of
 -- {role, content} — the same shape threaded through runCommand's history —
@@ -389,10 +415,79 @@ create table if not exists public.command_conversations (
 );
 create index if not exists command_conversations_user_updated_idx
   on public.command_conversations (user_id, updated_at desc);
+alter table public.command_conversations add column if not exists total_input_tokens int not null default 0;
+alter table public.command_conversations add column if not exists total_output_tokens int not null default 0;
+-- Which surface started the conversation ('command_bar' | 'portfolio_explanation')
+-- — set once at creation and never changed; see CLAUDE.md.
+alter table public.command_conversations add column if not exists origin text not null default 'command_bar';
+
+-- Portfolio Performance Explanation: a toggleable, LLM-generated summary of
+-- why the user's portfolio moved. See CLAUDE.md for the full design.
+create table if not exists public.portfolio_explanations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  summary text not null,
+  has_major_moves boolean not null default false,
+  day_change_dollars numeric(14,2),
+  day_change_percent numeric(8,4),
+  basis_net_worth numeric(14,2),
+  movers jsonb not null default '[]'::jsonb,
+  is_broad_market_move boolean not null default false,
+  market_headlines jsonb not null default '[]'::jsonb,
+  theme_moves jsonb not null default '[]'::jsonb,
+  trigger text not null,
+  input_tokens int,
+  output_tokens int,
+  generated_at timestamptz not null default now()
+);
+create unique index if not exists portfolio_explanations_user_id_key
+  on public.portfolio_explanations (user_id);
+-- Generation is on-demand only (see CLAUDE.md) — reused until a material
+-- move happens or a new market day starts, tracked by this column.
+alter table public.portfolio_explanations add column if not exists market_date date not null default current_date;
+
+-- One row per (user, scope, scope_key, timeframe) — the Portfolio Pulse
+-- carousel caches an independent explanation per insight (a stock's daily
+-- move, a sector's weekly move, the portfolio's yearly move, etc.).
+alter table public.portfolio_explanations add column if not exists scope text not null default 'portfolio';
+alter table public.portfolio_explanations add column if not exists scope_key text not null default '';
+alter table public.portfolio_explanations add column if not exists timeframe text not null default 'daily';
+alter table public.portfolio_explanations add column if not exists window_days int not null default 1;
+
+alter table public.portfolio_explanations drop constraint if exists portfolio_explanations_scope_check;
+alter table public.portfolio_explanations
+  add constraint portfolio_explanations_scope_check
+  check (scope in ('stock', 'sector', 'portfolio'));
+
+alter table public.portfolio_explanations drop constraint if exists portfolio_explanations_timeframe_check;
+alter table public.portfolio_explanations
+  add constraint portfolio_explanations_timeframe_check
+  check (timeframe in ('daily', 'weekly', 'monthly', 'yearly', 'custom'));
+
+drop index if exists portfolio_explanations_user_id_key;
+create unique index if not exists portfolio_explanations_scope_key
+  on public.portfolio_explanations (user_id, scope, scope_key, timeframe);
+
+-- Append-only usage ledger shared by portfolio explanations + the command
+-- bar. Each feature also denormalizes its own latest/running totals above
+-- for cheap inline display without querying this table.
+create table if not exists public.llm_usage_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  feature text not null,
+  provider text not null,
+  model text not null,
+  input_tokens int not null default 0,
+  output_tokens int not null default 0,
+  conversation_id uuid references public.command_conversations(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists llm_usage_log_user_feature_created_idx
+  on public.llm_usage_log (user_id, feature, created_at desc);
 
 -- RLS
 alter table public.allowed_emails enable row level security;
-alter table public.admin_users enable row level security;
+alter table if exists public.admin_users enable row level security;
 alter table public.locations enable row level security;
 alter table public.tickers enable row level security;
 alter table public.themes enable row level security;
@@ -410,10 +505,41 @@ alter table public.plaid_item_secrets enable row level security;
 alter table public.plaid_pending_positions enable row level security;
 alter table public.plaid_synced_positions enable row level security;
 alter table public.user_settings enable row level security;
+-- Crypto needs sub-cent prices and satoshi-level quantities; widen the
+-- original stock-oriented numeric precision (no-op when already widened).
+do $$
+declare
+  r record;
+begin
+  for r in
+    select * from (values
+      ('tickers', 'current_price', 18, 8),
+      ('tickers', 'previous_close', 18, 8),
+      ('ticker_price_history', 'price', 18, 8),
+      ('transactions', 'count', 20, 8),
+      ('transactions', 'cost_price', 18, 8)
+    ) as t(tbl, col, prec, scl)
+  loop
+    -- numeric_precision is null for an unbounded numeric column (already
+    -- wide enough — constraining it would be a regression, not a widening).
+    if exists (
+      select 1 from information_schema.columns c
+      where c.table_schema = 'public' and c.table_name = r.tbl and c.column_name = r.col
+        and c.numeric_precision is not null
+        and (c.numeric_precision < r.prec or c.numeric_scale < r.scl)
+    ) then
+      execute format('alter table public.%I alter column %I type numeric(%s,%s)', r.tbl, r.col, r.prec, r.scl);
+    end if;
+  end loop;
+end $$;
+
 alter table public.push_subscriptions enable row level security;
 alter table public.net_worth_snapshots enable row level security;
+alter table public.ticker_price_history enable row level security;
 alter table public.command_feedback enable row level security;
 alter table public.command_conversations enable row level security;
+alter table public.portfolio_explanations enable row level security;
+alter table public.llm_usage_log enable row level security;
 
 drop policy if exists allowlist_self_read on public.allowed_emails;
 create policy allowlist_self_read
@@ -612,6 +738,14 @@ create policy own_net_worth_snapshots
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists own_ticker_price_history on public.ticker_price_history;
+create policy own_ticker_price_history
+  on public.ticker_price_history
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 drop policy if exists own_command_feedback on public.command_feedback;
 create policy own_command_feedback
   on public.command_feedback
@@ -623,6 +757,14 @@ create policy own_command_feedback
 drop policy if exists own_command_conversations on public.command_conversations;
 create policy own_command_conversations
   on public.command_conversations
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_portfolio_explanations on public.portfolio_explanations;
+create policy own_portfolio_explanations
+  on public.portfolio_explanations
   for all
   to authenticated
   using (auth.uid() = user_id)
@@ -699,3 +841,11 @@ create policy own_plaid_synced_positions
       where pi.id = plaid_item_id and pi.user_id = auth.uid()
     )
   );
+
+drop policy if exists own_llm_usage_log on public.llm_usage_log;
+create policy own_llm_usage_log
+  on public.llm_usage_log
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

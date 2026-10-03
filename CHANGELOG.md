@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `Crypto` asset type: held as fractional-unit tax lots (same ticker + lots model as stocks), priced from CoinGecko (keyless, or with an optional free Demo key) instead of Finnhub. Add via the command bar (`asset_class: 'Crypto'`) or the Watchlist's "Cryptocurrency" toggle; new `tickers.kind` / `tickers.coingecko_id` / `user_settings.coingecko_api_key` columns and widened price/quantity precision (migration `20260921000000`)
 - `setup.sh` now automatically deploys edge functions, sets VAPID secrets, and configures pg_cron schedules when a Supabase Personal Access Token is provided
 - `upgrade.sh` script for one-command upgrades: pulls code, applies schema, redeploys functions
 - Inline documentation in `setup.sh` explaining every step and non-obvious decisions

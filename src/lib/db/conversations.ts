@@ -1,19 +1,48 @@
 import { getSupabaseClient } from '../supabase'
+import type { PortfolioExplanationHeadline, PortfolioExplanationMover, PortfolioExplanationThemeMove } from './portfolioExplanations'
+
+/** Structured data behind a portfolio-explanation reply — carried
+ *  alongside the plain summary text so the command bar can render
+ *  interactive mover/theme highlights and a market-context list instead of
+ *  a flat links list (see CommandBar.tsx's ExplanationMessageContent).
+ *  Only ever set on the one assistant message that IS a generated
+ *  explanation; a normal command bar reply (including follow-ups in the
+ *  same conversation) has none. */
+export interface ConversationMessageExplanationDetail {
+  movers: PortfolioExplanationMover[]
+  themeMoves: PortfolioExplanationThemeMove[]
+  marketHeadlines: PortfolioExplanationHeadline[]
+}
 
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
+  explanationDetail?: ConversationMessageExplanationDetail
 }
+
+export type ConversationOrigin = 'command_bar' | 'portfolio_explanation'
 
 export interface ConversationSummary {
   id: string
   title: string
   created_at: string
   updated_at: string
+  // Only populated by listConversations (the Settings history list, where
+  // they're displayed) — omitted from getConversation/getAllConversations'
+  // selects since those callers don't show them.
+  total_input_tokens?: number
+  total_output_tokens?: number
 }
 
 export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[]
+  // Which surface started this conversation — 'portfolio_explanation' when
+  // the user clicked the Home page explanation card rather than typing
+  // directly into the command bar. Feeds into feedback (see feedback.ts)
+  // so it's evident, on review, which conversations began that way.
+  // Optional/defaults to 'command_bar' since not every caller selects it
+  // (e.g. the "All data" export doesn't need it).
+  origin?: ConversationOrigin
 }
 
 const TITLE_MAX_LENGTH = 60
@@ -34,7 +63,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, created_at, updated_at')
+    .select('id, title, created_at, updated_at, total_input_tokens, total_output_tokens')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
   if (error) throw error
@@ -50,31 +79,36 @@ export async function getAllConversations(): Promise<Conversation[]> {
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, messages, created_at, updated_at')
+    .select('id, title, messages, created_at, updated_at, origin')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return (data ?? []).map((row) => ({ ...row, messages: Array.isArray(row.messages) ? row.messages : [] }))
+  return (data ?? []).map((row: any) => ({ ...row, messages: Array.isArray(row.messages) ? row.messages : [], origin: row.origin ?? 'command_bar' }))
 }
 
 export async function getConversation(id: string): Promise<Conversation | null> {
   const { data, error } = await getSupabaseClient()
     .from('command_conversations')
-    .select('id, title, messages, created_at, updated_at')
+    .select('id, title, messages, created_at, updated_at, origin')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  return { ...data, messages: Array.isArray(data.messages) ? data.messages : [] }
+  return { ...data, messages: Array.isArray(data.messages) ? data.messages : [], origin: (data as any).origin ?? 'command_bar' }
 }
 
 /** Creates or updates a conversation's saved message list. Pass `id` to
  *  update an existing conversation (title is left as-is when a title was
  *  already set); omit it to create a new one, deriving the title from the
- *  first message. Returns the conversation's id. */
+ *  first message. `origin` only applies on creation — pass
+ *  'portfolio_explanation' when seeding a conversation from a Portfolio
+ *  Pulse carousel card (see PortfolioPulseCarousel); omit it for a normal
+ *  typed command bar turn, which defaults to 'command_bar'. Returns the
+ *  conversation's id. */
 export async function saveConversation(input: {
   id?: string | null
   messages: ConversationMessage[]
+  origin?: ConversationOrigin
 }): Promise<string> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) throw new Error('Not authenticated')
@@ -96,11 +130,37 @@ export async function saveConversation(input: {
       user_id: user.id,
       title: deriveConversationTitle(firstUserMessage),
       messages: input.messages,
+      origin: input.origin ?? 'command_bar',
     })
     .select('id')
     .single()
   if (error) throw error
   return data.id
+}
+
+/** Adds this turn's token usage to a conversation's running totals — called
+ *  alongside saveConversation once a turn resolves and its usage (from
+ *  AgentTrace.usage) is known. Best-effort: a logging failure here must
+ *  never surface to the user or block the conversation from being saved. */
+export async function incrementConversationUsage(id: string, inputTokens: number, outputTokens: number): Promise<void> {
+  if (inputTokens <= 0 && outputTokens <= 0) return
+  try {
+    const { data, error } = await getSupabaseClient()
+      .from('command_conversations')
+      .select('total_input_tokens, total_output_tokens')
+      .eq('id', id)
+      .maybeSingle()
+    if (error || !data) return
+    await getSupabaseClient()
+      .from('command_conversations')
+      .update({
+        total_input_tokens: Number(data.total_input_tokens ?? 0) + inputTokens,
+        total_output_tokens: Number(data.total_output_tokens ?? 0) + outputTokens,
+      })
+      .eq('id', id)
+  } catch (err) {
+    console.error('Failed to update conversation token usage', err)
+  }
 }
 
 export async function deleteConversation(id: string): Promise<void> {

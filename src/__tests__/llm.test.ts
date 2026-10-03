@@ -25,6 +25,9 @@ vi.mock('openai', () => {
     yield { choices: [{ delta: { tool_calls: [{ index: 1, function: { name: 'exposure', arguments: '{"by"' } }] } }] }
     yield { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ':5}' } }] } }] }
     yield { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: ':"ticker"}' } }] } }] }
+    // The usage-only trailing chunk (stream_options.include_usage) has an
+    // empty choices array and no delta to read — only a top-level `usage`.
+    yield { choices: [], usage: { prompt_tokens: 42, completion_tokens: 7 } }
   }
 
   class FakeOpenAI {
@@ -66,4 +69,34 @@ test('groq adapter accumulates streamed text and per-index tool-call fragments',
     type: 'function',
     function: { name: 'get_exposure', arguments: '{"by":"ticker"}' },
   })
+})
+
+test('groq adapter requests stream_options.include_usage and normalizes the returned usage', async () => {
+  const client = createLLMClient('groq', 'fake-key')
+  const response = await client.chat.completions.create({ model: MODEL_FOR_PROVIDER.groq, messages: [{ role: 'user', content: 'hi' }] })
+
+  expect(response.usage).toEqual({ inputTokens: 42, outputTokens: 7 })
+})
+
+vi.mock('@anthropic-ai/sdk', () => {
+  class FakeAnthropic {
+    messages = {
+      stream: vi.fn(() => ({
+        on: vi.fn(),
+        finalMessage: vi.fn(async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input_tokens: 55, output_tokens: 12 },
+        })),
+      })),
+    }
+  }
+  return { default: FakeAnthropic }
+})
+
+test('claude adapter normalizes Anthropic usage into the shared shape', async () => {
+  const client = createLLMClient('claude', 'fake-key')
+  const response = await client.chat.completions.create({ model: MODEL_FOR_PROVIDER.claude, messages: [{ role: 'user', content: 'hi' }] })
+
+  expect(response.choices[0].message.content).toBe('ok')
+  expect(response.usage).toEqual({ inputTokens: 55, outputTokens: 12 })
 })

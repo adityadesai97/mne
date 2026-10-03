@@ -18,3 +18,44 @@ export function subscribeToResumeConversationRequests(listener: ResumeConversati
 export function resumeConversationInCommandBar(conversationId: string) {
   resumeListeners.forEach(listener => listener(conversationId))
 }
+
+// Same pattern, for the Portfolio Pulse carousel: it has no existing
+// conversation to resume, just a request to open the command bar and have
+// it fetch/generate the clicked card's own explanation (see CommandBar.tsx's
+// handling of `startExplanationRequest`). Carries which slot was clicked
+// (stock/sector/portfolio × timeframe) so the command bar knows which one.
+import type { PortfolioInsightSlot } from './portfolioExplanation'
+
+type StartExplanationListener = (slot: PortfolioInsightSlot) => void
+
+const explanationListeners = new Set<StartExplanationListener>()
+
+export function subscribeToExplanationRequests(listener: StartExplanationListener) {
+  explanationListeners.add(listener)
+  return () => {
+    explanationListeners.delete(listener)
+  }
+}
+
+export function openPortfolioExplanationInCommandBar(slot: PortfolioInsightSlot) {
+  explanationListeners.forEach(listener => listener(slot))
+}
+
+// Same pattern again, for Portfolio Pulse event cards (an upcoming vest, a lot
+// turning long-term, …): they open the command bar with a question already
+// typed into the input — never auto-submitted, so the user reads it and
+// presses Enter themselves.
+type PrefillListener = (text: string) => void
+
+const prefillListeners = new Set<PrefillListener>()
+
+export function subscribeToPrefillRequests(listener: PrefillListener) {
+  prefillListeners.add(listener)
+  return () => {
+    prefillListeners.delete(listener)
+  }
+}
+
+export function openCommandBarWithPrompt(text: string) {
+  prefillListeners.forEach(listener => listener(text))
+}
