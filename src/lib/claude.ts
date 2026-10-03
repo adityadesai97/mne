@@ -2864,7 +2864,16 @@ export function confirmationMessageFor(toolName: string, input: any): string {
 // Exported so PlaidReviewModal can reuse the exact same find-or-create
 // ticker/location/asset/subtype write logic when the user confirms a
 // synced Plaid position, instead of duplicating it.
-export async function executeTool(toolName: string, input: any, userId: string): Promise<void> {
+// A handful of callers (PlaidReviewModal) need to know what row a write
+// actually created/touched, to record a sync link afterward — every other
+// branch still implicitly returns undefined, which those callers ignore.
+export interface ExecuteToolResult {
+  assetId?: string
+  transactionId?: string
+  fixedIncomeLotId?: string
+}
+
+export async function executeTool(toolName: string, input: any, userId: string): Promise<ExecuteToolResult | void> {
   const supabase = getSupabaseClient()
 
   if (toolName === 'add_ticker_to_watchlist') {
@@ -2986,15 +2995,16 @@ export async function executeTool(toolName: string, input: any, userId: string):
     }).select('id').single()
     if (error) throw new Error(`Failed to add asset: ${error.message}`)
     if (isTradable) {
-      const { error: lotError } = await supabase.from('fixed_income_lots').insert({
+      const { data: lotData, error: lotError } = await supabase.from('fixed_income_lots').insert({
         asset_id: data.id,
         count: input.count,
         cost_price: input.cost_price,
         purchase_date: input.purchase_date,
-      })
+      }).select('id').single()
       if (lotError) throw new Error(`Failed to add lot: ${lotError.message}`)
+      return { assetId: data.id, fixedIncomeLotId: lotData.id }
     }
-    return
+    return { assetId: data.id }
   }
 
   if (toolName === 'add_cash_assets') {
@@ -3159,7 +3169,7 @@ export async function executeTool(toolName: string, input: any, userId: string):
 
     // 6. Create the transaction (tax lot)
     const soldAtVest = Number(input.sold_at_vest ?? 0)
-    const { error } = await supabase.from('transactions').insert({
+    const { data: txData, error } = await supabase.from('transactions').insert({
       subtype_id: subtypeId,
       count: input.count,
       cost_price: input.cost_price,
@@ -3167,8 +3177,9 @@ export async function executeTool(toolName: string, input: any, userId: string):
       capital_gains_status,
       ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
       ...(rsuGrantId ? { rsu_grant_id: rsuGrantId } : {}),
-    })
+    }).select('id').single()
     if (error) throw new Error(`Failed to create transaction: ${error.message}`)
+    return { assetId, transactionId: txData.id }
   }
 
   if (toolName === 'add_stock_transactions') {
@@ -3476,6 +3487,7 @@ export async function executeTool(toolName: string, input: any, userId: string):
       .update({ price: input.price })
       .eq('id', existing.id)
     if (error) throw new Error(`Failed to update asset: ${error.message}`)
+    return { assetId: existing.id }
   }
 }
 
