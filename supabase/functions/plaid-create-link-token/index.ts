@@ -13,8 +13,30 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // function's index.ts in isolation with no access to sibling files, the
 // same reason check-vests/check-prices are each fully self-contained.
 // Keep these copies in sync if the Plaid call shape changes.
+//
+// Deployed with verify_jwt:false deliberately, even though this function
+// is user-invoked: with verify_jwt:true, Supabase's gateway requires a
+// valid JWT on EVERY request including the browser's CORS preflight
+// OPTIONS request — but a preflight never carries the app's Authorization
+// header, so the gateway 401s it before this code ever runs, breaking
+// functions.invoke() from the browser entirely. Auth is instead checked
+// manually below via userClient.auth.getUser(), same protection, just not
+// gatekept at the platform level.
 
 const PLAID_ITEM_LIMIT = 10
+
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
 
 function plaidBaseUrl(env: string) {
   return env === 'sandbox' ? 'https://sandbox.plaid.com' : 'https://production.plaid.com'
@@ -51,6 +73,10 @@ async function plaidFetch(
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   const authHeader = req.headers.get('Authorization') ?? ''
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -59,7 +85,7 @@ Deno.serve(async (req) => {
   )
   const { data: { user } } = await userClient.auth.getUser()
   if (!user) {
-    return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 })
+    return jsonResponse({ error: 'Not authenticated' }, 401)
   }
 
   const supabase = createClient(
@@ -69,10 +95,7 @@ Deno.serve(async (req) => {
 
   const creds = await getPlaidCredentials(supabase, user.id)
   if (!creds) {
-    return new Response(
-      JSON.stringify({ error: 'Plaid credentials not configured. Add your client_id/secret in Settings first.' }),
-      { status: 400 },
-    )
+    return jsonResponse({ error: 'Plaid credentials not configured. Add your client_id/secret in Settings first.' }, 400)
   }
 
   const { count } = await supabase
@@ -80,10 +103,7 @@ Deno.serve(async (req) => {
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
   if ((count ?? 0) >= PLAID_ITEM_LIMIT) {
-    return new Response(
-      JSON.stringify({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }),
-      { status: 400 },
-    )
+    return jsonResponse({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }, 400)
   }
 
   try {
@@ -97,11 +117,8 @@ Deno.serve(async (req) => {
       country_codes: ['US'],
       language: 'en',
     })
-    return new Response(JSON.stringify({ link_token: linkToken.link_token }))
+    return jsonResponse({ link_token: linkToken.link_token })
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Failed to create link token' }),
-      { status: 500 },
-    )
+    return jsonResponse({ error: err instanceof Error ? err.message : 'Failed to create link token' }, 500)
   }
 })

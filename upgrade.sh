@@ -227,9 +227,13 @@ PLAID_FUNCTIONS_DEPLOYED=false
 if [ -n "$PAT" ] && [ -n "$PROJECT_REF" ] && command -v zip &>/dev/null; then
   echo "  Deploying edge functions..."
   PLAID_DEPLOY_FAILED_FUNCS=""
-  # slug:verify_jwt pairs — plaid-sync is cron-driven like check-*, the rest
-  # are invoked by the signed-in user's own browser session.
-  for ENTRY in "plaid-create-link-token:true" "plaid-exchange-token:true" "plaid-sync:false" "plaid-sync-me:true" "plaid-remove-item:true"; do
+  # All five are verify_jwt:false — even the four invoked from the user's
+  # own browser session, since Supabase's gateway enforces JWT
+  # verification on the CORS preflight OPTIONS request too when
+  # verify_jwt:true, which breaks functions.invoke() from a browser (a
+  # preflight never carries the app's Authorization header). Each
+  # function does its own auth check internally instead.
+  for ENTRY in "plaid-create-link-token:false" "plaid-exchange-token:false" "plaid-sync:false" "plaid-sync-me:false" "plaid-remove-item:false"; do
     SLUG="${ENTRY%%:*}"
     VERIFY_JWT="${ENTRY##*:}"
     FN_ZIP="/tmp/mne_fn_${SLUG}.zip"
@@ -283,11 +287,11 @@ if [ "$PLAID_FUNCTIONS_DEPLOYED" = "false" ]; then
   echo ""
   echo "    supabase login"
   PLAID_REF="${PROJECT_REF:-<project-ref>}"
-  echo "    supabase functions deploy plaid-create-link-token --project-ref ${PLAID_REF}"
-  echo "    supabase functions deploy plaid-exchange-token    --project-ref ${PLAID_REF}"
+  echo "    supabase functions deploy plaid-create-link-token --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy plaid-exchange-token    --project-ref ${PLAID_REF} --no-verify-jwt"
   echo "    supabase functions deploy plaid-sync              --project-ref ${PLAID_REF} --no-verify-jwt"
-  echo "    supabase functions deploy plaid-sync-me           --project-ref ${PLAID_REF}"
-  echo "    supabase functions deploy plaid-remove-item       --project-ref ${PLAID_REF}"
+  echo "    supabase functions deploy plaid-sync-me           --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy plaid-remove-item       --project-ref ${PLAID_REF} --no-verify-jwt"
   echo ""
 fi
 

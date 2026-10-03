@@ -1,9 +1,25 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // See plaid-create-link-token/index.ts for why this credential-lookup +
-// fetch-wrapper snippet is duplicated across the plaid-* functions.
+// fetch-wrapper snippet is duplicated across the plaid-* functions, and why
+// this is deployed with verify_jwt:false despite being user-invoked (the
+// gateway's own JWT check on CORS preflight OPTIONS requests breaks
+// browser calls; auth is checked manually below instead).
 
 const PLAID_ITEM_LIMIT = 10
+
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
 
 function plaidBaseUrl(env: string) {
   return env === 'sandbox' ? 'https://sandbox.plaid.com' : 'https://production.plaid.com'
@@ -40,6 +56,10 @@ async function plaidFetch(
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   const authHeader = req.headers.get('Authorization') ?? ''
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -48,17 +68,17 @@ Deno.serve(async (req) => {
   )
   const { data: { user } } = await userClient.auth.getUser()
   if (!user) {
-    return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 })
+    return jsonResponse({ error: 'Not authenticated' }, 401)
   }
 
   let body: { public_token?: string; institution_id?: string; institution_name?: string }
   try {
     body = await req.json()
   } catch {
-    return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 })
+    return jsonResponse({ error: 'Invalid request body' }, 400)
   }
   if (!body.public_token) {
-    return new Response(JSON.stringify({ error: 'Missing public_token' }), { status: 400 })
+    return jsonResponse({ error: 'Missing public_token' }, 400)
   }
 
   const supabase = createClient(
@@ -68,7 +88,7 @@ Deno.serve(async (req) => {
 
   const creds = await getPlaidCredentials(supabase, user.id)
   if (!creds) {
-    return new Response(JSON.stringify({ error: 'Plaid credentials not configured.' }), { status: 400 })
+    return jsonResponse({ error: 'Plaid credentials not configured.' }, 400)
   }
 
   // Race-safety: re-check the cap right before we commit, since the UI's
@@ -79,10 +99,7 @@ Deno.serve(async (req) => {
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
   if ((countBefore ?? 0) >= PLAID_ITEM_LIMIT) {
-    return new Response(
-      JSON.stringify({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }),
-      { status: 400 },
-    )
+    return jsonResponse({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }, 400)
   }
 
   let accessToken: string
@@ -92,10 +109,7 @@ Deno.serve(async (req) => {
     accessToken = exchanged.access_token
     itemId = exchanged.item_id
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Failed to exchange token' }),
-      { status: 500 },
-    )
+    return jsonResponse({ error: err instanceof Error ? err.message : 'Failed to exchange token' }, 500)
   }
 
   // Re-check the cap one more time now that we hold a real Plaid Item — if
@@ -112,10 +126,7 @@ Deno.serve(async (req) => {
     } catch {
       // best-effort — the user still gets a clear error below either way
     }
-    return new Response(
-      JSON.stringify({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }),
-      { status: 400 },
-    )
+    return jsonResponse({ error: `You've reached the free-plan limit of ${PLAID_ITEM_LIMIT} connected accounts.` }, 400)
   }
 
   const { data: itemRow, error: itemError } = await supabase
@@ -136,7 +147,7 @@ Deno.serve(async (req) => {
     } catch {
       // best-effort
     }
-    return new Response(JSON.stringify({ error: itemError?.message ?? 'Failed to save connection' }), { status: 500 })
+    return jsonResponse({ error: itemError?.message ?? 'Failed to save connection' }, 500)
   }
 
   await supabase.from('plaid_item_secrets').insert({ item_id: itemRow.id, access_token: accessToken })
@@ -157,5 +168,5 @@ Deno.serve(async (req) => {
     // Initial sync is best-effort — the hourly cron will pick it up either way.
   }
 
-  return new Response(JSON.stringify({ item_id: itemId, pendingCount }))
+  return jsonResponse({ item_id: itemId, pendingCount })
 })
