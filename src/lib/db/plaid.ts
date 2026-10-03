@@ -1,4 +1,7 @@
 import { getSupabaseClient } from '../supabase'
+import { planLedger, type LedgerLot } from '../plaidLedger'
+import { localDateKey } from '../portfolio'
+import { deleteAsset } from './assets'
 
 // Client-side helpers for the Plaid integration. Each user configures their
 // own Plaid developer credentials (client_id/secret) here, the same way they
@@ -89,6 +92,8 @@ export interface PlaidItem {
   status: 'active' | 'error' | 'disconnected'
   created_at: string
   last_synced_at: string | null
+  // Plaid's own error code/message from the last failed sync (null when healthy).
+  last_error: string | null
 }
 
 export const PLAID_ITEM_LIMIT = 10
@@ -96,7 +101,7 @@ export const PLAID_ITEM_LIMIT = 10
 export async function listPlaidItems(): Promise<PlaidItem[]> {
   const { data, error } = await getSupabaseClient()
     .from('plaid_items')
-    .select('id, institution_id, institution_name, status, created_at, last_synced_at')
+    .select('id, institution_id, institution_name, status, created_at, last_synced_at, last_error')
     .order('created_at', { ascending: true })
   if (error) throw error
   return data ?? []
@@ -205,4 +210,118 @@ export async function removePlaidItem(plaidItemId: string): Promise<void> {
   })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
+}
+
+// A linked position whose tracked shares differ from what Plaid reports — the
+// sync's safety net for anything the transaction ledger couldn't explain (a
+// same-day trade, a transfer without a price, an institution with no
+// transaction feed). Never auto-corrected; the user resolves it explicitly.
+export interface PlaidDriftPosition {
+  id: string
+  assetId: string
+  assetName: string
+  symbol: string | null
+  plaidQuantity: number
+  driftShares: number
+  plaidCostPrice: number | null
+  tickerPrice: number | null
+}
+
+export async function listPlaidDriftPositions(): Promise<PlaidDriftPosition[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('plaid_synced_positions')
+    .select('id, asset_id, plaid_quantity, plaid_cost_price, drift_shares, asset:assets(name, ticker:tickers(symbol, current_price))')
+    .not('drift_shares', 'is', null)
+    .neq('drift_shares', 0)
+  if (error) throw error
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    assetId: r.asset_id,
+    assetName: r.asset?.name ?? 'Position',
+    symbol: r.asset?.ticker?.symbol ?? null,
+    plaidQuantity: Number(r.plaid_quantity ?? 0),
+    driftShares: Number(r.drift_shares),
+    plaidCostPrice: r.plaid_cost_price != null ? Number(r.plaid_cost_price) : null,
+    tickerPrice: r.asset?.ticker?.current_price != null ? Number(r.asset.ticker.current_price) : null,
+  }))
+}
+
+// Brings a drifted position's tracked shares in line with Plaid: extra shares
+// become a new lot dated today (costed at Plaid's average cost, else the
+// current price), missing shares are taken oldest-lot-first. Only Market lots
+// are ever touched — a gap that lives in RSU/ESPP lots is left for the user.
+export async function resolvePlaidDrift(pos: PlaidDriftPosition): Promise<void> {
+  const supabase = getSupabaseClient()
+  const today = localDateKey()
+
+  const { data: marketSubtype, error: subtypeError } = await supabase
+    .from('stock_subtypes')
+    .select('id')
+    .eq('asset_id', pos.assetId)
+    .eq('subtype', 'Market')
+    .maybeSingle()
+  if (subtypeError) throw subtypeError
+
+  if (pos.driftShares > 0) {
+    const cost = pos.plaidCostPrice ?? pos.tickerPrice
+    if (cost == null) throw new Error('No cost basis from Plaid and no current price — add the shares manually.')
+    let subtypeId = marketSubtype?.id as string | undefined
+    if (!subtypeId) {
+      const { data, error } = await supabase
+        .from('stock_subtypes')
+        .insert({ asset_id: pos.assetId, subtype: 'Market' })
+        .select('id')
+        .single()
+      if (error) throw error
+      subtypeId = data.id as string
+    }
+    const { error } = await supabase.from('transactions').insert({
+      subtype_id: subtypeId,
+      count: Math.round(pos.driftShares * 1e6) / 1e6,
+      cost_price: Math.round(cost * 1e4) / 1e4,
+      purchase_date: today,
+      capital_gains_status: 'Short Term',
+    })
+    if (error) throw error
+  } else {
+    if (!marketSubtype) throw new Error('No regular lots to reduce — this difference is in RSU/ESPP shares; adjust it manually.')
+    const { data: lots, error: lotsError } = await supabase
+      .from('transactions')
+      .select('id, count, cost_price, purchase_date')
+      .eq('subtype_id', marketSubtype.id)
+    if (lotsError) throw lotsError
+    const plan = planLedger((lots ?? []) as LedgerLot[], [
+      { investment_transaction_id: 'drift', date: today, type: 'sell', subtype: 'sell', quantity: pos.driftShares, price: null },
+    ])
+    if (plan.skipped.length > 0) {
+      throw new Error('Plaid shows fewer shares than the regular lots hold — the rest is in RSU/ESPP lots; adjust it manually.')
+    }
+    for (const op of plan.ops) {
+      if (op.kind === 'update_lot') {
+        const { error } = await supabase.from('transactions').update({ count: op.count }).eq('id', op.lotId)
+        if (error) throw error
+      } else if (op.kind === 'delete_lot') {
+        const { error } = await supabase.from('transactions').delete().eq('id', op.lotId)
+        if (error) throw error
+      }
+    }
+  }
+
+  if (pos.plaidQuantity <= 0) {
+    // Plaid no longer holds it at all: same cleanup a manual full sell does,
+    // except an asset with a still-active RSU grant stays (its future vests
+    // belong to it).
+    const { data: grantRows, error: grantError } = await supabase
+      .from('stock_subtypes')
+      .select('rsu_grants(id, ended_at)')
+      .eq('asset_id', pos.assetId)
+    if (grantError) throw grantError
+    const hasActiveGrant = (grantRows ?? []).some((r: any) => (r.rsu_grants ?? []).some((g: any) => !g.ended_at))
+    if (!hasActiveGrant) {
+      await deleteAsset(pos.assetId)
+      return
+    }
+  }
+  const { error } = await supabase.from('plaid_synced_positions').update({ drift_shares: 0 }).eq('id', pos.id)
+  if (error) throw error
 }
