@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { PlaidReviewModal } from '../components/PlaidReviewModal'
 import { listPendingPositions, markPendingPositionConfirmed, dismissPendingPosition, recordPlaidSyncLink } from '../lib/db/plaid'
 import { executeTool, validateWriteToolInput } from '../lib/claude'
+import { getAllAssets } from '../lib/db/assets'
 
 vi.mock('../lib/db/plaid', () => ({
   listPendingPositions: vi.fn(),
@@ -16,16 +17,19 @@ vi.mock('../lib/claude', () => ({
   validateWriteToolInput: vi.fn(() => null),
 }))
 
+vi.mock('../lib/db/assets', () => ({
+  getAllAssets: vi.fn(),
+}))
+
 vi.mock('../lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
-    from: () => ({
-      select: () => ({
-        in: () => Promise.resolve({ data: [{ id: 'asset-1', name: 'Existing Fidelity Stock' }] }),
-      }),
-    }),
   }),
 }))
+
+const fixtureAssets = [
+  { id: 'asset-1', name: 'Existing Fidelity Stock', asset_type: 'Stock', ticker: { symbol: 'AAPL', kind: 'stock' }, location: { name: 'Fidelity' } },
+]
 
 const pendingCash = {
   id: 'pending-1',
@@ -74,6 +78,7 @@ beforeEach(() => {
   vi.mocked(recordPlaidSyncLink).mockReset().mockResolvedValue(undefined)
   vi.mocked(executeTool).mockReset().mockResolvedValue(undefined)
   vi.mocked(validateWriteToolInput).mockReset().mockReturnValue(null)
+  vi.mocked(getAllAssets).mockReset().mockResolvedValue(fixtureAssets as any)
 })
 
 test('renders nothing when closed', () => {
@@ -101,7 +106,7 @@ test('a matched flat-balance row reconciles via update_asset_value, not a duplic
   await waitFor(() => {
     expect(executeTool).toHaveBeenCalledWith(
       'update_asset_value',
-      { asset_name: 'Existing Fidelity Stock', price: 1500 },
+      { asset_name: 'Existing Fidelity Stock', _assetId: 'asset-1', _expectedAssetType: 'Cash', price: 1500 },
       'user-1',
     )
   })
@@ -201,4 +206,103 @@ test('shows an empty state once nothing is left to review', async () => {
   vi.mocked(listPendingPositions).mockResolvedValue([])
   render(<PlaidReviewModal open={true} onClose={() => {}} />)
   expect(await screen.findByText('Nothing left to review.')).toBeInTheDocument()
+})
+
+// ─── Manual match for an unmatched row ─────────────────────────────────────
+
+test('no manual-match dropdown is offered when nothing compatible exists', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingCash])
+  // fixtureAssets only has a Stock asset -- never compatible with a 'cash' row.
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  await screen.findByText('New')
+  expect(screen.queryByLabelText(/link to an existing position/i)).not.toBeInTheDocument()
+})
+
+test('an unmatched row offers a manual match to a compatible existing asset, and only that one', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingCash])
+  vi.mocked(getAllAssets).mockResolvedValue([
+    ...fixtureAssets,
+    { id: 'asset-2', name: 'My Joint Checking', asset_type: 'Cash', location: { name: 'Chase' } },
+    { id: 'asset-3', name: 'My 401k', asset_type: '401k', location: { name: 'Fidelity' } },
+  ] as any)
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const select = await screen.findByLabelText(/link to an existing position/i)
+  expect(screen.getByRole('option', { name: 'My Joint Checking (Chase)' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: /My 401k/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: /Existing Fidelity Stock/ })).not.toBeInTheDocument()
+  expect(select).toHaveValue('')
+})
+
+test('picking a manual match reconciles via update_asset_value with the chosen asset id, same as an automatic match', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingCash])
+  vi.mocked(getAllAssets).mockResolvedValue([
+    ...fixtureAssets,
+    { id: 'asset-2', name: 'My Joint Checking', asset_type: 'Cash', location: { name: 'Chase' } },
+  ] as any)
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const select = await screen.findByLabelText(/link to an existing position/i)
+  await user.selectOptions(select, 'asset-2')
+  expect(await screen.findByText('Linked to "My Joint Checking"')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'update_asset_value',
+      { asset_name: 'My Joint Checking', _assetId: 'asset-2', _expectedAssetType: 'Cash', price: 1200 },
+      'user-1',
+    )
+  })
+  expect(executeTool).not.toHaveBeenCalledWith('add_cash_asset', expect.anything(), expect.anything())
+})
+
+test('a manually-matched lot-based row still requires the duplicate-risk checkbox, and passes _matchedAssetId/_plaidLots through', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([
+    {
+      id: 'pending-5',
+      plaid_item_id: 'item-1',
+      external_account_id: 'ext-account-5',
+      external_security_id: 'ext-security-5',
+      detected_type: 'stock' as const,
+      payload: { symbol: 'MSFT', count: 4, cost_price: 300, purchase_date: '2026-01-01', subtype: 'Market', location_name: 'Schwab' },
+      matched_asset_id: null,
+      created_at: '2026-09-01T00:00:00Z',
+    },
+  ])
+  vi.mocked(getAllAssets).mockResolvedValue([
+    { id: 'asset-msft', name: 'MSFT Stock', asset_type: 'Stock', ticker: { symbol: 'MSFT', kind: 'stock' }, location: { name: 'Fidelity' } },
+  ] as any)
+  vi.mocked(executeTool).mockResolvedValue({ assetId: 'asset-msft', transactionId: 'txn-9', transactionIds: ['txn-9'] })
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const select = await screen.findByLabelText(/link to an existing position/i)
+  await user.selectOptions(select, 'asset-msft')
+
+  const confirmButton = screen.getByRole('button', { name: 'Confirm' })
+  expect(confirmButton).toBeDisabled() // manual lot-based matches need the same acknowledgment as automatic ones
+  await user.click(screen.getByRole('checkbox'))
+  expect(confirmButton).toBeEnabled()
+  await user.click(confirmButton)
+
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_stock_transaction',
+      expect.objectContaining({
+        symbol: 'MSFT',
+        _matchedAssetId: 'asset-msft',
+        _plaidLots: [{ count: 4, cost_price: 300, purchase_date: '2026-01-01' }],
+      }),
+      'user-1',
+    )
+  })
+  expect(recordPlaidSyncLink).toHaveBeenCalledWith(expect.objectContaining({ id: 'pending-5' }), {
+    assetId: 'asset-msft',
+    transactionId: 'txn-9',
+    fixedIncomeLotId: undefined,
+  })
 })

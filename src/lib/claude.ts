@@ -13,6 +13,8 @@ import { ensureCryptoTicker } from './db/cryptoTickers'
 import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
+import { findMatchingLot } from './plaidMatching'
+import type { ExistingLot, PlaidLot } from './plaidMatching'
 
 export type Message = { role: 'user' | 'assistant'; content: string }
 export type AgentTraceStep = {
@@ -2870,7 +2872,9 @@ export function confirmationMessageFor(toolName: string, input: any): string {
 export interface ExecuteToolResult {
   assetId?: string
   transactionId?: string
+  transactionIds?: string[]
   fixedIncomeLotId?: string
+  fixedIncomeLotIds?: string[]
 }
 
 export async function executeTool(toolName: string, input: any, userId: string): Promise<ExecuteToolResult | void> {
@@ -2974,37 +2978,81 @@ export async function executeTool(toolName: string, input: any, userId: string):
   }
 
   if (toolName === 'add_cash_asset') {
-    const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
     const isFixedIncome = input.asset_type === 'Fixed Income'
     const isTradable = isTradableFixedIncome({ asset_type: input.asset_type, fixed_income_subtype: input.fixed_income_subtype })
-    // Bond/T-Bill are lot-valued (no live quote to mark against), so the
-    // asset row itself carries no price — value comes from summing lots.
-    const { data, error } = await supabase.from('assets').insert({
-      user_id: userId,
-      name: input.name,
-      asset_type: input.asset_type,
-      location_id: locationId,
-      ownership: input.ownership,
-      price: isTradable ? null : input.price,
-      initial_price: isTradable ? null : input.price,
-      notes: input.notes ?? null,
-      fixed_income_subtype: isFixedIncome ? (input.fixed_income_subtype ?? null) : null,
-      interest_rate: isFixedIncome && input.interest_rate != null && input.interest_rate !== '' ? Number(input.interest_rate) : null,
-      maturity_date: isFixedIncome ? (input.maturity_date ?? null) : null,
-      face_value: isFixedIncome && input.face_value != null && input.face_value !== '' ? Number(input.face_value) : null,
-    }).select('id').single()
-    if (error) throw new Error(`Failed to add asset: ${error.message}`)
-    if (isTradable) {
-      const { data: lotData, error: lotError } = await supabase.from('fixed_income_lots').insert({
-        asset_id: data.id,
-        count: input.count,
-        cost_price: input.cost_price,
-        purchase_date: input.purchase_date,
+
+    // _matchedAssetId is set only by PlaidReviewModal when the user, or the
+    // natural-key match, pointed this confirm at a specific existing asset —
+    // never part of this tool's public schema. Re-verified here (not just
+    // in the review UI) so a lot can never land on an incompatible or
+    // someone else's asset.
+    let assetId: string
+    if (input._matchedAssetId) {
+      const { data: matchedAsset, error: matchedError } = await supabase.from('assets')
+        .select('id, asset_type, fixed_income_subtype')
+        .eq('id', input._matchedAssetId).eq('user_id', userId).maybeSingle()
+      if (matchedError) throw new Error(`Failed to look up matched asset: ${matchedError.message}`)
+      if (!matchedAsset || matchedAsset.asset_type !== input.asset_type || (matchedAsset.fixed_income_subtype ?? null) !== (input.fixed_income_subtype ?? null)) {
+        throw new Error(`Matched asset is not a compatible ${input.asset_type} position — cannot reconcile onto it.`)
+      }
+      assetId = matchedAsset.id
+    } else {
+      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
+      // Bond/T-Bill are lot-valued (no live quote to mark against), so the
+      // asset row itself carries no price — value comes from summing lots.
+      const { data, error } = await supabase.from('assets').insert({
+        user_id: userId,
+        name: input.name,
+        asset_type: input.asset_type,
+        location_id: locationId,
+        ownership: input.ownership,
+        price: isTradable ? null : input.price,
+        initial_price: isTradable ? null : input.price,
+        notes: input.notes ?? null,
+        fixed_income_subtype: isFixedIncome ? (input.fixed_income_subtype ?? null) : null,
+        interest_rate: isFixedIncome && input.interest_rate != null && input.interest_rate !== '' ? Number(input.interest_rate) : null,
+        maturity_date: isFixedIncome ? (input.maturity_date ?? null) : null,
+        face_value: isFixedIncome && input.face_value != null && input.face_value !== '' ? Number(input.face_value) : null,
       }).select('id').single()
-      if (lotError) throw new Error(`Failed to add lot: ${lotError.message}`)
-      return { assetId: data.id, fixedIncomeLotId: lotData.id }
+      if (error) throw new Error(`Failed to add asset: ${error.message}`)
+      assetId = data.id
     }
-    return { assetId: data.id }
+
+    if (isTradable) {
+      // _plaidLots mirrors add_stock_transaction's reconciliation: insert
+      // only lots not already tracked for this asset, never delete one
+      // just because this sync pass didn't see it.
+      const lotsToInsert: PlaidLot[] = Array.isArray(input._plaidLots) && input._plaidLots.length > 0
+        ? input._plaidLots
+        : [{ count: Number(input.count), cost_price: Number(input.cost_price), purchase_date: input.purchase_date }]
+
+      let existingLots: ExistingLot[] = []
+      if (input._matchedAssetId) {
+        const { data: existing, error: existingError } = await supabase.from('fixed_income_lots')
+          .select('id, count, cost_price, purchase_date').eq('asset_id', assetId)
+        if (existingError) throw new Error(`Failed to look up existing lots: ${existingError.message}`)
+        existingLots = existing ?? []
+      }
+
+      const lotIds: string[] = []
+      for (const lot of lotsToInsert) {
+        const existingMatch = findMatchingLot(lot, existingLots)
+        if (existingMatch) {
+          lotIds.push(existingMatch.id)
+          continue
+        }
+        const { data: lotData, error: lotError } = await supabase.from('fixed_income_lots').insert({
+          asset_id: assetId,
+          count: lot.count,
+          cost_price: lot.cost_price,
+          purchase_date: lot.purchase_date,
+        }).select('id').single()
+        if (lotError) throw new Error(`Failed to add lot: ${lotError.message}`)
+        lotIds.push(lotData.id)
+      }
+      return { assetId, fixedIncomeLotId: lotIds[0], fixedIncomeLotIds: lotIds }
+    }
+    return { assetId }
   }
 
   if (toolName === 'add_cash_assets') {
@@ -3070,61 +3118,84 @@ export async function executeTool(toolName: string, input: any, userId: string):
     const isCrypto = input.asset_class === 'Crypto'
     const subtype = isCrypto ? 'Market' : (input.subtype || 'Market')
 
-    // 1. Find or create ticker. Crypto resolves its CoinGecko coin, price,
-    // history and theme itself (ensureCryptoTicker); stocks fall through to
-    // the Finnhub-priced path below.
-    let tickerId: string
-    let existingTicker: { id: string } | null = null
-    if (isCrypto) {
-      const crypto = await ensureCryptoTicker(userId, symbol)
-      tickerId = crypto.id
-      existingTicker = crypto.isNew ? null : { id: crypto.id }
-    } else {
-      const { data: foundTicker } = await supabase.from('tickers')
-        .select('id, kind').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
-      if (foundTicker?.kind === 'crypto') {
-        throw new Error(`${symbol} is already tracked as a cryptocurrency — use add_crypto_transaction for it.`)
-      }
-      existingTicker = foundTicker
-      if (foundTicker) {
-        tickerId = foundTicker.id
-      } else {
-        const { data, error } = await supabase.from('tickers')
-          .insert({ user_id: userId, symbol }).select('id').single()
-        if (error) throw new Error(`Failed to create ticker: ${error.message}`)
-        tickerId = data.id
-      }
-    }
-
-    // Fetch live price if ticker is new (best effort, don't block on failure)
-    if (!existingTicker && !isCrypto) {
-      await fetchAndStorePrice(tickerId, symbol)
-      try {
-        await autoAssignThemesForTickerIfEnabled({ userId, tickerId, symbol, skipIfAlreadyTagged: true })
-      } catch (error) {
-        console.warn('Auto theme assignment failed for new stock ticker', error)
-      }
-    }
-    await supabase.from('tickers').update({ watchlist_only: false }).eq('id', tickerId)
-
-    // 2. Find or create asset linked to this ticker at the given location
-    const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
-    const { data: existingAsset } = await supabase.from('assets')
-      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).eq('location_id', locationId).maybeSingle()
+    // _matchedAssetId is set only by PlaidReviewModal (never part of this
+    // tool's public schema, so the model never sets it) when the user, or
+    // the natural-key match, pointed this confirm at a specific existing
+    // asset. Bypassing the ticker+location lookup below matters because
+    // Plaid's reported location/ownership can differ cosmetically from the
+    // existing asset's own fields even when the asset itself is correctly
+    // identified ("Fidelity" vs "Fidelity Investments") — going through the
+    // normal lookup could silently create a second asset instead of adding
+    // to the matched one. Re-verified here (not just in the review UI) so
+    // this can never attach a lot to an incompatible or someone else's asset.
     let assetId: string
-    if (existingAsset) {
-      assetId = existingAsset.id
+    if (input._matchedAssetId) {
+      const { data: matchedAsset, error: matchedError } = await supabase.from('assets')
+        .select('id, asset_type, ticker:tickers(symbol)')
+        .eq('id', input._matchedAssetId).eq('user_id', userId).maybeSingle()
+      if (matchedError) throw new Error(`Failed to look up matched asset: ${matchedError.message}`)
+      const expectedAssetType = isCrypto ? 'Crypto' : 'Stock'
+      const matchedTickerSymbol = (matchedAsset?.ticker as { symbol?: string } | null)?.symbol
+      if (!matchedAsset || matchedAsset.asset_type !== expectedAssetType || matchedTickerSymbol !== symbol) {
+        throw new Error(`Matched asset is not a ${expectedAssetType} position for ${symbol} — cannot reconcile onto it.`)
+      }
+      assetId = matchedAsset.id
     } else {
-      const { data, error } = await supabase.from('assets').insert({
-        user_id: userId,
-        name: input.asset_name || (isCrypto ? symbol : `${symbol} Stock`),
-        asset_type: isCrypto ? 'Crypto' : 'Stock',
-        location_id: locationId,
-        ownership: input.ownership || 'Individual',
-        ticker_id: tickerId,
-      }).select('id').single()
-      if (error) throw new Error(`Failed to create asset: ${error.message}`)
-      assetId = data.id
+      // 1. Find or create ticker. Crypto resolves its CoinGecko coin, price,
+      // history and theme itself (ensureCryptoTicker); stocks fall through to
+      // the Finnhub-priced path below.
+      let tickerId: string
+      let existingTicker: { id: string } | null = null
+      if (isCrypto) {
+        const crypto = await ensureCryptoTicker(userId, symbol)
+        tickerId = crypto.id
+        existingTicker = crypto.isNew ? null : { id: crypto.id }
+      } else {
+        const { data: foundTicker } = await supabase.from('tickers')
+          .select('id, kind').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+        if (foundTicker?.kind === 'crypto') {
+          throw new Error(`${symbol} is already tracked as a cryptocurrency — use add_crypto_transaction for it.`)
+        }
+        existingTicker = foundTicker
+        if (foundTicker) {
+          tickerId = foundTicker.id
+        } else {
+          const { data, error } = await supabase.from('tickers')
+            .insert({ user_id: userId, symbol }).select('id').single()
+          if (error) throw new Error(`Failed to create ticker: ${error.message}`)
+          tickerId = data.id
+        }
+      }
+
+      // Fetch live price if ticker is new (best effort, don't block on failure)
+      if (!existingTicker && !isCrypto) {
+        await fetchAndStorePrice(tickerId, symbol)
+        try {
+          await autoAssignThemesForTickerIfEnabled({ userId, tickerId, symbol, skipIfAlreadyTagged: true })
+        } catch (error) {
+          console.warn('Auto theme assignment failed for new stock ticker', error)
+        }
+      }
+      await supabase.from('tickers').update({ watchlist_only: false }).eq('id', tickerId)
+
+      // 2. Find or create asset linked to this ticker at the given location
+      const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
+      const { data: existingAsset } = await supabase.from('assets')
+        .select('id').eq('user_id', userId).eq('ticker_id', tickerId).eq('location_id', locationId).maybeSingle()
+      if (existingAsset) {
+        assetId = existingAsset.id
+      } else {
+        const { data, error } = await supabase.from('assets').insert({
+          user_id: userId,
+          name: input.asset_name || (isCrypto ? symbol : `${symbol} Stock`),
+          asset_type: isCrypto ? 'Crypto' : 'Stock',
+          location_id: locationId,
+          ownership: input.ownership || 'Individual',
+          ticker_id: tickerId,
+        }).select('id').single()
+        if (error) throw new Error(`Failed to create asset: ${error.message}`)
+        assetId = data.id
+      }
     }
 
     // 3. Find or create stock_subtype (Market/ESPP/RSU bucket)
@@ -3140,13 +3211,7 @@ export async function executeTool(toolName: string, input: any, userId: string):
       subtypeId = data.id
     }
 
-    // 4. Determine capital gains status from purchase date
-    const purchaseDate = new Date(input.purchase_date)
-    const oneYearAgo = new Date()
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-    const capital_gains_status = purchaseDate < oneYearAgo ? 'Long Term' : 'Short Term'
-
-    // 5. RSU transactions must identify their grant explicitly by grant_date — never inferred
+    // 4. RSU transactions must identify their grant explicitly by grant_date — never inferred
     let rsuGrantId: string | null = null
     if (subtype === 'RSU') {
       if (!isValidIsoDate(input.grant_date)) {
@@ -3167,19 +3232,50 @@ export async function executeTool(toolName: string, input: any, userId: string):
       rsuGrantId = grants[0].id
     }
 
-    // 6. Create the transaction (tax lot)
+    // 5. Create the transaction(s) (tax lot(s)). _plaidLots carries every
+    // lot Plaid reported for this holding (or, lacking a per-lot breakdown,
+    // the single aggregate figure) — set only by PlaidReviewModal, never by
+    // the model. Each lot already tracked under this subtype (matched by
+    // purchase date/count/cost basis — see findMatchingLot) is skipped
+    // rather than re-inserted; nothing is ever deleted, so a lot Plaid
+    // doesn't currently report (sparse data, or just not broken into lots)
+    // is left completely untouched.
+    const lotsToInsert: PlaidLot[] = Array.isArray(input._plaidLots) && input._plaidLots.length > 0
+      ? input._plaidLots
+      : [{ count: Number(input.count), cost_price: Number(input.cost_price), purchase_date: input.purchase_date }]
+
+    let existingLots: ExistingLot[] = []
+    if (input._matchedAssetId) {
+      const { data: existingTxns, error: existingError } = await supabase.from('transactions')
+        .select('id, count, cost_price, purchase_date').eq('subtype_id', subtypeId)
+      if (existingError) throw new Error(`Failed to look up existing transactions: ${existingError.message}`)
+      existingLots = existingTxns ?? []
+    }
+
     const soldAtVest = Number(input.sold_at_vest ?? 0)
-    const { data: txData, error } = await supabase.from('transactions').insert({
-      subtype_id: subtypeId,
-      count: input.count,
-      cost_price: input.cost_price,
-      purchase_date: input.purchase_date,
-      capital_gains_status,
-      ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
-      ...(rsuGrantId ? { rsu_grant_id: rsuGrantId } : {}),
-    }).select('id').single()
-    if (error) throw new Error(`Failed to create transaction: ${error.message}`)
-    return { assetId, transactionId: txData.id }
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    const transactionIds: string[] = []
+    for (const lot of lotsToInsert) {
+      const existingMatch = findMatchingLot(lot, existingLots)
+      if (existingMatch) {
+        transactionIds.push(existingMatch.id)
+        continue
+      }
+      const capital_gains_status = new Date(lot.purchase_date!) < oneYearAgo ? 'Long Term' : 'Short Term'
+      const { data: txData, error } = await supabase.from('transactions').insert({
+        subtype_id: subtypeId,
+        count: lot.count,
+        cost_price: lot.cost_price,
+        purchase_date: lot.purchase_date,
+        capital_gains_status,
+        ...(soldAtVest > 0 ? { sold_at_vest: soldAtVest } : {}),
+        ...(rsuGrantId ? { rsu_grant_id: rsuGrantId } : {}),
+      }).select('id').single()
+      if (error) throw new Error(`Failed to create transaction: ${error.message}`)
+      transactionIds.push(txData.id)
+    }
+    return { assetId, transactionId: transactionIds[0], transactionIds }
   }
 
   if (toolName === 'add_stock_transactions') {
@@ -3473,13 +3569,21 @@ export async function executeTool(toolName: string, input: any, userId: string):
   }
 
   if (toolName === 'update_asset_value') {
-    const { data: existing, error: lookupError } = await supabase.from('assets')
-      .select('id, asset_type, fixed_income_subtype')
-      .eq('user_id', userId)
-      .eq('name', input.asset_name)
-      .maybeSingle()
+    // _assetId/_expectedAssetType are set only by PlaidReviewModal, never
+    // part of this tool's public schema. Resolving by id instead of name
+    // matters because two assets can legitimately share a name (e.g. two
+    // "Joint Checking" accounts at different institutions, or the exact
+    // same-name duplicate this reconciliation path is designed to avoid
+    // creating) — a name-only lookup can silently land on the wrong one.
+    const query = supabase.from('assets').select('id, asset_type, fixed_income_subtype').eq('user_id', userId)
+    const { data: existing, error: lookupError } = await (
+      input._assetId ? query.eq('id', input._assetId) : query.eq('name', input.asset_name)
+    ).maybeSingle()
     if (lookupError) throw new Error(`Failed to look up asset: ${lookupError.message}`)
     if (!existing) throw new Error(`No asset found with name "${input.asset_name}"`)
+    if (input._expectedAssetType && existing.asset_type !== input._expectedAssetType) {
+      throw new Error(`Matched asset is not a compatible ${input._expectedAssetType} position — cannot reconcile onto it.`)
+    }
     if (isTradableFixedIncome(existing)) {
       throw new Error(`"${input.asset_name}" is a tradable Bond/T-Bill — its value comes from its lots. Use add_fixed_income_lot to record a purchase instead of setting a value directly.`)
     }

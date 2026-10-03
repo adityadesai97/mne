@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { getSupabaseClient } from '@/lib/supabase'
 import { executeTool, validateWriteToolInput } from '@/lib/claude'
+import { getAllAssets } from '@/lib/db/assets'
 import {
   listPendingPositions,
   markPendingPositionConfirmed,
@@ -10,6 +11,7 @@ import {
   recordPlaidSyncLink,
   type PendingPlaidPosition,
 } from '@/lib/db/plaid'
+import { compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, type ManualMatchCandidate } from '@/lib/plaidMatching'
 
 // Review-first confirmation screen for positions a Plaid sync detected.
 // Nothing here has touched assets/transactions/fixed_income_lots yet —
@@ -17,6 +19,13 @@ import {
 // path the AI command bar's write-tool confirmations use (see
 // src/lib/claude.ts and CommandBar.tsx's PreviewSections), so a synced
 // position is written the same way a manually-entered one would be.
+//
+// A row with no automatic natural-key match can still be manually pointed
+// at an existing position (see compatibleManualMatchCandidates) — e.g. an
+// account whose ownership Plaid can't tell (it always guesses
+// "Individual") missing a manually-tracked "Joint" asset. Once picked, a
+// manual match is treated identically to an automatic one everywhere below
+// (same reconciliation, same duplicate-risk checkbox for lot-based types).
 
 interface Props {
   open: boolean
@@ -32,23 +41,23 @@ const TOOL_FOR_TYPE: Record<PendingPlaidPosition['detected_type'], string> = {
   fixed_income: 'add_cash_asset',
 }
 
-// add_stock_transaction/add_cash_asset are additive tools (they insert a
-// new tax lot / a new asset row respectively) — neither one updates an
-// existing position in place. That's fine for a brand-new detected
-// position, but wrong for a row matched to something the user already
-// tracks manually: inserting on top of it would double-count a balance or
-// a share count rather than reconciling it.
+// add_stock_transaction/add_cash_asset insert a new tax lot / a new asset
+// row by default — fine for a brand-new detected position, but wrong for a
+// row matched (automatically or manually) to something the user already
+// tracks: inserting on top of it would double-count a balance or a share
+// count rather than reconciling it. Passing _matchedAssetId (see
+// handleConfirm) makes both tools resolve the existing asset by id instead
+// of creating one, and dedupe each Plaid-reported lot against what's
+// already tracked before inserting (src/lib/claude.ts) — never deleting.
 //
 // For flat-balance types (Cash/401k/HSA/CD — detected_type 'cash'), a
 // matched row is safe to route through update_asset_value instead, which
 // genuinely updates the existing asset's value in place.
 //
-// For lot-based types (Stock, Bond/T-Bill), there's no safe automatic
-// merge — the existing manual lots and Plaid's reported lot(s) could be
-// the same purchase, different purchases, or a true duplicate, and only
-// the user can tell. Those rows require an explicit acknowledgment below
-// before Confirm is enabled, rather than silently reconciling or silently
-// double-counting.
+// For lot-based types (Stock, Bond/T-Bill), the dedup above still can't
+// tell "the same purchase, reported slightly differently" from "a true
+// near-duplicate" with full confidence, so those rows still require an
+// explicit acknowledgment below before Confirm is enabled.
 const LOT_BASED_TYPES = new Set<PendingPlaidPosition['detected_type']>(['stock', 'stock_plan', 'fixed_income'])
 
 const TYPE_LABEL: Record<PendingPlaidPosition['detected_type'], string> = {
@@ -100,7 +109,8 @@ const FIELDS_BY_TYPE: Record<PendingPlaidPosition['detected_type'], FieldConfig[
 export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   const [rows, setRows] = useState<PendingPlaidPosition[]>([])
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({})
-  const [matchedNames, setMatchedNames] = useState<Record<string, string>>({})
+  const [allAssets, setAllAssets] = useState<any[]>([])
+  const [manualMatchedAssetId, setManualMatchedAssetId] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -114,21 +124,13 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   async function load() {
     setLoading(true)
     try {
-      const pending = await listPendingPositions()
+      const [pending, assets] = await Promise.all([listPendingPositions(), getAllAssets()])
       setRows(pending)
       const initialEdits: Record<string, Record<string, unknown>> = {}
       for (const row of pending) initialEdits[row.id] = { ...row.payload }
       setEdits(initialEdits)
-
-      const matchedIds = Array.from(new Set(pending.map((r) => r.matched_asset_id).filter(Boolean))) as string[]
-      if (matchedIds.length > 0) {
-        const { data } = await getSupabaseClient().from('assets').select('id, name').in('id', matchedIds)
-        const map: Record<string, string> = {}
-        for (const a of data ?? []) map[a.id] = a.name
-        setMatchedNames(map)
-      } else {
-        setMatchedNames({})
-      }
+      setAllAssets(assets ?? [])
+      setManualMatchedAssetId({})
     } finally {
       setLoading(false)
     }
@@ -138,8 +140,12 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
     setEdits((prev) => ({ ...prev, [rowId]: { ...prev[rowId], [key]: value } }))
   }
 
+  const assetNameById: Record<string, string> = {}
+  for (const a of allAssets) assetNameById[a.id] = a.name
+
   async function handleConfirm(row: PendingPlaidPosition) {
-    const isLotBasedMatch = row.matched_asset_id && LOT_BASED_TYPES.has(row.detected_type)
+    const effectiveMatchedAssetId = row.matched_asset_id ?? manualMatchedAssetId[row.id] ?? null
+    const isLotBasedMatch = !!effectiveMatchedAssetId && LOT_BASED_TYPES.has(row.detected_type)
     if (isLotBasedMatch && !acknowledgedDuplicateRisk[row.id]) {
       setErrors((prev) => ({ ...prev, [row.id]: 'Check the box above to confirm this won’t double-count an existing position.' }))
       return
@@ -148,11 +154,27 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
     // A matched flat-balance position (Cash/401k/HSA/CD) can be reconciled
     // safely: update_asset_value overwrites the existing asset's value in
     // place instead of inserting a duplicate row the way add_cash_asset would.
-    const isFlatBalanceMatch = row.matched_asset_id && row.detected_type === 'cash'
+    const isFlatBalanceMatch = !!effectiveMatchedAssetId && row.detected_type === 'cash'
     const toolName = isFlatBalanceMatch ? 'update_asset_value' : TOOL_FOR_TYPE[row.detected_type]
+    const payload = edits[row.id] ?? {}
     const input: Record<string, unknown> = isFlatBalanceMatch
-      ? { asset_name: matchedNames[row.matched_asset_id!], price: edits[row.id]?.price }
-      : { ...edits[row.id] }
+      ? {
+          asset_name: assetNameById[effectiveMatchedAssetId!],
+          // _assetId/_expectedAssetType/_matchedAssetId/_plaidLots are
+          // consumed only by executeTool's Plaid-reconciliation handling
+          // (src/lib/claude.ts) — never part of a tool's public schema, so
+          // the AI command bar's model never sees or sets them.
+          _assetId: effectiveMatchedAssetId,
+          _expectedAssetType: (row.payload as any).asset_type,
+          price: payload.price,
+        }
+      : {
+          ...payload,
+          ...(effectiveMatchedAssetId ? { _matchedAssetId: effectiveMatchedAssetId } : {}),
+          ...(LOT_BASED_TYPES.has(row.detected_type)
+            ? { _plaidLots: buildCandidateLotsFromPlaidPayload({ ...payload, _lots: (row.payload as any)._lots } as any) }
+            : {}),
+        }
     delete input._lots
 
     const validationError = validateWriteToolInput(toolName, input)
@@ -217,23 +239,41 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
           <p className="p-4 text-sm text-muted-foreground">Nothing left to review.</p>
         ) : (
           <div className="space-y-4">
-            {rows.map((row) => (
-              <PendingRow
-                key={row.id}
-                row={row}
-                edit={edits[row.id] ?? {}}
-                matchedName={row.matched_asset_id ? matchedNames[row.matched_asset_id] : undefined}
-                error={errors[row.id]}
-                busy={busyId === row.id}
-                acknowledgedDuplicateRisk={!!acknowledgedDuplicateRisk[row.id]}
-                onAcknowledgeDuplicateRiskChange={(checked) =>
-                  setAcknowledgedDuplicateRisk((prev) => ({ ...prev, [row.id]: checked }))
-                }
-                onFieldChange={(key, value) => setField(row.id, key, value)}
-                onConfirm={() => handleConfirm(row)}
-                onSkip={() => handleSkip(row)}
-              />
-            ))}
+            {rows.map((row) => {
+              const manualId = manualMatchedAssetId[row.id]
+              const effectiveMatchedId = row.matched_asset_id ?? manualId ?? null
+              const candidates = row.matched_asset_id
+                ? []
+                : compatibleManualMatchCandidates(row.detected_type, row.payload as any, allAssets)
+              return (
+                <PendingRow
+                  key={row.id}
+                  row={row}
+                  edit={edits[row.id] ?? {}}
+                  matchedName={effectiveMatchedId ? assetNameById[effectiveMatchedId] : undefined}
+                  isManualMatch={!row.matched_asset_id && !!manualId}
+                  candidates={candidates}
+                  selectedCandidateId={manualId ?? ''}
+                  onManualMatchChange={(assetId) =>
+                    setManualMatchedAssetId((prev) => {
+                      const next = { ...prev }
+                      if (assetId) next[row.id] = assetId
+                      else delete next[row.id]
+                      return next
+                    })
+                  }
+                  error={errors[row.id]}
+                  busy={busyId === row.id}
+                  acknowledgedDuplicateRisk={!!acknowledgedDuplicateRisk[row.id]}
+                  onAcknowledgeDuplicateRiskChange={(checked) =>
+                    setAcknowledgedDuplicateRisk((prev) => ({ ...prev, [row.id]: checked }))
+                  }
+                  onFieldChange={(key, value) => setField(row.id, key, value)}
+                  onConfirm={() => handleConfirm(row)}
+                  onSkip={() => handleSkip(row)}
+                />
+              )
+            })}
           </div>
         )}
       </DialogContent>
@@ -245,6 +285,10 @@ function PendingRow({
   row,
   edit,
   matchedName,
+  isManualMatch,
+  candidates,
+  selectedCandidateId,
+  onManualMatchChange,
   error,
   busy,
   acknowledgedDuplicateRisk,
@@ -256,6 +300,10 @@ function PendingRow({
   row: PendingPlaidPosition
   edit: Record<string, unknown>
   matchedName?: string
+  isManualMatch: boolean
+  candidates: ManualMatchCandidate[]
+  selectedCandidateId: string
+  onManualMatchChange: (assetId: string | null) => void
   error?: string
   busy: boolean
   acknowledgedDuplicateRisk: boolean
@@ -276,9 +324,28 @@ function PendingRow({
             matchedName ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
           }`}
         >
-          {matchedName ? `Looks like "${matchedName}"` : 'New'}
+          {matchedName ? (isManualMatch ? `Linked to "${matchedName}"` : `Looks like "${matchedName}"`) : 'New'}
         </span>
         <p className="text-xs text-muted-foreground mt-1">{TYPE_LABEL[row.detected_type]}</p>
+        {!row.matched_asset_id && candidates.length > 0 && (
+          <label className="text-xs space-y-1 block mt-1.5">
+            <span className="text-muted-foreground">
+              No automatic match found — link to an existing position instead? (optional)
+            </span>
+            <select
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              value={selectedCandidateId}
+              onChange={(e) => onManualMatchChange(e.target.value || null)}
+            >
+              <option value="">Create as a new position</option>
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {isFlatBalanceMatch && (
           <p className="text-[11px] text-muted-foreground mt-1">
             Confirming updates "{matchedName}"'s value — it won't create a duplicate.
