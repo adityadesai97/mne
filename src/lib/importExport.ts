@@ -7,7 +7,7 @@ import { findOrCreateLocation } from './db/locations'
 import { autoAssignThemesForTicker, isAutoThemeAssignmentEnabled } from './autoThemes'
 import { showAppAlert } from './appAlerts'
 import { getSupabaseClient } from './supabase'
-import { isTradableFixedIncome } from './portfolio'
+import { isTradableFixedIncome, netCount } from './portfolio'
 import { getAllConversations, type Conversation } from './db/conversations'
 import { getSnapshots, upsertSnapshots } from './db/snapshots'
 
@@ -76,6 +76,8 @@ type ParsedTransaction = {
   costPrice: number
   purchaseDate: string
   capitalGainsStatus: CapitalGainsStatus
+  // Shares of this lot sold at vest to cover taxes (RSU). Held = count - soldAtVest.
+  soldAtVest: number
 }
 
 type ParsedRsuGrant = {
@@ -185,6 +187,7 @@ type CanonicalExportV2 = {
     stockSubtypes: Array<{ id?: string; assetId: string; subtype: StockSubtypeName }>
     transactions: Array<Omit<ParsedTransaction, 'costPrice' | 'purchaseDate' | 'capitalGainsStatus'> & {
       subtypeId: string
+      netCount: number
       costPrice: number
       purchaseDate: string
       capitalGainsStatus: CapitalGainsStatus
@@ -478,6 +481,7 @@ function normalizeTransactions(rawTransactions: unknown[]): ParsedTransaction[] 
         entry.capitalGainsStatus ?? entry.capital_gains_status,
         purchaseDate,
       ),
+      soldAtVest: Math.max(0, asNumber(entry.soldAtVest ?? entry.sold_at_vest) ?? 0),
     })
   }
   return results
@@ -983,6 +987,8 @@ export function serializeForExport(
     costPrice: number
     purchaseDate: string
     capitalGainsStatus: CapitalGainsStatus
+    soldAtVest: number
+    netCount: number
   }> = []
   const rsuGrants: Array<{
     id?: string
@@ -1102,6 +1108,9 @@ export function serializeForExport(
           costPrice: tx.costPrice,
           purchaseDate: tx.purchaseDate,
           capitalGainsStatus: tx.capitalGainsStatus,
+          soldAtVest: tx.soldAtVest,
+          // Derived, same as the app's netCount(): shares still held after sell-to-cover.
+          netCount: netCount({ count: tx.count, cost_price: tx.costPrice, sold_at_vest: tx.soldAtVest }),
         })
       }
 
@@ -1254,7 +1263,7 @@ export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
   XLSX.utils.book_append_sheet(wb, toSheet(payload.data.stockSubtypes, ['id', 'assetId', 'subtype']), SHEET.stockSubtypes)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.transactions,
-    ['id', 'subtypeId', 'count', 'costPrice', 'purchaseDate', 'capitalGainsStatus'],
+    ['id', 'subtypeId', 'count', 'soldAtVest', 'netCount', 'costPrice', 'purchaseDate', 'capitalGainsStatus'],
   ), SHEET.transactions)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.rsuGrants,
@@ -1477,7 +1486,7 @@ export async function exportCsv() {
       for (const subtype of subtypes) {
         const subtypeName = String(subtype.subtype ?? '')
         for (const tx of subtype.transactions ?? []) {
-          const shares = Number(tx.count ?? 0)
+          const shares = netCount(tx)
           const costPrice = Number(tx.cost_price ?? 0)
           const purchaseDate = String(tx.purchase_date ?? '')
           const gainsStatus = String(tx.capital_gains_status ?? '')
@@ -1847,6 +1856,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
             cost_price: tx.costPrice,
             purchase_date: tx.purchaseDate,
             capital_gains_status: tx.capitalGainsStatus,
+            sold_at_vest: tx.soldAtVest,
           }
           if (tx.id) txPayload.id = tx.id
           const txResult = tx.id

@@ -602,3 +602,29 @@ test('crypto tickers and assets round-trip through serialize/parse', () => {
   expect(parsed.locations[0]).toMatchObject({ name: 'Coinbase', accountType: 'Crypto' })
   expect(parsed.assets[0].stockSubtypes[0].transactions[0].count).toBeCloseTo(0.12345678, 8)
 })
+
+test('RSU lots export sold-at-vest and net held count, and round-trip', () => {
+  const payload = serializeForExport({
+    assets: [{
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'ACME RSU',
+      asset_type: 'Stock',
+      location: { id: '22222222-2222-4222-8222-222222222222', name: 'Broker', account_type: 'Investment' },
+      ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'ACME', current_price: 10 },
+      stock_subtypes: [{
+        id: '44444444-4444-4444-8444-444444444444',
+        subtype: 'RSU',
+        transactions: [{ count: 100, sold_at_vest: 35, cost_price: 8, purchase_date: '2025-01-02', capital_gains_status: 'Long Term' }],
+        rsu_grants: [],
+      }],
+    }],
+    tickers: [],
+    themes: [],
+  } as any)
+
+  expect(payload.data.transactions[0]).toMatchObject({ count: 100, soldAtVest: 35, netCount: 65 })
+
+  const buffer = XLSX.write(buildExportWorkbook(payload), { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const parsed = parseWorkbookImport(buffer)
+  expect(parsed.assets[0].stockSubtypes[0].transactions[0]).toMatchObject({ count: 100, soldAtVest: 35 })
+})
