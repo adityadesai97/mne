@@ -20,6 +20,7 @@ import { subscribeToResumeConversationRequests, subscribeToExplanationRequests, 
 import type { PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 import { getPendingPlaidPositionsCount } from '@/lib/db/plaid'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
+import { onPlaidPendingChanged } from '@/lib/plaidEvents'
 
 const MAX_SAFE_TOP_PX = 64
 const MAX_SAFE_BOTTOM_PX = 34
@@ -138,6 +139,10 @@ export default function AppLayout() {
       // treat that the same as "nothing pending" rather than erroring.
     }
   }
+
+  // Reviewing from Settings (its own copy of the review screen), a sync, or a connect can all
+  // change what's pending without touching this layout's copy of the count.
+  useEffect(() => onPlaidPendingChanged(() => void refreshPlaidPendingCount()), [])
 
   // Settings' conversation history list lives outside CommandBar's tree —
   // this bridges its "continue this conversation" click into opening the
@@ -364,7 +369,10 @@ export default function AppLayout() {
       )}
       <PlaidReviewModal
         open={plaidReviewOpen}
-        onClose={() => setPlaidReviewOpen(false)}
+        onClose={() => {
+          setPlaidReviewOpen(false)
+          void refreshPlaidPendingCount()
+        }}
         onChanged={() => {
           void refreshPlaidPendingCount()
         }}

@@ -400,3 +400,20 @@ test('a manually-matched lot-based row gets the same lot matching, and passes _m
     fixedIncomeLotId: undefined,
   })
 })
+
+test('skipping or confirming tells the rest of the app the pending count changed (so the banner updates)', async () => {
+  const { onPlaidPendingChanged } = await import('../lib/plaidEvents')
+  const heard = vi.fn()
+  const off = onPlaidPendingChanged(heard)
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingCash, { ...pendingCash, id: 'pending-9', external_account_id: 'ext-9' }])
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const skips = await screen.findAllByRole('button', { name: 'Skip' })
+  await user.click(skips[0])
+  await waitFor(() => expect(heard).toHaveBeenCalledTimes(1))
+
+  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+  await waitFor(() => expect(heard).toHaveBeenCalledTimes(2))
+  off()
+})

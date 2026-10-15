@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { getSupabaseClient } from '@/lib/supabase'
 import { executeTool, validateWriteToolInput } from '@/lib/claude'
 import { getAllAssets } from '@/lib/db/assets'
+import { notifyPlaidPendingChanged } from '@/lib/plaidEvents'
 import {
   listPendingPositions,
   markPendingPositionConfirmed,
@@ -314,6 +315,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
       await markPendingPositionConfirmed(row.id)
       setRows((prev) => prev.filter((r) => r.id !== row.id))
       onChanged?.()
+      notifyPlaidPendingChanged()
     } catch (err) {
       setErrors((prev) => ({ ...prev, [row.id]: err instanceof Error ? err.message : 'Failed to save' }))
     } finally {
@@ -327,6 +329,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
       await dismissPendingPosition(row.id)
       setRows((prev) => prev.filter((r) => r.id !== row.id))
       onChanged?.()
+      notifyPlaidPendingChanged()
     } finally {
       setBusyId(null)
     }
@@ -336,7 +339,10 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose()
+        if (!next) {
+          onClose()
+          notifyPlaidPendingChanged()
+        }
       }}
     >
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
