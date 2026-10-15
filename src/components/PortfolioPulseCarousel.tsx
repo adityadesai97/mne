@@ -12,6 +12,7 @@ import {
 import {
   computeEventCards,
   fetchUpcomingEarnings,
+  filterEventsByLifecycle,
   loadSeenEventIds,
   markEventSeen,
   rankPulseItems,
@@ -120,7 +121,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
   const slotsKey = slots.map(slotKey).join('|')
 
   const eventCards = useMemo(
-    () => (assets.length === 0 ? [] : computeEventCards(assets, netWorth, themes, earnings)),
+    () => (assets.length === 0 ? [] : filterEventsByLifecycle(computeEventCards(assets, netWorth, themes, earnings))),
     [assets, netWorth, themes, earnings],
   )
 
@@ -261,7 +262,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
                 openCommandBarWithPrompt(c.event.question)
               }
             }}
-            title={c.type === 'move' ? 'Ask about this in the command bar' : 'Ask about this in the command bar (pre-filled)'}
+            title="Ask about this in the command bar"
             className="w-full shrink-0 snap-center text-left cursor-pointer"
           >
             <p className="text-sm text-foreground leading-relaxed break-words">

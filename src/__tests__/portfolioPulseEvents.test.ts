@@ -1,6 +1,6 @@
 import {
   computeRsuVestEventCards, computeLongTermEventCards, computeHarvestEventCards, computeAllocationDriftEventCards,
-  computeEarningsEventCards, earningsLookupSymbols, rankPulseItems, type PulseItem, type PulseEvent,
+  computeEarningsEventCards, earningsLookupSymbols, rankPulseItems, applyEventLifecycle, type PulseItem, type PulseEvent,
 } from '../lib/portfolioPulseEvents'
 
 const NOW = new Date('2026-10-02T12:00:00Z')
@@ -122,4 +122,21 @@ function moveItem(key: string, score: number, seen = false): PulseItem {
 test('rankPulseItems ranks by score, demotes seen cards, and caps the list', () => {
   const ranked = rankPulseItems([moveItem('a', 1, true), eventItem('b', 0.2), moveItem('c', 3), eventItem('d', 0.1, true)], 3)
   expect(ranked.map(i => i.key)).toEqual(['c', 'b', 'a']) // fresh by score, then the best seen one
+})
+
+test('applyEventLifecycle shows a harvest card for 7 days, hides it for 30, then resurfaces it', () => {
+  const day = 86_400_000
+  const harvest: PulseEvent = { id: 'harvest:NVDA:2026-10', kind: 'harvest', text: 'h', question: 'q', score: 1 }
+  const vest: PulseEvent = { id: 'rsu_vest:NVDA:2026-10-20', kind: 'rsu_vest', text: 'v', question: 'q', score: 1 }
+  const t0 = Date.UTC(2026, 9, 1)
+  let state = applyEventLifecycle([harvest, vest], {}, t0)
+  expect(state.visible).toHaveLength(2)
+  state = applyEventLifecycle([harvest, vest], state.firstShown, t0 + 6 * day)
+  expect(state.visible).toContain(harvest)
+  state = applyEventLifecycle([harvest, vest], state.firstShown, t0 + 8 * day)
+  expect(state.visible).toEqual([vest])
+  state = applyEventLifecycle([harvest, vest], state.firstShown, t0 + 36 * day)
+  expect(state.visible).toEqual([vest])
+  state = applyEventLifecycle([harvest, vest], state.firstShown, t0 + 38 * day)
+  expect(state.visible).toContain(harvest)
 })

@@ -367,6 +367,65 @@ export function rankPulseItems(items: PulseItem[], max: number = MAX_PULSE_CARDS
     .slice(0, max)
 }
 
+// ── Resurfacing for long-lived (state-based) event cards ──────────────────
+// A harvest or allocation-drift card stays true for weeks or months, so left
+// alone it would sit in the carousel forever. Each one is shown for
+// LIFECYCLE_SHOW_DAYS from when it first appears, then hidden for
+// LIFECYCLE_HIDE_DAYS, then the cycle restarts. Date-bound events (vests,
+// earnings, long-term dates) expire on their own and are untouched.
+
+const LIFECYCLE_KEY = 'mne_pulse_event_lifecycle'
+export const LIFECYCLE_SHOW_DAYS = 7
+export const LIFECYCLE_HIDE_DAYS = 30
+const LIFECYCLE_KINDS: PulseEventKind[] = ['harvest', 'allocation_drift']
+
+/** `harvest:NVDA:2026-10` → `harvest:NVDA` (the month suffix only resets "seen"). */
+function lifecycleKey(event: PulseEvent): string {
+  return event.id.split(':').slice(0, 2).join(':')
+}
+
+/** Pure: given when each key first appeared, which of `events` are showing
+ *  now, and the updated first-shown map. */
+export function applyEventLifecycle(
+  events: PulseEvent[],
+  firstShown: Record<string, number>,
+  nowMs: number,
+): { visible: PulseEvent[]; firstShown: Record<string, number> } {
+  const next = { ...firstShown }
+  const cycleMs = (LIFECYCLE_SHOW_DAYS + LIFECYCLE_HIDE_DAYS) * DAY_MS
+  const visible = events.filter((event) => {
+    if (!LIFECYCLE_KINDS.includes(event.kind)) return true
+    const key = lifecycleKey(event)
+    let start = next[key]
+    if (start === undefined || nowMs - start >= cycleMs) {
+      start = nowMs
+      next[key] = start
+    }
+    return nowMs - start < LIFECYCLE_SHOW_DAYS * DAY_MS
+  })
+  for (const [key, start] of Object.entries(next)) {
+    if (nowMs - start > 3 * cycleMs) delete next[key]
+  }
+  return { visible, firstShown: next }
+}
+
+/** Same, backed by localStorage (per-viewer; best-effort — without storage
+ *  every card simply shows). */
+export function filterEventsByLifecycle(events: PulseEvent[], nowMs: number = Date.now()): PulseEvent[] {
+  let stored: Record<string, number> = {}
+  try {
+    const raw = JSON.parse(localStorage.getItem(LIFECYCLE_KEY) ?? '{}')
+    if (raw && typeof raw === 'object') {
+      for (const [k, v] of Object.entries(raw)) if (typeof v === 'number') stored[k] = v
+    }
+  } catch { stored = {} }
+  const { visible, firstShown } = applyEventLifecycle(events, stored, nowMs)
+  try {
+    localStorage.setItem(LIFECYCLE_KEY, JSON.stringify(firstShown))
+  } catch { /* storage unavailable */ }
+  return visible
+}
+
 // ── "Seen" memory for event cards ─────────────────────────────────────────
 // Price-move cards know whether they've been read from their stored
 // explanation row; event cards have none, so opened ones are remembered

@@ -524,16 +524,16 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     }
   }, [open])
 
-  // A Portfolio Pulse event card's question: type it in and leave the
-  // sending to the user. Runs after the reset-on-close effect above, so a
-  // panel opening from closed keeps the text.
+  // A Portfolio Pulse event card's question: sent straight away, like a
+  // price-move card's. Runs after the reset-on-close effect above, so a panel
+  // opening from closed starts from a clean state.
   useEffect(() => {
     if (!open || !prefillQuery) return
-    setQuery(prefillQuery)
     onPrefillHandled?.()
     // No cleanup: handling the prefill clears it, which re-runs this effect.
-    window.setTimeout(() => focusInput(), 0)
-  }, [open, prefillQuery, onPrefillHandled, focusInput])
+    void handleSubmit(prefillQuery)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefillQuery, onPrefillHandled])
 
   // Resuming a saved conversation from Settings' history list: load its
   // messages, show them as an already-expanded thread, and keep saving
@@ -655,9 +655,9 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     return [...history, { role: 'user', content: newUserContent }]
   }
 
-  async function handleSubmit() {
-    if (!query.trim()) return
-    const userContent = query.trim()
+  async function handleSubmit(override?: string) {
+    const userContent = (override ?? query).trim()
+    if (!userContent) return
     const wasExpanded = isExpanded
     setQuery('')
     setPendingQuery(userContent)
