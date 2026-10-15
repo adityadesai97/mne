@@ -294,7 +294,7 @@ export async function resolvePlaidDrift(pos: PlaidDriftPosition): Promise<void> 
     if (lotsError) throw lotsError
     const plan = planLedger((lots ?? []) as LedgerLot[], [
       { investment_transaction_id: 'drift', date: today, type: 'sell', subtype: 'sell', quantity: pos.driftShares, price: null },
-    ])
+    ], { sellMode: 'fifo' })
     if (plan.skipped.length > 0) {
       throw new Error('Plaid shows fewer shares than the regular lots hold — the rest is in RSU/ESPP lots; adjust it manually.')
     }
