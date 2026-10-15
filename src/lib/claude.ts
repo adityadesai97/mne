@@ -13,7 +13,7 @@ import { ensureCryptoTicker } from './db/cryptoTickers'
 import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
-import { findMatchingLot } from './plaidMatching'
+import { findMatchingLot, isLotFixedIncomeSubtype } from './plaidMatching'
 import type { ExistingLot, PlaidLot } from './plaidMatching'
 
 export type Message = { role: 'user' | 'assistant'; content: string }
@@ -3034,7 +3034,7 @@ export async function executeTool(toolName: string, input: any, userId: string):
         .select('id, asset_type, fixed_income_subtype')
         .eq('id', input._matchedAssetId).eq('user_id', userId).maybeSingle()
       if (matchedError) throw new Error(`Failed to look up matched asset: ${matchedError.message}`)
-      if (!matchedAsset || matchedAsset.asset_type !== input.asset_type || (matchedAsset.fixed_income_subtype ?? null) !== (input.fixed_income_subtype ?? null)) {
+      if (!matchedAsset || matchedAsset.asset_type !== input.asset_type || !(((matchedAsset.fixed_income_subtype ?? null) === (input.fixed_income_subtype ?? null)) || (isLotFixedIncomeSubtype(matchedAsset.fixed_income_subtype) && isLotFixedIncomeSubtype(input.fixed_income_subtype)))) {
         throw new Error(`Matched asset is not a compatible ${input.asset_type} position — cannot reconcile onto it.`)
       }
       assetId = matchedAsset.id

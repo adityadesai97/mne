@@ -98,6 +98,23 @@ export interface PlaidPendingPayload {
   fixed_income_subtype?: string | null
 }
 
+// Plaid sends every bond-like holding as type "fixed income" — never "bill" — so a Treasury
+// bill has to be recognised from its subtype or name ("US Treasury Bill - 3.89% 08/12/2026").
+// Anything else stays a Bond.
+export function classifyFixedIncomeSubtype(security: { type?: string | null; subtype?: string | null; name?: string | null } | null | undefined): 'Bond' | 'T-Bill' {
+  const type = String(security?.type ?? '').toLowerCase()
+  const subtype = String(security?.subtype ?? '').toLowerCase()
+  if (type === 'bill' || /\bbills?\b/.test(subtype)) return 'T-Bill'
+  if (/\b(t[- ]?bills?|treasury bills?)\b/i.test(String(security?.name ?? ''))) return 'T-Bill'
+  return 'Bond'
+}
+
+// Bond and T-Bill are the same lot-based shape in mne, and a user may well have entered a bill as
+// a "Bond" (or Plaid mislabelled it), so either can be linked to the other. CD/Deposit never can.
+export function isLotFixedIncomeSubtype(subtype: string | null | undefined): boolean {
+  return subtype === 'Bond' || subtype === 'T-Bill'
+}
+
 export interface ManualMatchCandidateAsset {
   id: string
   name: string
@@ -134,9 +151,11 @@ export function isCompatibleManualMatch(
     )
   }
   if (detectedType === 'fixed_income') {
+    const wanted = payload.fixed_income_subtype ?? null
+    const have = candidate.fixed_income_subtype ?? null
     return (
       candidate.asset_type === 'Fixed Income' &&
-      (candidate.fixed_income_subtype ?? null) === (payload.fixed_income_subtype ?? null)
+      (have === wanted || (isLotFixedIncomeSubtype(have) && isLotFixedIncomeSubtype(wanted)))
     )
   }
   // 'cash': Cash/401k/HSA flat-balance accounts — must be the exact same
@@ -253,4 +272,22 @@ export function pairPlaidLots(plaidLots: PlaidLot[], existing: ExistingLot[]): L
 /** Total units across tracked lots (what Plaid's reported quantity is compared with). */
 export function trackedLotTotal(existing: ExistingLot[]): number {
   return Math.round(existing.reduce((sum, l) => sum + Number(l.count), 0) * 1e8) / 1e8
+}
+
+/**
+ * True when Plaid's total (units × cost) is within 2% of what's tracked even though the unit
+ * counts differ — e.g. a bill entered as 488 units of $1,000 face vs Plaid's 488,000 units of
+ * $1 face: the same position in a different unit size, not a different holding.
+ */
+export function sameValueDifferentUnits(
+  plaid: { count?: number | string | null; cost_price?: number | string | null },
+  existing: ExistingLot[],
+): boolean {
+  const plaidCount = Number(plaid.count)
+  const plaidValue = plaidCount * Number(plaid.cost_price)
+  const trackedCount = trackedLotTotal(existing)
+  const trackedValue = existing.reduce((sum, l) => sum + Number(l.count) * Number(l.cost_price), 0)
+  if (!Number.isFinite(plaidValue) || plaidValue <= 0 || trackedValue <= 0 || trackedCount <= 0) return false
+  const unitsDiffer = Math.abs(plaidCount - trackedCount) / trackedCount > 0.02
+  return unitsDiffer && Math.abs(plaidValue - trackedValue) / trackedValue <= 0.02
 }
