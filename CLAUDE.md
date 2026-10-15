@@ -22,17 +22,16 @@ npx vitest --run charts.test      # single file
 
 `src/App.tsx` gates on `config.isConfigured && isSupabaseReady()`. If false, `<Onboarding>` renders. Supabase is initialized at module load time from env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) — there is no `initSupabase()` call. All DB calls go through `getSupabaseClient()`, which throws if the env vars were absent.
 
-`src/store/config.ts` stores the following in localStorage:
-- `mne_claude_api_key` — Claude API key
-- `mne_groq_api_key` — Groq API key
-- `mne_llm_provider` — active LLM provider (`claude` | `groq`; defaults to `claude`)
-- `mne_finnhub_api_key` — Finnhub API key for stock quotes
-- `mne_coingecko_api_key` — optional CoinGecko Demo key for crypto quotes (crypto works keyless; not part of `isConfigured`)
+`src/store/config.ts` stores the following in localStorage. **No API key lives in the browser any more**: the Claude, Finnhub and CoinGecko keys are saved write-only on the server (see "Server-held API keys" below) and localStorage only holds "a key is saved" flags:
+- `mne_llm_key_set` — a Claude key is saved server-side
+- `mne_finnhub_key_set` — a Finnhub key is saved server-side
+- `mne_coingecko_key_set` — optional CoinGecko Demo key saved server-side (crypto works keyless; not part of `isConfigured`)
+- `mne_claude_api_key`, `mne_finnhub_api_key`, `mne_coingecko_api_key` — **legacy** pre-proxy copies of the keys, read only by `migrateLegacyClaudeKey` / `migrateLegacyMarketKeys` (run from `AppLayout` on startup) which move them to the server and then delete them
 - `mne_needs_signin` — flag set when the user is signed out
 - `mne_theme` — appearance preference (`light` | `dark` | `system`)
 - `mne_asset_view` — Portfolio layout preference (`grid` | `list`; unset until the user picks one, in which case Portfolio defaults to `list` on mobile and `grid` on desktop)
 
-`config.isConfigured` is true only when `config.activeApiKey` (key for the chosen provider), `config.finnhubApiKey`, and `!config.needsSignIn` are all satisfied.
+`config.isConfigured` is true only when a Claude key is saved (`llmKeySet`, or a not-yet-migrated legacy key), a Finnhub key is saved (`finnhubKeySet`/`hasFinnhubKey`, same legacy allowance), and `!config.needsSignIn`.
 
 On every app load, `src/layouts/AppLayout.tsx` runs a startup effect: loads assets, records a daily net worth snapshot, promotes stale Short Term tax lots to Long Term, and syncs API keys and the LLM provider to `user_settings`.
 
@@ -120,22 +119,26 @@ Tokens live in `src/index.css` (theme CSS variables, dark default + `html.light`
 
 ### user_settings Columns
 
-Key columns (all RLS-protected): `claude_api_key`, `groq_api_key`, `llm_provider`, `finnhub_api_key`, `coingecko_api_key` (optional), `price_alert_threshold`, `rsu_alert_days_before`, `auto_theme_assignment_enabled`, `price_alerts_enabled`, `vest_alerts_enabled`, `capital_gains_alerts_enabled`. Note: `tax_harvest_threshold` and `portfolio_explanation_enabled` were removed (migrations `20260303000001_remove_tax_harvest_threshold.sql`, `20260918000000_drop_portfolio_explanation_enabled.sql`).
+Key columns (all RLS-protected): `price_alert_threshold`, `rsu_alert_days_before`, `auto_theme_assignment_enabled`, `price_alerts_enabled`, `vest_alerts_enabled`, `capital_gains_alerts_enabled`. The old `claude_api_key`, `finnhub_api_key` and `coingecko_api_key` columns are **deprecated**: the keys now live in write-only tables (see "Server-held API keys"), the columns are only a source for the one-time move and are nulled once moved (a later migration drops them). `groq_api_key` and `llm_provider` were dropped with Groq support (`20261016000000_add_llm_credentials_and_drop_groq.sql`). Note: `tax_harvest_threshold` and `portfolio_explanation_enabled` were removed (migrations `20260303000001_remove_tax_harvest_threshold.sql`, `20260918000000_drop_portfolio_explanation_enabled.sql`).
 
 Home chart range is in `localStorage` (`mne_home_chart_range`, values: `1M | 3M | 6M | 1Y | ALL`), not DB.
 
-### LLM Abstraction Layer
+### Server-held API keys (llm-proxy and market-proxy)
 
-`src/lib/llm.ts` provides a unified LLM client interface supporting multiple providers:
+The browser holds **no** third-party API key. The Claude, Finnhub and CoinGecko keys are saved write-only, exactly like the Plaid secrets: `llm_credential_secrets` and `market_credential_secrets` have RLS enabled with insert/update policies and **no select policy**, and a readable flag row (`llm_credentials.secret_set`, `market_credentials.finnhub_set`/`coingecko_set`) is the only way the client can tell a key actually saved (see the zero-select-policy Gotchas below: never `.upsert()` a secrets table, use update-then-insert, and a status check needs its own flag). `src/lib/db/llmCredentials.ts` (`saveLlmKey`, `migrateLegacyClaudeKey`) and `src/lib/db/marketCredentials.ts` (`saveMarketKeys`, `migrateLegacyMarketKeys`) do the writes; Settings and Onboarding call them, and `AppLayout` runs the migrate helpers on startup to move any pre-proxy key from localStorage and `user_settings` to the server, clearing both old copies only after the server write succeeded.
 
-- **Claude** (`claude` provider) — uses `@anthropic-ai/sdk` via a `ClaudeAdapter` that converts OpenAI-format messages/tools to the Anthropic API shape and normalizes responses back to OpenAI format.
-- **Groq** (`groq` provider) — uses the `openai` npm package pointed at `https://api.groq.com/openai/v1`.
+- **`llm-proxy`** (`supabase/functions/llm-proxy/index.ts`): the Anthropic SDK in the browser is constructed with `baseURL` = `<supabase url>/functions/v1/llm-proxy`, a placeholder `apiKey`, and a custom `fetch` that attaches the user's Supabase session as `Authorization`. The function checks the session itself (deployed `verify_jwt:false` like the plaid-* functions), enforces a request policy (`validateLlmRequest`: only the `claude-sonnet-5` model, `max_tokens` ≤ 16000, a fixed set of body fields, only custom tools plus the `web_search_20250305` server tool), rate-limits per user (60/min, via `api_proxy_calls`), then swaps in the stored key and streams Anthropic's reply straight back. Errors are Anthropic-shaped so the SDK surfaces the message. A missing key is a 409 with "No Claude API key is saved…".
+- **`market-proxy`** (`supabase/functions/market-proxy/index.ts`): POST `{provider, path, params}` for an allowlisted set of Finnhub endpoints (`quote`, `stock/profile2`, `stock/metric`, `stock/recommendation`, `stock/financials-reported`, `company-news`, `news`, `calendar/earnings`) and CoinGecko ones (`simple/price`, `search`, `coins/<id>/market_chart`); callers can never pass a `token`/key param. 600 calls/min per user. Client code calls it through `finnhubFetch()` / `coingeckoFetch()` in `src/lib/marketData.ts`, which return a normal `Response`. **Keyless CoinGecko skips the proxy** (nothing to protect, and its keyless limit is per IP so funnelling every user through the server's IP would make it worse); only a user with a saved CoinGecko key goes through it.
+- `check-prices` reads keys from `market_credential_secrets`, falling back to the `user_settings` columns for any not yet moved.
+- The policy helpers are exported from each function's `index.ts` and the remote import is lazy so vitest can test them (`llmProxyPolicy.test.ts`, `marketProxyPolicy.test.ts`); the `Deno.serve` call is guarded by `typeof Deno`.
+- **Deploy order matters**: apply the migrations (`20261016000000`, `20261016000001`) and deploy `llm-proxy` and `market-proxy` **before** shipping the app build that calls them, otherwise AI and price calls fail until they are live. `setup.sh`/`upgrade.sh` deploy both with `verify_jwt:false`.
+- `config.llmKeySet` / `finnhubKeySet` / `coingeckoKeySet` are the localStorage flags; `config.hasFinnhubKey` is also true while a legacy key is waiting to be moved.
 
-`createLLMClient(provider, apiKey)` returns an `LLMClient` that implements the OpenAI `chat.completions.create` interface regardless of the underlying provider.
+### LLM Client
 
-Models used: `claude-sonnet-5` (Claude), `llama-3.3-70b-versatile` (Groq). Both are defined in `MODEL_FOR_PROVIDER`.
+`src/lib/llm.ts` has a single `ClaudeAdapter` (Groq support was removed). `createLLMClient()` returns an `LLMClient` that implements the OpenAI `chat.completions.create` interface on top of `@anthropic-ai/sdk` (it converts OpenAI-format messages/tools to the Anthropic shape and normalizes responses and usage back), pointed at the llm-proxy as described above. The model is `LLM_MODEL` (`claude-sonnet-5`). `claudeWebSearch(query)` goes through the same proxy.
 
-All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMClient(config.llmProvider, config.activeApiKey)` so they work with either provider.
+All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`, `src/lib/portfolioExplanation.ts`) call `createLLMClient()`.
 
 ### AI Command Bar
 
@@ -151,7 +154,7 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 - `simulate_portfolio_actions` — hypothetical what-if scenarios
 - `recommend_actions_for_goal` — goal-based recommendations
 - `get_rsu_vesting_schedule` — shares vesting between two dates, per grant (discrete installment math, not a smooth-curve estimate)
-- `web_search` — general web search for anything the portfolio tools can't answer (earnings dates, news, tax rules, definitions). **Claude provider only**: it runs Anthropic's server-side `web_search_20250305` tool via `claudeWebSearch` in `src/lib/llm.ts` (a separate non-streaming call whose tokens are folded into the turn's usage total via `executeReadTool`'s `addUsage` context callback, so the reply's (i) figure and `llm_usage_log` include them; the per-search fee itself isn't tokens and isn't counted) and returns a short answer plus up to 6 source links; on Groq the tool returns an error telling the model to ask the user to switch provider. Web search must be enabled for the Anthropic org in the Console
+- `web_search` — general web search for anything the portfolio tools can't answer (earnings dates, news, tax rules, definitions). It runs Anthropic's server-side `web_search_20250305` tool via `claudeWebSearch` in `src/lib/llm.ts` (a separate non-streaming call whose tokens are folded into the turn's usage total via `executeReadTool`'s `addUsage` context callback, so the reply's (i) figure and `llm_usage_log` include them; the per-search fee itself isn't tokens and isn't counted) and returns a short answer plus up to 6 source links; with no Claude key saved the tool returns an error telling the model to ask the user to add one in Settings. Web search must be enabled for the Anthropic org in the Console
 - `get_company_fundamentals` — valuation/profitability metrics, most-recent-fiscal-year capex, and latest analyst recommendation trend for up to 5 symbols, via Finnhub's free-tier `stock/metric`, `stock/financials-reported`, and `stock/recommendation` endpoints (same `finnhub_api_key` used elsewhere, no new provider; `stock/financials` with `statement=cf` is NOT free and is deliberately not used). Capex has no dedicated Finnhub field — `findCapexLineItem()` in `src/lib/claude.ts` pattern-matches the SEC "as reported" cash flow statement's XBRL `concept` field against known capex concepts (`us-gaap_PaymentsToAcquirePropertyPlantAndEquipment` and siblings, confirmed against a live AAPL 10-K filing), falling back to a label-text match; returns `null` when no line item matches, not an error. Returns raw data only — the tool description explicitly tells the model never to state its own buy/sell/hold call from it, matching `recommend_actions_for_goal`'s existing "educational guidance only" framing rather than opening a stock-picking-advice surface.
 
 **Navigation tool** (no confirmation):
@@ -175,7 +178,7 @@ Write operations display a structured preview table in the UI before the user co
 
 The command bar requires the user to be signed in; if not, it prompts re-authentication.
 
-**File attachment support**: The command bar accepts CSV (text-injected), PDF (pdfjs-dist text extraction + base64 for Claude), and image files. Images require the Claude provider — switching to Groq while an image is attached will throw.
+**File attachment support**: The command bar accepts CSV (text-injected), PDF (base64 document block for Claude), and image files.
 
 ### Portfolio Performance Explanation
 
@@ -206,7 +209,7 @@ An LLM-generated summary of why the user's portfolio moved, generated entirely o
 
 ### Token Usage Tracking
 
-`llm_usage_log` is an append-only ledger shared by both LLM-powered features (portfolio explanations and the command bar) — the one place either's usage can be trended over time. Both `src/lib/llm.ts` adapters (`ClaudeAdapter`, `GroqAdapter`) normalize `usage: { inputTokens, outputTokens }` onto every response; Groq's OpenAI-compatible stream needs `stream_options: { include_usage: true }` or it never emits usage at all.
+`llm_usage_log` is an append-only ledger shared by both LLM-powered features (portfolio explanations and the command bar) — the one place either's usage can be trended over time. `ClaudeAdapter` in `src/lib/llm.ts` normalizes `usage: { inputTokens, outputTokens }` onto every response; `llm_usage_log.provider` is always `'claude'` now.
 
 Each feature also denormalizes its own display copy so showing usage never requires querying/aggregating the log: `portfolio_explanations.input_tokens`/`output_tokens` (this generation's totals) and `command_conversations.total_input_tokens`/`total_output_tokens` (summed across a conversation's turns via `incrementConversationUsage`). `runCommand`'s `AgentTrace` carries a turn's accumulated `usage` (summed across every internal tool-use round through the same `runLLM` closure) so the command bar can display it without new plumbing.
 
@@ -220,7 +223,8 @@ Usage numbers stay hidden until asked for: `TokenUsageInfo` (`src/components/Tok
 
 ### Edge Functions
 
-Four Deno functions in `supabase/functions/`:
+Six Deno functions (plus the Plaid ones below) in `supabase/functions/`:
+- `llm-proxy` and `market-proxy` — relay AI and market-data calls so the keys stay server-side (see "Server-held API keys")
 - `send-push` — sends Web Push notifications via `npm:web-push`; requires `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` secrets
 - `check-prices` — fetches Finnhub quotes (stocks) and CoinGecko quotes (crypto, batched across users — see Data Model), fires push if price moved ≥ user threshold, and upserts today's row into `ticker_price_history` (see below); optional `COINGECKO_API_KEY` secret
 - `check-vests` — alerts on each discrete vest event (per grant's `vesting_frequency`) landing within `rsu_alert_days_before` days, not just the grant's final `vest_end`
@@ -239,7 +243,9 @@ Tests live in `src/__tests__/`. Current test files:
 - `BottomNav.test.tsx`, `CommandBar.test.tsx` — UI component tests
 - `charts.test.ts`, `portfolio.test.ts` — pure computation tests
 - `claude.test.ts` — AI command logic tests
-- `llm.test.ts` — LLM adapter/client tests
+- `llm.test.ts` — LLM adapter/client tests (proxy base URL, session auth header)
+- `llmCredentials.test.ts`, `marketCredentials.test.ts` — write-only key saving and the one-time legacy key migration
+- `llmProxyPolicy.test.ts`, `marketProxyPolicy.test.ts` — the edge functions' request policy
 - `config.test.ts` — config store tests
 - `importExport.test.ts` — backup/restore tests
 
@@ -314,8 +320,6 @@ Not required here: Plaid credentials are per-user (entered in Settings, stored i
 
 ## Gotchas
 
-**Image attachments require Claude**: Attaching an image in the command bar throws if the active LLM provider is Groq. CSV and PDF work with both providers.
-
 **`is_allowed_email_admin()` bypasses RLS intentionally**: The helper function is SECURITY DEFINER so it can query `allowed_emails` without triggering recursive policy evaluation. Don't remove this without replacing with a safe equivalent.
 
 **RLS on new tables**: Every new Supabase table needs an explicit RLS policy or all writes silently fail with a policy violation. Check `supabase/migrations/` for the pattern used on existing tables.
@@ -346,6 +350,6 @@ Not required here: Plaid credentials are per-user (entered in Settings, stored i
 
 **Notification edge functions**: Each `check-*` function reads `price_alerts_enabled` / `vest_alerts_enabled` / `capital_gains_alerts_enabled` from `user_settings` and skips push (but not DB promotion) when false.
 
-**Adding a new LLM provider**: Add the provider type to `LLMProvider` in `src/store/config.ts`, add a case in `createLLMClient` in `src/lib/llm.ts`, add the model to `MODEL_FOR_PROVIDER`, add a key field to the config store, and add the `llm_provider` value + key column to `user_settings` via a migration and `self_host_bootstrap.sql`.
+**Adding another LLM provider** would mean a new adapter in `src/lib/llm.ts` plus a proxy route and a credentials flag for it; the app has been Claude-only since Groq was removed, so there is no provider switch to extend.
 
 **OpenAI-format tool definitions**: All tools in `claude.ts` and `autoThemes.ts` use the OpenAI function-calling format (`{ type: 'function', function: { name, description, parameters } }`). `ClaudeAdapter` in `llm.ts` converts these to Anthropic format internally.

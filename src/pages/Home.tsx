@@ -126,9 +126,9 @@ export default function Home() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) {
+    if (config.hasFinnhubKey) {
       try {
-        await refreshAllPrices(config.finnhubApiKey)
+        await refreshAllPrices()
         // Portfolio still shows a "Prices refreshed" timestamp read from
         // this key, even though Home's own copy of that display is gone.
         localStorage.setItem(PRICES_REFRESHED_AT_KEY, new Date().toISOString())

@@ -1,7 +1,6 @@
 import { getSupabaseClient } from '../supabase'
-import type { LLMProvider } from '@/store/config'
-
-const VALID_PROVIDERS = ['claude', 'groq'] as const
+import { getLlmKeySet } from './llmCredentials'
+import { getMarketKeyStatus } from './marketCredentials'
 
 function extractMissingColumn(error: { message?: string; details?: string; hint?: string } | null | undefined): string | null {
   const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
@@ -10,11 +9,9 @@ function extractMissingColumn(error: { message?: string; details?: string; hint?
 }
 
 export async function loadApiKeys(): Promise<{
-  claudeApiKey: string
-  groqApiKey: string
-  llmProvider: LLMProvider
-  finnhubApiKey: string
-  coingeckoApiKey: string
+  llmKeySet: boolean
+  finnhubKeySet: boolean
+  coingeckoKeySet: boolean
 } | null> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) return null
@@ -24,15 +21,20 @@ export async function loadApiKeys(): Promise<{
     .eq('user_id', user.id)
     .maybeSingle()
   if (error && error.code !== 'PGRST116') throw error
-  if (!data?.finnhub_api_key) return null
-  const hasAnyAIKey = data.claude_api_key || data.groq_api_key
-  if (!hasAnyAIKey) return null
+  // Keys now live write-only on the server (flags only are readable). A key
+  // saved before the proxies existed still sits in user_settings until the
+  // migrate* helpers move it, so those columns count as "has a key" here.
+  const [llmSet, market] = await Promise.all([
+    getLlmKeySet().catch(() => false),
+    getMarketKeyStatus().catch(() => ({ finnhubSet: false, coingeckoSet: false })),
+  ])
+  const llmKeySet = llmSet || !!data?.claude_api_key
+  const finnhubKeySet = market.finnhubSet || !!data?.finnhub_api_key
+  if (!llmKeySet || !finnhubKeySet) return null
   return {
-    claudeApiKey: data.claude_api_key ?? '',
-    groqApiKey: data.groq_api_key ?? '',
-    llmProvider: (VALID_PROVIDERS.includes(data.llm_provider as LLMProvider) ? data.llm_provider : 'claude') as LLMProvider,
-    finnhubApiKey: data.finnhub_api_key,
-    coingeckoApiKey: data.coingecko_api_key ?? '',
+    llmKeySet,
+    finnhubKeySet,
+    coingeckoKeySet: market.coingeckoSet || !!data?.coingecko_api_key,
   }
 }
 
@@ -86,25 +88,4 @@ export async function saveSettings(settings: Record<string, unknown>) {
   }
 
   throw new Error('Failed to save settings after schema compatibility retries')
-}
-
-export async function syncFinnhubKey() {
-  const { config } = await import('@/store/config')
-  const key = config.finnhubApiKey
-  if (!key) return
-  const { data: { user } } = await getSupabaseClient().auth.getUser()
-  if (!user) return
-  const { error } = await getSupabaseClient()
-    .from('user_settings')
-    .upsert({ user_id: user.id, finnhub_api_key: key }, { onConflict: 'user_id' })
-  if (error) throw error
-  // Optional CoinGecko key rides along — separate upsert so a database that
-  // hasn't applied the coingecko_api_key migration yet can't break the
-  // required Finnhub sync above.
-  const coingeckoKey = config.coingeckoApiKey
-  if (coingeckoKey) {
-    await getSupabaseClient()
-      .from('user_settings')
-      .upsert({ user_id: user.id, coingecko_api_key: coingeckoKey }, { onConflict: 'user_id' })
-  }
 }

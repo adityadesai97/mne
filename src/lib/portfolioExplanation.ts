@@ -22,7 +22,8 @@ import {
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
 import { computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
-import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, LLM_MODEL } from './llm'
+import { finnhubFetch } from './marketData'
 import { config } from '@/store/config'
 
 // ── Tunable constants ─────────────────────────────────────────────────────
@@ -1029,7 +1030,6 @@ export function filterNewsForCoin(raw: any[], symbol: string, name: string): any
  *  major move to explain in the first place. */
 export async function fetchMoverHeadlines(
   symbols: string[],
-  finnhubApiKey: string,
   windowDays: number = 7,
   cryptoNames: Map<string, string> = new Map(),
 ): Promise<Map<string, PortfolioExplanationHeadline[]>> {
@@ -1044,7 +1044,7 @@ export async function fetchMoverHeadlines(
   const cryptoSymbols = symbols.filter(symbol => cryptoNames.has(symbol))
   if (cryptoSymbols.length > 0) {
     try {
-      const res = await fetch(`https://finnhub.io/api/v1/news?category=crypto&token=${finnhubApiKey}`)
+      const res = await finnhubFetch('news', { category: 'crypto' })
       const raw = await res.json()
       if (Array.isArray(raw)) {
         for (const symbol of cryptoSymbols) {
@@ -1056,7 +1056,7 @@ export async function fetchMoverHeadlines(
 
   await Promise.all(symbols.filter(symbol => !cryptoNames.has(symbol)).map(async (symbol) => {
     try {
-      const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${weekAgo}&to=${today}&token=${finnhubApiKey}`)
+      const res = await finnhubFetch('company-news', { symbol, from: weekAgo, to: today })
       const raw = await res.json()
       if (Array.isArray(raw)) result.set(symbol, trimHeadlines(raw, 2))
     } catch { /* best-effort — a missing headline just means no citation for that mover */ }
@@ -1067,9 +1067,9 @@ export async function fetchMoverHeadlines(
 /** Best-effort general market news — only called when computeMovers has
  *  already flagged isBroadMarketMove, i.e. a majority of holdings moved
  *  together (see CLAUDE.md). */
-export async function fetchMarketHeadlines(finnhubApiKey: string): Promise<PortfolioExplanationHeadline[]> {
+export async function fetchMarketHeadlines(): Promise<PortfolioExplanationHeadline[]> {
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${finnhubApiKey}`)
+    const res = await finnhubFetch('news', { category: 'general' })
     const raw = await res.json()
     return Array.isArray(raw) ? trimHeadlines(raw, 2) : []
   } catch {
@@ -1149,7 +1149,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
     })
   }
 
-  const finnhubKey = config.finnhubApiKey
+  const hasFinnhub = config.hasFinnhubKey
   // symbol → coin name for held crypto, so news can be matched by name.
   const cryptoNames = new Map<string, string>()
   for (const asset of assets) {
@@ -1160,8 +1160,8 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
     }
   }
   const [headlinesBySymbol, marketHeadlines] = await Promise.all([
-    finnhubKey ? fetchMoverHeadlines(result.movers.map(m => m.symbol), finnhubKey, slot.windowDays, cryptoNames) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
-    finnhubKey && result.isBroadMarketMove ? fetchMarketHeadlines(finnhubKey) : Promise.resolve([]),
+    hasFinnhub ? fetchMoverHeadlines(result.movers.map(m => m.symbol), slot.windowDays, cryptoNames) : Promise.resolve(new Map<string, PortfolioExplanationHeadline[]>()),
+    hasFinnhub && result.isBroadMarketMove ? fetchMarketHeadlines() : Promise.resolve([]),
   ])
   const movers = result.movers.map(m => ({ ...m, headlines: headlinesBySymbol.get(m.symbol) ?? [] }))
 
@@ -1176,8 +1176,8 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   const { label, swingWord, timeWord } = promptContextForSlot(slot)
   const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines, previousSummary, label, swingWord)
-  const client = createLLMClient(config.llmProvider, config.activeApiKey)
-  const model = MODEL_FOR_PROVIDER[config.llmProvider]
+  const client = createLLMClient()
+  const model = LLM_MODEL
   const response = await client.chat.completions.create({
     model,
     max_tokens: 600,
@@ -1185,7 +1185,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
       { role: 'system', content: explanationSystemPrompt(timeWord) },
       { role: 'user', content: prompt },
     ],
-    ...(config.llmProvider === 'claude' ? { output_config: { effort: 'low' as const } } : {}),
+    output_config: { effort: 'low' as const },
   })
   // No links appended here — see stripSources' docstring. The caller
   // (CommandBar.tsx) renders movers/theme_moves/market_headlines as
@@ -1216,7 +1216,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   void logLlmUsage({
     feature: 'portfolio_explanation',
-    provider: config.llmProvider,
+    provider: 'claude',
     model,
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,

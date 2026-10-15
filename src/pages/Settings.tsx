@@ -1,10 +1,11 @@
 // src/pages/Settings.tsx
 import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
+import { saveLlmKey } from '@/lib/db/llmCredentials'
+import { saveMarketKeys } from '@/lib/db/marketCredentials'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { config } from '@/store/config'
-import type { LLMProvider } from '@/store/config'
 import { exportData, importData, setActiveImportController, type ExportScope } from '@/lib/importExport'
 import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/pushNotifications'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -130,10 +131,9 @@ export default function Settings() {
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
   const [hideValues, setHideValues] = useHideValues()
   const [editingKeys, setEditingKeys] = useState(false)
-  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' })
+  const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' })
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
-  const [providerWarning, setProviderWarning] = useState('')
   const [plaidStatus, setPlaidStatus] = useState({ configured: false, clientId: null as string | null, plaidEnv: 'production' })
   const [editingPlaidCreds, setEditingPlaidCreds] = useState(false)
   const [plaidCredsDraft, setPlaidCredsDraft] = useState({ clientId: '', secret: '' })
@@ -217,18 +217,6 @@ export default function Settings() {
     setThemeState(v)
   }
 
-  function handleProviderChange(p: LLMProvider) {
-    const keyForProvider = p === 'claude' ? config.claudeApiKey : config.groqApiKey
-    if (!keyForProvider) {
-      const name = p === 'claude' ? 'Claude' : 'Groq'
-      setProviderWarning(`Add a ${name} API key in API Keys first.`)
-      return
-    }
-    setProviderWarning('')
-    config.setLLMProvider(p)
-    saveSettings({ llm_provider: p }).catch(console.error)
-  }
-
   async function setAutoThemeAssignmentEnabled(enabled: boolean) {
     const next = { ...settingsRef.current, auto_theme_assignment_enabled: enabled }
     setSettings(next)
@@ -257,27 +245,15 @@ export default function Settings() {
   }
 
   async function handleSaveKeys() {
-    const mergedClaude  = keyDraft.claudeApiKey  || config.claudeApiKey
-    const mergedGroq    = keyDraft.groqApiKey    || config.groqApiKey
-    const mergedFinnhub = keyDraft.finnhubApiKey || config.finnhubApiKey
-    if (!mergedFinnhub) { setKeyError('Finnhub API key is required'); return }
-    if (!mergedClaude && !mergedGroq) { setKeyError('At least one AI provider key is required'); return }
+    if (!keyDraft.finnhubApiKey && !config.hasFinnhubKey) { setKeyError('Finnhub API key is required'); return }
+    if (!keyDraft.claudeApiKey && !config.llmKeySet) { setKeyError('A Claude API key is required'); return }
     setKeySaving(true)
     setKeyError('')
     try {
-      const { data: { user } } = await getSupabaseClient().auth.getUser()
-      if (!user) { setKeyError('Not authenticated'); return }
-      const dbRow: Record<string, string> = { user_id: user.id, finnhub_api_key: mergedFinnhub }
-      if (keyDraft.claudeApiKey) dbRow.claude_api_key = keyDraft.claudeApiKey
-      if (keyDraft.groqApiKey)   dbRow.groq_api_key   = keyDraft.groqApiKey
-      if (keyDraft.coingeckoApiKey) dbRow.coingecko_api_key = keyDraft.coingeckoApiKey
-      await saveSettings(dbRow)
-      config.save({
-        claudeApiKey:  keyDraft.claudeApiKey  || config.claudeApiKey,
-        groqApiKey:    keyDraft.groqApiKey    || config.groqApiKey,
-        finnhubApiKey: mergedFinnhub,
-        coingeckoApiKey: keyDraft.coingeckoApiKey || config.coingeckoApiKey,
-      })
+      // API keys are write-only: they go to the server and are never stored
+      // in the browser or in a table the browser can read.
+      if (keyDraft.claudeApiKey) await saveLlmKey(keyDraft.claudeApiKey)
+      await saveMarketKeys({ finnhubApiKey: keyDraft.finnhubApiKey, coingeckoApiKey: keyDraft.coingeckoApiKey })
       setEditingKeys(false)
     } catch (e: any) {
       setKeyError(e.message ?? 'Failed to save')
@@ -561,23 +537,6 @@ export default function Settings() {
       {/* AI */}
       <SectionHeader><Sparkles size={10} className="inline mr-1.5 mb-0.5" />AI</SectionHeader>
       <div className="space-y-2">
-        {/* AI Provider picker */}
-        <div className="bg-card rounded-md px-4 py-4 space-y-2">
-          <p className="text-sm font-medium">AI Provider</p>
-          <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
-            {(['claude', 'groq'] as LLMProvider[]).map(p => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => handleProviderChange(p)}
-                className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${config.llmProvider === p ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                {p === 'claude' ? 'Claude' : 'Groq'}
-              </button>
-            ))}
-          </div>
-          {providerWarning && <p className="text-xs text-amber-500">{providerWarning}</p>}
-        </div>
         <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Auto-assign themes</p>
@@ -815,24 +774,9 @@ export default function Settings() {
             </div>
             <input
               type="password"
-              placeholder="sk-ant-..."
+              placeholder={config.llmKeySet ? 'Saved. Enter a new key to replace it.' : 'sk-ant-...'}
               value={keyDraft.claudeApiKey}
               onChange={e => setKeyDraft(d => ({ ...d, claudeApiKey: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Groq API Key</label>
-              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder="gsk_..."
-              value={keyDraft.groqApiKey}
-              onChange={e => setKeyDraft(d => ({ ...d, groqApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
             />
           </div>
@@ -845,7 +789,7 @@ export default function Settings() {
             </div>
             <input
               type="password"
-              placeholder="your_key"
+              placeholder={config.hasFinnhubKey ? 'Saved. Enter a new key to replace it.' : 'your_key'}
               value={keyDraft.finnhubApiKey}
               onChange={e => setKeyDraft(d => ({ ...d, finnhubApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
@@ -860,7 +804,7 @@ export default function Settings() {
             </div>
             <input
               type="password"
-              placeholder="CG-..."
+              placeholder={config.coingeckoKeySet ? 'Saved. Enter a new key to replace it.' : 'CG-...'}
               value={keyDraft.coingeckoApiKey}
               onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
@@ -888,7 +832,7 @@ export default function Settings() {
         <div className="bg-card rounded-md overflow-hidden">
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
-            onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
+            onClick={() => { setKeyDraft({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
           >
             <p className="text-sm font-medium flex-1">Update API keys</p>
             <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />

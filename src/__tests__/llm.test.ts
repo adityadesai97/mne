@@ -1,85 +1,21 @@
-import { test, expect, vi } from 'vitest'
-import { MODEL_FOR_PROVIDER, createLLMClient } from '@/lib/llm'
-import type { LLMProvider } from '@/store/config'
+import { test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { LLM_MODEL, createLLMClient } from '@/lib/llm'
 
-test('MODEL_FOR_PROVIDER has an entry for each provider', () => {
-  const providers: LLMProvider[] = ['claude', 'groq']
-  for (const p of providers) {
-    expect(MODEL_FOR_PROVIDER[p]).toBeTruthy()
-  }
-})
+// The browser never holds the Claude key: the SDK is pointed at the llm-proxy
+// edge function and authenticates with the Supabase session instead.
+const sdkOptions: any[] = []
+const getSession = vi.fn()
+vi.mock('@/lib/supabase', () => ({
+  getSupabaseClient: () => ({ auth: { getSession } }),
+}))
 
-// The OpenAI SDK streams tool-call argument JSON as fragments, indexed by
-// position — arrival order across indices isn't guaranteed. GroqAdapter has
-// to accumulate per-index rather than concatenating chunks as they arrive,
-// so this is the one piece of the streaming plumbing worth a direct test.
-vi.mock('openai', () => {
-  async function* fakeStream() {
-    yield { choices: [{ delta: { content: 'Sure' } }] }
-    yield { choices: [{ delta: { content: ', checking' } }] }
-    // Two tool calls interleaved by index, each split into id/name/args
-    // fragments — mirrors how the real API streams multi-tool-call replies.
-    yield { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_a', function: { name: 'get_', arguments: '' } }] } }] }
-    yield { choices: [{ delta: { tool_calls: [{ index: 1, id: 'call_b', function: { name: 'get_', arguments: '' } }] } }] }
-    yield { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'positions', arguments: '{"limit"' } }] } }] }
-    yield { choices: [{ delta: { tool_calls: [{ index: 1, function: { name: 'exposure', arguments: '{"by"' } }] } }] }
-    yield { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ':5}' } }] } }] }
-    yield { choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: ':"ticker"}' } }] } }] }
-    // The usage-only trailing chunk (stream_options.include_usage) has an
-    // empty choices array and no delta to read — only a top-level `usage`.
-    yield { choices: [], usage: { prompt_tokens: 42, completion_tokens: 7 } }
-  }
-
-  class FakeOpenAI {
-    chat = {
-      completions: {
-        create: vi.fn(async () => fakeStream()),
-      },
-    }
-  }
-  return { default: FakeOpenAI }
-})
-
-test('groq adapter accumulates streamed text and per-index tool-call fragments', async () => {
-  const client = createLLMClient('groq', 'fake-key')
-  const deltas: string[] = []
-  let streamStarted = false
-
-  const response = await client.chat.completions.create(
-    { model: MODEL_FOR_PROVIDER.groq, messages: [{ role: 'user', content: 'hi' }] },
-    {
-      onStreamStart: () => { streamStarted = true },
-      onTextDelta: (delta) => deltas.push(delta),
-    },
-  )
-
-  expect(streamStarted).toBe(true)
-  expect(deltas.join('')).toBe('Sure, checking')
-  expect(response.choices[0].message.content).toBe('Sure, checking')
-
-  const toolCalls = response.choices[0].message.tool_calls
-  expect(toolCalls).toHaveLength(2)
-  expect(toolCalls?.[0]).toEqual({
-    id: 'call_a',
-    type: 'function',
-    function: { name: 'get_positions', arguments: '{"limit":5}' },
-  })
-  expect(toolCalls?.[1]).toEqual({
-    id: 'call_b',
-    type: 'function',
-    function: { name: 'get_exposure', arguments: '{"by":"ticker"}' },
-  })
-})
-
-test('groq adapter requests stream_options.include_usage and normalizes the returned usage', async () => {
-  const client = createLLMClient('groq', 'fake-key')
-  const response = await client.chat.completions.create({ model: MODEL_FOR_PROVIDER.groq, messages: [{ role: 'user', content: 'hi' }] })
-
-  expect(response.usage).toEqual({ inputTokens: 42, outputTokens: 7 })
+test('LLM_MODEL is set', () => {
+  expect(LLM_MODEL).toBeTruthy()
 })
 
 vi.mock('@anthropic-ai/sdk', () => {
   class FakeAnthropic {
+    constructor(opts: any) { sdkOptions.push(opts) }
     messages = {
       stream: vi.fn(() => ({
         on: vi.fn(),
@@ -93,12 +29,42 @@ vi.mock('@anthropic-ai/sdk', () => {
   return { default: FakeAnthropic }
 })
 
+beforeEach(() => {
+  sdkOptions.length = 0
+  getSession.mockReset()
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://abc.supabase.co')
+})
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+
 test('claude adapter normalizes Anthropic usage into the shared shape', async () => {
-  const client = createLLMClient('claude', 'fake-key')
-  const response = await client.chat.completions.create({ model: MODEL_FOR_PROVIDER.claude, messages: [{ role: 'user', content: 'hi' }] })
+  const client = createLLMClient()
+  const response = await client.chat.completions.create({ model: LLM_MODEL, messages: [{ role: 'user', content: 'hi' }] })
 
   expect(response.choices[0].message.content).toBe('ok')
   expect(response.usage).toEqual({ inputTokens: 55, outputTokens: 12 })
+})
+
+test('the SDK is pointed at the llm-proxy and holds no real API key', () => {
+  createLLMClient()
+  expect(sdkOptions[0].baseURL).toBe('https://abc.supabase.co/functions/v1/llm-proxy')
+  expect(sdkOptions[0].apiKey).toBe('proxy')
+  expect(typeof sdkOptions[0].fetch).toBe('function')
+})
+
+test('proxy requests carry the signed-in user\'s session token', async () => {
+  getSession.mockResolvedValue({ data: { session: { access_token: 'jwt-123' } } })
+  const fetchMock = vi.fn(async () => new Response('{}'))
+  vi.stubGlobal('fetch', fetchMock)
+  createLLMClient()
+  await sdkOptions[0].fetch('https://abc.supabase.co/functions/v1/llm-proxy/v1/messages', { method: 'POST', headers: { 'x-api-key': 'proxy' } })
+  const sent = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+  expect(new Headers(sent.headers).get('Authorization')).toBe('Bearer jwt-123')
+})
+
+test('proxy requests fail clearly when signed out', async () => {
+  getSession.mockResolvedValue({ data: { session: null } })
+  createLLMClient()
+  await expect(sdkOptions[0].fetch('https://x', {})).rejects.toThrow(/signed out/i)
 })
 
 test('claudeWebSearch extracts the answer, de-duplicated sources and the call\'s token usage', async () => {
@@ -123,7 +89,7 @@ test('claudeWebSearch extracts the answer, de-duplicated sources and the call\'s
     },
   }))
   const { claudeWebSearch } = await import('@/lib/llm')
-  const result = await claudeWebSearch('key', 'q')
+  const result = await claudeWebSearch('q')
   expect(result.answer).toBe('Earnings are on Dec 3.')
   expect(result.sources.map(s => s.url)).toEqual(['https://example.com/ir', 'https://example.com/news'])
   expect(result.usage).toEqual({ inputTokens: 5400, outputTokens: 120 })

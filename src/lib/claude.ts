@@ -1,7 +1,8 @@
-import { createLLMClient, claudeWebSearch, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, claudeWebSearch, LLM_MODEL } from './llm'
 import type { NormalizedResponse, NormalizedUsage, StreamCallbacks } from './llm'
 import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
+import { finnhubFetch } from './marketData'
 import { getAllAssets } from './db/assets'
 import { getSnapshots } from './db/snapshots'
 import { getAllTickers } from './db/tickers'
@@ -47,9 +48,9 @@ function clipText(value: unknown, maxLength = 220): string {
 }
 
 async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<void> {
-  if (!config.finnhubApiKey) return
+  if (!config.hasFinnhubKey) return
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${config.finnhubApiKey}`)
+    const res = await finnhubFetch('quote', { symbol })
     const quote = await res.json()
     if (quote.c) {
       await getSupabaseClient().from('tickers').update({
@@ -95,17 +96,16 @@ function findCapexLineItem(cfLines: unknown): { concept: string; label: string; 
 // failures (bad ticker, transient rate limit) are collected rather than
 // thrown, so one bad symbol in a batch doesn't blank out the rest.
 async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: any[]; errors: Array<{ symbol: string; message: string }> }> {
-  if (!config.finnhubApiKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
-  const token = config.finnhubApiKey
+  if (!config.hasFinnhubKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
   const results: any[] = []
   const errors: Array<{ symbol: string; message: string }> = []
 
   for (const symbol of symbols) {
     try {
       const [metricRes, recRes, financialsRes] = await Promise.all([
-        fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${token}`),
-        fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${token}`),
-        fetch(`https://finnhub.io/api/v1/stock/financials-reported?symbol=${symbol}&freq=annual&token=${token}`),
+        finnhubFetch('stock/metric', { symbol, metric: 'all' }),
+        finnhubFetch('stock/recommendation', { symbol }),
+        finnhubFetch('stock/financials-reported', { symbol, freq: 'annual' }),
       ])
       if (!metricRes.ok) throw new Error(`Basic financials lookup failed (${metricRes.status})`)
       const metricJson = await metricRes.json()
@@ -1428,12 +1428,12 @@ export async function executeReadTool(
   if (toolName === 'web_search') {
     const query = String(input?.query ?? '').trim()
     if (!query) throw new Error('A search query is required.')
-    // Web search runs on Anthropic's server-side tool, so it needs a Claude key
-    // and has no Groq equivalent.
-    if (config.llmProvider !== 'claude' || !config.claudeApiKey) {
-      throw new Error('Web search is only available with the Claude provider. Tell the user to switch the AI provider to Claude in Settings to use it.')
+    // Web search runs on Anthropic's server-side tool through the llm-proxy,
+    // so it needs a Claude key saved on the account.
+    if (!config.llmKeySet && !config.legacyClaudeApiKey) {
+      throw new Error('Web search needs a Claude API key. Tell the user to add one in Settings.')
     }
-    const { answer, sources, usage } = await claudeWebSearch(config.claudeApiKey, query)
+    const { answer, sources, usage } = await claudeWebSearch(query)
     // The search runs as its own API call; fold its tokens into the turn's
     // total so the reply's usage (and llm_usage_log) reflects the real cost.
     context.addUsage?.(usage)
@@ -4036,7 +4036,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
 
   const userName = (authedUser?.user_metadata?.full_name ?? authedUser?.user_metadata?.name)
     ?.split(' ')[0] as string | undefined
-  const client = createLLMClient(config.llmProvider, config.activeApiKey)
+  const client = createLLMClient()
   const baseSystemPrompt = buildSystemPrompt(assets, userName, attachment?.filename, attachment?.type)
 
   // Every round (tool-decision rounds included, not just the one that turns
@@ -4048,7 +4048,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   // the caller reset its buffer between rounds regardless.
   const runLLM = async (systemPrompt: string, inputMessages: any[], toolsOverride: typeof tools = tools): Promise<NormalizedResponse> => {
     const response = await client.chat.completions.create({
-      model: MODEL_FOR_PROVIDER[config.llmProvider],
+      model: LLM_MODEL,
       max_tokens: 8192,
       // Use temperature=0 when processing a file attachment for deterministic extraction.
       // For regular conversational queries no temperature is set (API default).
@@ -4092,31 +4092,18 @@ ${JSON.stringify(analysisContext, null, 2)}`
         content: `${userText}\n\n[Attached file: ${attachment.filename}]\n${attachment.content}`,
       }
     } else if (attachment.type === 'pdf') {
-      if (config.llmProvider === 'claude') {
-        // Send as a native PDF document block — Claude reads the PDF directly.
-        claudeMessages[lastIdx] = {
-          ...lastMsg,
-          content: [
-            ...(userText ? [{ type: 'text', text: userText }] : []),
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: attachment.content },
-            },
-          ],
-        }
-      } else {
-        // Groq cannot process document blocks — fall back to structured text extraction.
-        const { extractTextFromPdf } = await import('./fileParser')
-        const extractedText = await extractTextFromPdf(attachment)
-        claudeMessages[lastIdx] = {
-          ...lastMsg,
-          content: `${userText}\n\n[Attached PDF: ${attachment.filename}]\n${extractedText}`,
-        }
+      // Send as a native PDF document block — Claude reads the PDF directly.
+      claudeMessages[lastIdx] = {
+        ...lastMsg,
+        content: [
+          ...(userText ? [{ type: 'text', text: userText }] : []),
+          {
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: attachment.content },
+          },
+        ],
       }
     } else if (attachment.type === 'image') {
-      if (config.llmProvider !== 'claude') {
-        throw new Error('Image attachments currently require the Claude provider. Switch providers in Settings and try again.')
-      }
       const supportedMediaTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
       const mediaType = attachment.mediaType ?? 'image/png'
       if (!supportedMediaTypes.includes(mediaType)) {

@@ -1,8 +1,14 @@
+import { vi } from 'vitest'
 import { CoinGeckoError, derivePreviousClose, fetchCryptoQuotes, fetchCoinDailyHistory, pickCoinForSymbol, searchCoinBySymbol } from '../lib/coingecko'
 import { filterNewsForCoin } from '../lib/portfolioExplanation'
 
+vi.mock('../lib/supabase', () => ({
+  getSupabaseClient: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'jwt-1' } } }) } }),
+}))
+
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 function stubFetch(body: unknown, ok = true) {
@@ -40,11 +46,26 @@ test('fetchCryptoQuotes batches every coin into one request and returns price + 
   expect(quotes.has('missing-coin')).toBe(false)
 })
 
-test('fetchCryptoQuotes sends the optional key as a query param, not a header', async () => {
+test('keyless CoinGecko calls go straight to CoinGecko with no credentials', async () => {
   const fetchMock = stubFetch({ bitcoin: { usd: 1 } })
-  await fetchCryptoQuotes(['bitcoin'], 'CG-test')
-  expect(String(fetchMock.mock.calls[0][0])).toContain('x_cg_demo_api_key=CG-test')
-  expect(fetchMock.mock.calls[0][1]).toBeUndefined()
+  await fetchCryptoQuotes(['bitcoin'])
+  const url = String(fetchMock.mock.calls[0][0])
+  expect(url.startsWith('https://api.coingecko.com/api/v3/simple/price')).toBe(true)
+  expect(url).not.toContain('x_cg_demo_api_key')
+})
+
+test('with a saved key the call goes through the market-proxy and carries no key', async () => {
+  localStorage.setItem('mne_coingecko_key_set', 'true')
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://abc.supabase.co')
+  const fetchMock = stubFetch({ bitcoin: { usd: 1 } })
+  await fetchCryptoQuotes(['bitcoin'])
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+  expect(url).toBe('https://abc.supabase.co/functions/v1/market-proxy')
+  expect(new Headers(init.headers).get('Authorization')).toBe('Bearer jwt-1')
+  const sent = JSON.parse(String(init.body))
+  expect(sent).toEqual({ provider: 'coingecko', path: 'simple/price', params: expect.objectContaining({ ids: 'bitcoin' }) })
+  expect(JSON.stringify(sent)).not.toMatch(/x_cg_demo_api_key|CG-/)
+  localStorage.removeItem('mne_coingecko_key_set')
 })
 
 test('fetchCryptoQuotes skips the network for an empty id list and throws on a failed response', async () => {

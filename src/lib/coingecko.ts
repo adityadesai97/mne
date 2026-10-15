@@ -2,12 +2,13 @@
 // crypto tickers (tickers.kind = 'crypto'). Finnhub's free tier has no usable
 // crypto quote/candle endpoint, so crypto is priced here instead.
 //
-// Works keyless (public API, tight per-IP rate limit) or with a free Demo key
-// (config.coingeckoApiKey / user_settings.coingecko_api_key). The key goes in
-// the query string rather than the x-cg-demo-api-key header so browser calls
-// stay "simple" CORS requests with no preflight.
+// Works keyless (public API, tight per-IP rate limit, called straight from the
+// browser) or with a free Demo key, in which case calls go through the
+// market-proxy edge function (see marketData.ts) so the key never reaches the
+// browser.
 
-const BASE_URL = 'https://api.coingecko.com/api/v3'
+import { coingeckoFetch } from './marketData'
+import { config } from '@/store/config'
 
 export interface CryptoQuote {
   price: number
@@ -50,12 +51,6 @@ export class CoinGeckoError extends Error {
   }
 }
 
-function buildUrl(path: string, params: Record<string, string>, apiKey?: string): string {
-  const qs = new URLSearchParams(params)
-  if (apiKey) qs.set('x_cg_demo_api_key', apiKey)
-  return `${BASE_URL}${path}?${qs.toString()}`
-}
-
 /** Price 24h ago, implied by the current price and its 24h % change. */
 export function derivePreviousClose(price: number, changePct: unknown): number | null {
   const pct = Number(changePct)
@@ -69,16 +64,16 @@ export function derivePreviousClose(price: number, changePct: unknown): number |
  * caps. Coins CoinGecko doesn't return (bad id, delisted) are simply absent
  * from the result.
  */
-export async function fetchCryptoQuotes(ids: string[], apiKey?: string): Promise<Map<string, CryptoQuote>> {
+export async function fetchCryptoQuotes(ids: string[]): Promise<Map<string, CryptoQuote>> {
   const result = new Map<string, CryptoQuote>()
   const unique = [...new Set(ids.filter(Boolean))]
   if (unique.length === 0) return result
-  const res = await fetch(buildUrl('/simple/price', {
+  const res = await coingeckoFetch('simple/price', {
     ids: unique.join(','),
     vs_currencies: 'usd',
     include_24hr_change: 'true',
-  }, apiKey))
-  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
+  })
+  if (!res.ok) throw new CoinGeckoError(res.status, config.coingeckoKeySet)
   const body = await res.json() as Record<string, { usd?: number; usd_24h_change?: number }>
   for (const id of unique) {
     const entry = body?.[id]
@@ -112,9 +107,9 @@ export function pickCoinForSymbol(
   }
 }
 
-export async function searchCoinBySymbol(symbol: string, apiKey?: string): Promise<CoinSearchResult | null> {
-  const res = await fetch(buildUrl('/search', { query: symbol.trim() }, apiKey))
-  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
+export async function searchCoinBySymbol(symbol: string): Promise<CoinSearchResult | null> {
+  const res = await coingeckoFetch('search', { query: symbol.trim() })
+  if (!res.ok) throw new CoinGeckoError(res.status, config.coingeckoKeySet)
   const body = await res.json()
   return pickCoinForSymbol(symbol, Array.isArray(body?.coins) ? body.coins : [])
 }
@@ -122,13 +117,13 @@ export async function searchCoinBySymbol(symbol: string, apiKey?: string): Promi
 /** Daily closes (UTC date → price) for up to the last year; used to backfill
  *  ticker_price_history so a new crypto holding's weekly/monthly/yearly
  *  Portfolio Pulse cards don't have to wait for history to accumulate. */
-export async function fetchCoinDailyHistory(id: string, days = 365, apiKey?: string): Promise<{ date: string; price: number }[]> {
-  const res = await fetch(buildUrl(`/coins/${encodeURIComponent(id)}/market_chart`, {
+export async function fetchCoinDailyHistory(id: string, days = 365): Promise<{ date: string; price: number }[]> {
+  const res = await coingeckoFetch(`coins/${encodeURIComponent(id)}/market_chart`, {
     vs_currency: 'usd',
     days: String(days),
     interval: 'daily',
-  }, apiKey))
-  if (!res.ok) throw new CoinGeckoError(res.status, !!apiKey)
+  })
+  if (!res.ok) throw new CoinGeckoError(res.status, config.coingeckoKeySet)
   const body = await res.json()
   const byDate = new Map<string, number>()
   for (const point of Array.isArray(body?.prices) ? body.prices : []) {

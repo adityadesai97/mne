@@ -25,9 +25,9 @@ let inFlight: Promise<void> | null = null
  * from rendering with whatever prices are already in the database.
  */
 export function refreshPricesOncePerLoad(): Promise<void> {
-  if (!config.finnhubApiKey) return Promise.resolve()
+  if (!config.hasFinnhubKey) return Promise.resolve()
   if (!inFlight) {
-    inFlight = refreshAllPrices(config.finnhubApiKey).then(
+    inFlight = refreshAllPrices().then(
       () => { localStorage.setItem(PRICES_REFRESHED_AT_KEY, new Date().toISOString()) },
       () => undefined,
     )

@@ -313,14 +313,11 @@ test('get_transactions filters lots by capital gains status', async () => {
   expect(result.transactions[0].purchaseDate).toBe('2024-01-01')
 })
 
-test('web_search is Claude-only and says so on the Groq provider', async () => {
-  localStorage.setItem('mne_llm_provider', 'groq')
-  try {
-    await expect(executeReadTool('web_search', { query: 'Salesforce next earnings date' }, { assets: [], getSnapshotsCached: async () => [] }))
-      .rejects.toThrow(/only available with the Claude provider/)
-  } finally {
-    localStorage.removeItem('mne_llm_provider')
-  }
+test('web_search needs a saved Claude key and says how to add one', async () => {
+  localStorage.removeItem('mne_llm_key_set')
+  localStorage.removeItem('mne_claude_api_key')
+  await expect(executeReadTool('web_search', { query: 'Salesforce next earnings date' }, { assets: [], getSnapshotsCached: async () => [] }))
+    .rejects.toThrow(/needs a Claude API key/)
 })
 
 test('web_search requires a query', async () => {

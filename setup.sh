@@ -48,8 +48,9 @@
 #             Requires the `zip` command; falls back to Supabase CLI instructions
 #             if zip is not available.
 #
-#   Step 4e  Deploy Plaid integration edge functions
-#             Deploys plaid-create-link-token, plaid-exchange-token, plaid-sync,
+#   Step 4e  Deploy the proxy and Plaid integration edge functions
+#             Deploys llm-proxy and market-proxy (they hold the Claude, Finnhub
+#             and CoinGecko keys server-side), plus plaid-create-link-token, plaid-exchange-token, plaid-sync,
 #             plaid-sync-me, and plaid-remove-item, and schedules plaid-sync
 #             hourly via pg_cron. Always run (not gated by push notifications) —
 #             each signed-in user brings their own free Plaid developer
@@ -506,7 +507,7 @@ if [ -n "$PAT" ] && [ -n "$PROJECT_REF" ]; then
     # verify_jwt:true, which breaks functions.invoke() from a browser (a
     # preflight never carries the app's Authorization header). Each
     # function does its own auth check internally instead.
-    for ENTRY in "plaid-create-link-token:false" "plaid-exchange-token:false" "plaid-sync:false" "plaid-sync-me:false" "plaid-remove-item:false"; do
+    for ENTRY in "plaid-create-link-token:false" "plaid-exchange-token:false" "plaid-sync:false" "plaid-sync-me:false" "plaid-remove-item:false" "llm-proxy:false" "market-proxy:false"; do
       SLUG="${ENTRY%%:*}"
       VERIFY_JWT="${ENTRY##*:}"
       FN_ZIP="/tmp/mne_fn_${SLUG}.zip"
@@ -691,6 +692,8 @@ else
   echo "    supabase functions deploy plaid-sync              --project-ref ${PLAID_REF} --no-verify-jwt"
   echo "    supabase functions deploy plaid-sync-me           --project-ref ${PLAID_REF} --no-verify-jwt"
   echo "    supabase functions deploy plaid-remove-item       --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy llm-proxy               --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy market-proxy            --project-ref ${PLAID_REF} --no-verify-jwt"
   echo ""
 fi
 

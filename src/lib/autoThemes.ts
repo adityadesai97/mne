@@ -1,6 +1,7 @@
-import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, LLM_MODEL } from './llm'
 import { config } from '@/store/config'
 import { getSupabaseClient } from './supabase'
+import { finnhubFetch } from './marketData'
 
 const EMPTY_ASSIGNMENT_RESULT = { assignedCount: 0, suggestedThemes: [] as string[] }
 
@@ -41,9 +42,9 @@ function parseThemeSuggestions(raw: string): string[] {
 }
 
 async function fetchTickerProfile(symbol: string): Promise<{ name: string; industry: string }> {
-  if (!config.finnhubApiKey) return { name: '', industry: '' }
+  if (!config.hasFinnhubKey) return { name: '', industry: '' }
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${config.finnhubApiKey}`)
+    const res = await finnhubFetch('stock/profile2', { symbol })
     const profile = await res.json()
     return {
       name: String(profile?.name ?? '').trim(),
@@ -59,14 +60,14 @@ async function suggestTickerThemes(
   existingThemes: string[],
   profile: { name: string; industry: string },
 ): Promise<string[]> {
-  if (!config.activeApiKey) return []
+  if (!config.llmKeySet && !config.legacyClaudeApiKey) return []
 
-  const client = createLLMClient(config.llmProvider, config.activeApiKey)
+  const client = createLLMClient()
   const existingThemeList = existingThemes.slice(0, 80)
 
   try {
     const response = await client.chat.completions.create({
-      model: MODEL_FOR_PROVIDER[config.llmProvider],
+      model: LLM_MODEL,
       max_tokens: 180,
       messages: [
         {

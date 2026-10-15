@@ -11,7 +11,22 @@ Deno.serve(async () => {
   )
 
   const { data: settings } = await supabase.from('user_settings').select('*')
-  const eligible = (settings ?? []).filter((userSettings: any) => userSettings.price_alerts_enabled !== false)
+  // Keys now live write-only in market_credential_secrets; the user_settings
+  // columns are only a fallback for keys not yet moved there.
+  const { data: secretRows } = await supabase
+    .from('market_credential_secrets')
+    .select('user_id, finnhub_api_key, coingecko_api_key')
+  const secretsByUser = new Map<string, any>((secretRows ?? []).map((row: any) => [row.user_id, row]))
+  const eligible = (settings ?? [])
+    .filter((userSettings: any) => userSettings.price_alerts_enabled !== false)
+    .map((userSettings: any) => {
+      const secrets = secretsByUser.get(userSettings.user_id)
+      return {
+        ...userSettings,
+        finnhub_api_key: secrets?.finnhub_api_key || userSettings.finnhub_api_key,
+        coingecko_api_key: secrets?.coingecko_api_key || userSettings.coingecko_api_key,
+      }
+    })
 
   const tickersByUser = new Map<string, any[]>()
   for (const userSettings of eligible) {

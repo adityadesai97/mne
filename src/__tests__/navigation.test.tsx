@@ -90,8 +90,10 @@ vi.mock('../lib/db/transactions', () => ({
   updateTransaction: () => Promise.resolve(),
 }))
 
+vi.mock('../lib/db/llmCredentials', () => ({ migrateLegacyClaudeKey: () => Promise.resolve() }))
+vi.mock('../lib/db/marketCredentials', () => ({ migrateLegacyMarketKeys: () => Promise.resolve() }))
+
 vi.mock('../lib/db/settings', () => ({
-  syncFinnhubKey: () => Promise.resolve(),
   getSettings: () => Promise.resolve(null),
   getUserSettings: () => Promise.resolve(null),
   saveSettings: () => Promise.resolve(),

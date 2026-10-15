@@ -14,11 +14,9 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
    ```
 2. **Sign in** — open the app and click "Continue with Google". Use the Google account matching your allowlisted email.
 3. **Enter API keys** — on first sign-in you'll be asked for:
-   - **One AI provider key**:
-     - Claude — [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
-     - Groq — [console.groq.com/keys](https://console.groq.com/keys)
+   - **Claude API key** — [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
    - **Finnhub API key** — [finnhub.io/dashboard](https://finnhub.io/dashboard) (free tier is sufficient)
-4. Done. Keys are stored in the database tied to your account and persist across devices.
+4. Done. Keys are saved write-only on the server (the `llm-proxy` and `market-proxy` edge functions use them for AI and market-data requests) and persist across devices; the browser never holds them.
 
 ### Self-hosting
 
@@ -29,7 +27,7 @@ A personal finance tracker with AI-powered portfolio management. Built with Reac
 | Node.js `22.x` + npm | Install from [nodejs.org](https://nodejs.org/en/download) or via [nvm](https://github.com/nvm-sh/nvm). |
 | [Supabase](https://supabase.com) project | Free tier is sufficient. Provides the database and auth. |
 | Google OAuth client | For sign-in via Supabase Auth. Create one in [Google Cloud Console](https://console.cloud.google.com). |
-| AI provider key | Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or Groq ([console.groq.com/keys](https://console.groq.com/keys)). Entered in-app on first sign-in. |
+| AI provider key | Claude ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)). Entered in-app on first sign-in and stored on the server only; the browser never holds it. |
 | Finnhub API key | For stock price quotes. Free tier at [finnhub.io/dashboard](https://finnhub.io/dashboard). Entered in-app on first sign-in. |
 | CoinGecko API key *(optional)* | Only for cryptocurrency holdings. Crypto prices work without a key, but CoinGecko's keyless rate limit is tight and shared; a free Demo key ([coingecko.com/en/api/pricing](https://www.coingecko.com/en/api/pricing)) avoids it and is what crypto price alerts use. Add it any time in Settings → Update API keys. Self-hosters can also set a `COINGECKO_API_KEY` edge function secret, which the hourly price-alert job uses for everyone without their own key. |
 

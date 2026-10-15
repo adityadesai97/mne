@@ -1,5 +1,4 @@
 import { getSupabaseClient } from '../supabase'
-import { config } from '@/store/config'
 import { fetchCoinDailyHistory, fetchCryptoQuotes, searchCoinBySymbol } from '../coingecko'
 import { backfillTickerPriceHistory } from './tickerPriceHistory'
 import { addTickerTheme, getOrCreateTheme } from './themes'
@@ -36,8 +35,7 @@ export async function ensureCryptoTicker(
     throw new Error(`${symbol} is already tracked as a stock ticker, so it can't also be a crypto asset.`)
   }
 
-  const apiKey = config.coingeckoApiKey || undefined
-  const coin = await searchCoinBySymbol(symbol, apiKey)
+  const coin = await searchCoinBySymbol(symbol)
   if (!coin) throw new Error(`Couldn't find a cryptocurrency with symbol ${symbol} on CoinGecko.`)
 
   const fields: Record<string, unknown> = {
@@ -61,7 +59,7 @@ export async function ensureCryptoTicker(
   }
 
   try {
-    const quotes = await fetchCryptoQuotes([coin.id], apiKey)
+    const quotes = await fetchCryptoQuotes([coin.id])
     const quote = quotes.get(coin.id)
     if (quote) {
       await supabase.from('tickers').update({
@@ -73,7 +71,7 @@ export async function ensureCryptoTicker(
   } catch { /* best-effort — next price refresh fills it in */ }
 
   try {
-    await backfillTickerPriceHistory(tickerId, await fetchCoinDailyHistory(coin.id, 365, apiKey))
+    await backfillTickerPriceHistory(tickerId, await fetchCoinDailyHistory(coin.id, 365))
   } catch { /* best-effort — history just accumulates from today instead */ }
 
   try {

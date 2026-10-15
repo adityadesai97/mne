@@ -16,6 +16,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChartNoAxesCombined, ChevronDown, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { finnhubFetch } from '@/lib/marketData'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 
@@ -76,8 +77,8 @@ export default function Watchlist() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) {
-      await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    if (config.hasFinnhubKey) {
+      await refreshAllPrices().catch(console.error)
       const now = new Date().toISOString()
       localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
       setPricesRefreshedAt(now)
@@ -114,8 +115,8 @@ export default function Watchlist() {
           skipIfAlreadyTagged: true,
         }),
         (async () => {
-          if (!config.finnhubApiKey) return
-          const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${trimmed}&token=${config.finnhubApiKey}`)
+          if (!config.hasFinnhubKey) return
+          const res = await finnhubFetch('stock/profile2', { symbol: trimmed })
           const profile = await res.json()
           if (!profile.logo) return
           await getSupabaseClient().from('tickers').update({ logo: profile.logo }).eq('id', newTicker.id)
@@ -124,8 +125,8 @@ export default function Watchlist() {
           // New tickers are inserted with current_price null (shown as $0.00)
           // until the next once-per-load refresh; fetch a quote immediately
           // so the price is right as soon as the ticker is added.
-          if (!config.finnhubApiKey) return
-          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${trimmed}&token=${config.finnhubApiKey}`)
+          if (!config.hasFinnhubKey) return
+          const res = await finnhubFetch('quote', { symbol: trimmed })
           const quote = await res.json()
           if (!quote.c || !Number.isFinite(Number(quote.c))) return
           const previousClose = Number.isFinite(Number(quote.pc)) ? Number(quote.pc) : null

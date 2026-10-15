@@ -17,6 +17,8 @@ import { computeRsuVestEvents } from './charts'
 import { computeAssetValue, computeShareCount, isTickerAsset, netCount } from './portfolio'
 import { formatDateMDY } from './dates'
 import { MAX_PULSE_CARDS, type PortfolioInsightSlot } from './portfolioExplanation'
+import { finnhubFetch } from './marketData'
+import { config } from '@/store/config'
 
 export type PulseEventKind = 'rsu_vest' | 'long_term' | 'harvest' | 'allocation_drift' | 'earnings'
 
@@ -251,7 +253,7 @@ const earningsCache = new Map<string, Promise<string | null>>()
 /** The soonest earnings date (YYYY-MM-DD) for `symbol` within the lookahead,
  *  or null. Finnhub's free `calendar/earnings`; cached per symbol for the
  *  page load, and best-effort — any failure is just "no date known". */
-function fetchEarningsDate(symbol: string, finnhubApiKey: string, now: Date): Promise<string | null> {
+function fetchEarningsDate(symbol: string, now: Date): Promise<string | null> {
   const key = `${symbol}:${isoDate(now)}`
   const cached = earningsCache.get(key)
   if (cached) return cached
@@ -259,7 +261,7 @@ function fetchEarningsDate(symbol: string, finnhubApiKey: string, now: Date): Pr
   const to = isoDate(new Date(utcMidnight(now) + EARNINGS_LOOKAHEAD_DAYS * DAY_MS))
   const promise = (async () => {
     try {
-      const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&symbol=${encodeURIComponent(symbol)}&token=${finnhubApiKey}`)
+      const res = await finnhubFetch('calendar/earnings', { from, to, symbol })
       const json = await res.json()
       const dates = (Array.isArray(json?.earningsCalendar) ? json.earningsCalendar : [])
         .map((e: any) => (typeof e?.date === 'string' ? e.date : ''))
@@ -293,11 +295,11 @@ export function earningsLookupSymbols(assets: any[]): string[] {
 
 /** Looks up upcoming earnings dates for the largest holdings. Returns
  *  symbol → date. Empty without a Finnhub key. */
-export async function fetchUpcomingEarnings(assets: any[], finnhubApiKey: string, now: Date = new Date()): Promise<Map<string, string>> {
+export async function fetchUpcomingEarnings(assets: any[], now: Date = new Date()): Promise<Map<string, string>> {
   const result = new Map<string, string>()
-  if (!finnhubApiKey) return result
+  if (!config.hasFinnhubKey) return result
   await Promise.all(earningsLookupSymbols(assets).map(async symbol => {
-    const date = await fetchEarningsDate(symbol, finnhubApiKey, now)
+    const date = await fetchEarningsDate(symbol, now)
     if (date) result.set(symbol, date)
   }))
   return result

@@ -200,9 +200,9 @@ export default function Portfolio() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) {
+    if (config.hasFinnhubKey) {
       try {
-        await refreshAllPrices(config.finnhubApiKey)
+        await refreshAllPrices()
         const now = new Date().toISOString()
         localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
         setPricesRefreshedAt(now)
