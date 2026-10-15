@@ -83,12 +83,25 @@ const BOND_SECURITY_TYPES = new Set(['bond', 'tips', 'bill', 'fixed income'])
 // Ports of normalizeCryptoSymbol / perUnitCost from src/lib/plaidMatching.ts
 // (unit tested there) — keep in sync.
 function normalizeCryptoSymbol(raw: unknown): string | null {
-  const text = String(raw ?? '').trim().toUpperCase()
+  const text = String(raw ?? '').trim().toUpperCase().replace(/^CUR:/, '')
   if (!text) return null
   // Only a delimited quote currency is a trading pair ("BTC-USD"); a bare
   // "USDT"/"USDC" is the coin itself and must survive.
   const pair = text.match(/^(.+?)[-/_ ](?:USD|USDT|USDC)$/)
   return pair ? pair[1] : text
+}
+
+// Port of isCryptoHolding from src/lib/plaidMatching.ts — keep in sync. Robinhood
+// reports coins inside a crypto account flagged is_cash_equivalent, so the
+// security type alone isn't a reliable signal; the account is checked too.
+function isCryptoHolding(security: any, account: any): boolean {
+  if (!security) return false
+  const type = String(security.type ?? '').toLowerCase()
+  if (type === 'cryptocurrency') return true
+  if (type === 'cash') return false
+  const inCryptoAccount = /crypto/i.test(`${account?.subtype ?? ''} ${account?.name ?? ''} ${account?.official_name ?? ''}`)
+  const coin = normalizeCryptoSymbol(security.ticker_symbol)
+  return inCryptoAccount && !!coin && coin !== 'USD'
 }
 
 function perUnitCost(holding: { cost_basis?: number | null; quantity?: number | null }): number | null {
@@ -230,7 +243,9 @@ function buildPendingRows(
 
       for (const holding of accountHoldings) {
         const security = securityById.get(holding.security_id)
-        if (!security || security.is_cash_equivalent) continue
+        if (!security) continue
+        const isCrypto = isCryptoHolding(security, account)
+        if (security.is_cash_equivalent && !isCrypto) continue
 
         const isBond = BOND_SECURITY_TYPES.has((security.type ?? '').toLowerCase())
         const symbol: string | null = security.ticker_symbol ?? null
@@ -240,7 +255,7 @@ function buildPendingRows(
         // 'stock' review row, flagged asset_class 'Crypto' so confirming goes
         // through the crypto branch of add_stock_transaction (CoinGecko ticker,
         // Crypto location) instead of the Finnhub stock path.
-        if ((security.type ?? '').toLowerCase() === 'cryptocurrency') {
+        if (isCrypto) {
           const coin = normalizeCryptoSymbol(security.ticker_symbol)
           if (!coin) continue
           const cryptoKey = assetNaturalKey({
@@ -352,7 +367,10 @@ function buildPendingRows(
       // Cash sitting in the brokerage account itself. Plaid reports it as
       // is_cash_equivalent holdings, which the loop above deliberately skips;
       // mne tracks it as a flat-balance Cash asset so it stays in sync too.
-      const cashHoldings = accountHoldings.filter((h) => securityById.get(h.security_id)?.is_cash_equivalent)
+      const cashHoldings = accountHoldings.filter((h) => {
+        const sec = securityById.get(h.security_id)
+        return sec?.is_cash_equivalent && !isCryptoHolding(sec, account)
+      })
       if (cashHoldings.length > 0) {
         const cashTotal = cashHoldings.reduce((sum, h) => sum + (h.institution_value ?? 0), 0)
         const cashName = `${account.name || account.official_name || institutionName} Cash`
@@ -979,6 +997,18 @@ async function syncOneItem(
       continue
     }
 
+    // The user already dismissed this position in review (typically because it
+    // was entered manually): never re-stage it, however often it syncs.
+    const { data: dismissed } = await supabase
+      .from('plaid_pending_positions')
+      .select('id')
+      .eq('plaid_item_id', item.id)
+      .eq('external_account_id', row.external_account_id)
+      .filter('external_security_id', row.external_security_id == null ? 'is' : 'eq', row.external_security_id)
+      .eq('status', 'dismissed')
+      .limit(1)
+    if (dismissed && dismissed.length > 0) continue
+
     // Already staged from a previous sync and still pending review: update
     // the staged payload rather than inserting a duplicate row.
     const { data: existingPending } = await supabase
@@ -988,6 +1018,7 @@ async function syncOneItem(
       .eq('external_account_id', row.external_account_id)
       .filter('external_security_id', row.external_security_id == null ? 'is' : 'eq', row.external_security_id)
       .eq('status', 'pending')
+      .limit(1)
       .maybeSingle()
 
     if (existingPending) {

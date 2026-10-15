@@ -1,5 +1,5 @@
 // src/__tests__/plaidMatching.test.ts
-import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, perUnitCost } from '../lib/plaidMatching'
+import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, isCryptoHolding, perUnitCost } from '../lib/plaidMatching'
 
 const base = {
   assetType: 'Stock',
@@ -190,4 +190,13 @@ test('a detected stock never links to a Crypto asset, even with the same symbol'
     { id: 'stock', name: 'BTC Stock', asset_type: 'Stock', ticker: { symbol: 'BTC', kind: 'stock' } },
   ]
   expect(compatibleManualMatchCandidates('stock', { symbol: 'BTC' }, assets).map((c) => c.id)).toEqual(['stock'])
+})
+
+test('isCryptoHolding recognizes coins reported as cash equivalents in a crypto account', () => {
+  const acct = { subtype: 'crypto exchange', name: 'Crypto' }
+  expect(isCryptoHolding({ type: 'cryptocurrency', ticker_symbol: 'BTC' }, null)).toBe(true)
+  expect(isCryptoHolding({ type: 'derivative', ticker_symbol: 'CUR:ETH' }, acct)).toBe(true)
+  expect(isCryptoHolding({ type: 'cash', ticker_symbol: 'USD' }, acct)).toBe(false)
+  expect(isCryptoHolding({ type: 'equity', ticker_symbol: 'AAPL' }, { name: 'Individual' })).toBe(false)
+  expect(normalizeCryptoSymbol('CUR:BTC')).toBe('BTC')
 })
