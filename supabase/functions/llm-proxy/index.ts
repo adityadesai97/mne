@@ -11,7 +11,10 @@
 // The policy helpers (validateLlmRequest, etc.) are exported and the remote
 // import is lazy so src/__tests__/llmProxyPolicy.test.ts can run them in node.
 
-declare const Deno: any
+// Not `declare const Deno`: that would clash with Deno's own global type when
+// the function is type-checked by the Deno runtime.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const D = (globalThis as any).Deno
 
 export const ALLOWED_MODELS = ['claude-sonnet-5']
 export const MAX_OUTPUT_TOKENS = 16000
@@ -80,11 +83,13 @@ export async function handle(req: Request): Promise<Response> {
   const path = new URL(req.url).pathname
   if (!path.endsWith('/v1/messages')) return errorResponse(404, 'Not found')
 
-  // @ts-expect-error -- remote URL import, resolved by the Deno runtime only
+  // Remote URL import, resolved by the Deno runtime only (tsc can't see it).
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
   const userClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    D.env.get('SUPABASE_URL')!,
+    D.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } },
   )
   const { data: { user } } = await userClient.auth.getUser(bearerToken(req.headers.get('Authorization')))
@@ -97,7 +102,7 @@ export async function handle(req: Request): Promise<Response> {
   const invalid = validateLlmRequest(body)
   if (invalid) return errorResponse(400, invalid)
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const admin = createClient(D.env.get('SUPABASE_URL')!, D.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
   const since = new Date(Date.now() - 60_000).toISOString()
   const { count } = await admin
@@ -140,4 +145,4 @@ export async function handle(req: Request): Promise<Response> {
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders })
 }
 
-if (typeof Deno !== 'undefined' && Deno.serve) Deno.serve(handle)
+if (D?.serve) D.serve(handle)

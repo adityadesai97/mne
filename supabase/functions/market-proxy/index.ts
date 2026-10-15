@@ -12,7 +12,10 @@
 // The policy helpers are exported and the remote import is lazy so
 // src/__tests__/marketProxyPolicy.test.ts can run them in node.
 
-declare const Deno: any
+// Not `declare const Deno`: that would clash with Deno's own global type when
+// the function is type-checked by the Deno runtime.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const D = (globalThis as any).Deno
 
 export const RATE_LIMIT_PER_MINUTE = 600
 export const FINNHUB_PATHS = new Set([
@@ -83,11 +86,13 @@ export async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405)
 
-  // @ts-expect-error -- remote URL import, resolved by the Deno runtime only
+  // Remote URL import, resolved by the Deno runtime only (tsc can't see it).
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
   const userClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    D.env.get('SUPABASE_URL')!,
+    D.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } },
   )
   const { data: { user } } = await userClient.auth.getUser(bearerToken(req.headers.get('Authorization')))
@@ -98,7 +103,7 @@ export async function handle(req: Request): Promise<Response> {
   const invalid = validateMarketRequest(body)
   if (invalid) return jsonResponse({ error: invalid }, 400)
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const admin = createClient(D.env.get('SUPABASE_URL')!, D.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
   const since = new Date(Date.now() - 60_000).toISOString()
   const { count } = await admin
@@ -133,4 +138,4 @@ export async function handle(req: Request): Promise<Response> {
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders })
 }
 
-if (typeof Deno !== 'undefined' && Deno.serve) Deno.serve(handle)
+if (D?.serve) D.serve(handle)
