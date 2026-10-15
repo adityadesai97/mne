@@ -181,6 +181,14 @@ export interface ExistingLot {
   purchase_date: string | null
 }
 
+// Plaid's tax lots carry the date as `original_purchase_datetime` (an ISO
+// timestamp); `purchase_date` is not a field Plaid sends. Reading only the latter
+// left every lot undated, so no Plaid lot could ever match a manually entered one.
+export function plaidLotPurchaseDate(lot: { purchase_date?: string | null; original_purchase_datetime?: string | null } | null | undefined): string | null {
+  const raw = lot?.purchase_date ?? lot?.original_purchase_datetime ?? null
+  return raw ? String(raw).slice(0, 10) : null
+}
+
 export function buildCandidateLotsFromPlaidPayload(payload: {
   count?: number | string | null
   cost_price?: number | string | null
@@ -191,9 +199,10 @@ export function buildCandidateLotsFromPlaidPayload(payload: {
   if (rawLots && rawLots.length > 0) {
     return rawLots
       .map((l): PlaidLot | null => {
-        const lot = l as { quantity?: number | string | null; purchase_price?: number | string | null; purchase_date?: string | null }
-        if (lot.quantity == null || lot.purchase_price == null || !lot.purchase_date) return null
-        return { count: Number(lot.quantity), cost_price: Number(lot.purchase_price), purchase_date: lot.purchase_date }
+        const lot = l as { quantity?: number | string | null; purchase_price?: number | string | null; purchase_date?: string | null; original_purchase_datetime?: string | null }
+        const date = plaidLotPurchaseDate(lot)
+        if (lot.quantity == null || lot.purchase_price == null || !date) return null
+        return { count: Number(lot.quantity), cost_price: Number(lot.purchase_price), purchase_date: date }
       })
       .filter((l): l is PlaidLot => l != null && l.count > 0)
   }

@@ -104,6 +104,12 @@ function isCryptoHolding(security: any, account: any): boolean {
   return inCryptoAccount && !!coin && coin !== 'USD'
 }
 
+// Port of plaidLotPurchaseDate from src/lib/plaidMatching.ts — keep in sync.
+function plaidLotPurchaseDate(lot: any): string | null {
+  const raw = lot?.purchase_date ?? lot?.original_purchase_datetime ?? null
+  return raw ? String(raw).slice(0, 10) : null
+}
+
 function perUnitCost(holding: { cost_basis?: number | null; quantity?: number | null }): number | null {
   const total = holding.cost_basis
   const qty = holding.quantity
@@ -276,7 +282,7 @@ function buildPendingRows(
               asset_class: 'Crypto',
               count: firstCryptoLot?.quantity ?? holding.quantity ?? null,
               cost_price: firstCryptoLot?.purchase_price ?? perUnitCost(holding),
-              purchase_date: firstCryptoLot?.purchase_date ?? null,
+              purchase_date: plaidLotPurchaseDate(firstCryptoLot),
               asset_name: coin,
               location_name: institutionName,
               account_type: 'Crypto',
@@ -313,7 +319,7 @@ function buildPendingRows(
               ownership: 'Individual',
               count: firstLot?.quantity ?? holding.quantity ?? null,
               cost_price: firstLot?.purchase_price ?? perUnitCost(holding),
-              purchase_date: firstLot?.purchase_date ?? null,
+              purchase_date: plaidLotPurchaseDate(firstLot),
               // Plaid rarely reports coupon rate / maturity terms reliably
               // for bonds — left null on purpose so the review screen
               // prompts for them, same as manual entry does today.
@@ -348,7 +354,7 @@ function buildPendingRows(
             symbol,
             count: firstLot?.quantity ?? holding.quantity ?? null,
             cost_price: firstLot?.purchase_price ?? perUnitCost(holding),
-            purchase_date: firstLot?.purchase_date ?? null,
+            purchase_date: plaidLotPurchaseDate(firstLot),
             subtype: subtypeGuess,
             // grant_date is required by add_stock_transaction when subtype
             // is RSU, and Plaid has no equivalent — left for the user to
