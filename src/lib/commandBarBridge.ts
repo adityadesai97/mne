@@ -43,8 +43,7 @@ export function openPortfolioExplanationInCommandBar(slot: PortfolioInsightSlot)
 
 // Same pattern again, for Portfolio Pulse event cards (an upcoming vest, a lot
 // turning long-term, …): they open the command bar with a question already
-// typed into the input — never auto-submitted, so the user reads it and
-// presses Enter themselves.
+// sent as the first message of a fresh command bar conversation.
 type PrefillListener = (text: string) => void
 
 const prefillListeners = new Set<PrefillListener>()
