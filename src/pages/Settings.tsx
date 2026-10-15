@@ -38,6 +38,7 @@ import { showAppAlert } from '@/lib/appAlerts'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 import { PlaidLotSellModal } from '@/components/PlaidLotSellModal'
 import { PlaidDisconnectDialog } from '@/components/PlaidDisconnectDialog'
+import { notifyPlaidPendingChanged } from '@/lib/plaidEvents'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -299,6 +300,8 @@ export default function Settings() {
       setPlaidPendingCount(pendingCount)
       setPlaidDrift(drift)
       setPlaidHeldSells(heldSells)
+      // Keep the top-of-app banner's count in step with the one just read.
+      notifyPlaidPendingChanged()
     } catch (e) {
       // Plaid tables may not exist yet on an older self-hosted schema —
       // fail quietly rather than blocking the rest of Settings.
