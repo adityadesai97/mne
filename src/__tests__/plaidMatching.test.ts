@@ -1,5 +1,5 @@
 // src/__tests__/plaidMatching.test.ts
-import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, isCryptoHolding, pairPlaidLots, trackedLotTotal, plaidLotPurchaseDate, perUnitCost } from '../lib/plaidMatching'
+import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, isCryptoHolding, pairPlaidLots, trackedLotTotal, classifyFixedIncomeSubtype, sameValueDifferentUnits, plaidLotPurchaseDate, perUnitCost } from '../lib/plaidMatching'
 
 const base = {
   assetType: 'Stock',
@@ -87,13 +87,18 @@ test('a detected 401k balance does not match an existing Cash asset', () => {
   expect(candidates).toEqual([])
 })
 
-test('a detected T-Bill only matches an existing T-Bill, never a CD or a Bond', () => {
+test('a detected T-Bill matches an existing lot-based bond/bill, never a CD', () => {
   const candidates = compatibleManualMatchCandidates('fixed_income', { fixed_income_subtype: 'T-Bill' }, allTestAssets)
   expect(candidates).toEqual([{ id: 'a-bond', label: 'T-Bill ladder (Treasury Direct)' }])
 })
 
-test('no compatible candidates returns an empty list, not a guess', () => {
+test('a detected Bond (how Plaid labelled a bill) still links to your T-Bill, but a CD is never offered', () => {
   const candidates = compatibleManualMatchCandidates('fixed_income', { fixed_income_subtype: 'Bond' }, allTestAssets)
+  expect(candidates).toEqual([{ id: 'a-bond', label: 'T-Bill ladder (Treasury Direct)' }])
+})
+
+test('no compatible candidates returns an empty list, not a guess', () => {
+  const candidates = compatibleManualMatchCandidates('fixed_income', { fixed_income_subtype: 'Deposit' }, allTestAssets)
   expect(candidates).toEqual([])
 })
 
@@ -226,4 +231,30 @@ test('pairPlaidLots matches each Plaid lot to a distinct tracked lot and leaves 
   )
   expect(pairs.map((p) => p.matchedLotId)).toEqual(['a', null, null])
   expect(trackedLotTotal(existing)).toBe(21.6817)
+})
+
+test('Plaid never sends type "bill": a Treasury bill is recognised from its name or subtype', () => {
+  expect(classifyFixedIncomeSubtype({ type: 'fixed income', name: 'US Treasury Bill - 3.89% 08/12/2026 USD 100' })).toBe('T-Bill')
+  expect(classifyFixedIncomeSubtype({ type: 'fixed income', subtype: 'bill', name: 'XYZ' })).toBe('T-Bill')
+  expect(classifyFixedIncomeSubtype({ type: 'fixed income', name: 'T-Bill 2026' })).toBe('T-Bill')
+  expect(classifyFixedIncomeSubtype({ type: 'fixed income', name: 'US Treasury Note 4.25% 2030' })).toBe('Bond')
+  expect(classifyFixedIncomeSubtype({ type: 'fixed income', name: 'Billings Corp 5% 2031' })).toBe('Bond')
+})
+
+test('a detected bond/T-bill can be linked to either lot-based fixed income asset, never a CD', () => {
+  const bill = { id: 'a', name: 'Chase T-Bill 12/8/26', asset_type: 'Fixed Income', fixed_income_subtype: 'T-Bill', location: { name: 'Chase' } }
+  const bond = { id: 'b', name: 'Some Bond', asset_type: 'Fixed Income', fixed_income_subtype: 'Bond' }
+  const cd = { id: 'c', name: 'CD 3 Months', asset_type: 'Fixed Income', fixed_income_subtype: 'CD' }
+  const stock = { id: 'd', name: 'X', asset_type: 'Stock' }
+  const ids = (sub: string) => compatibleManualMatchCandidates('fixed_income', { fixed_income_subtype: sub } as any, [bill, bond, cd, stock]).map((c) => c.id)
+  expect(ids('Bond')).toEqual(['a', 'b'])
+  expect(ids('T-Bill')).toEqual(['a', 'b'])
+  expect(compatibleManualMatchCandidates('fixed_income', { fixed_income_subtype: 'CD' } as any, [bill, bond, cd])).toHaveLength(1)
+})
+
+test('sameValueDifferentUnits recognises the same position counted in a different unit size', () => {
+  const tracked = [{ id: 'a', count: '488.0000', cost_price: '987.5300', purchase_date: '2026-08-11' }]
+  expect(sameValueDifferentUnits({ count: 488000, cost_price: 0.98767883 }, tracked)).toBe(true)
+  expect(sameValueDifferentUnits({ count: 488, cost_price: 987.53 }, tracked)).toBe(false) // same units: not "different units"
+  expect(sameValueDifferentUnits({ count: 100000, cost_price: 0.98 }, tracked)).toBe(false) // different value
 })

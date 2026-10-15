@@ -110,6 +110,17 @@ function plaidLotPurchaseDate(lot: any): string | null {
   return raw ? String(raw).slice(0, 10) : null
 }
 
+// Port of classifyFixedIncomeSubtype from src/lib/plaidMatching.ts — keep in sync. Plaid sends
+// every bond-like holding as type "fixed income", so a Treasury bill is recognised by its
+// subtype or name.
+function classifyFixedIncomeSubtype(security: any): 'Bond' | 'T-Bill' {
+  const type = String(security?.type ?? '').toLowerCase()
+  const subtype = String(security?.subtype ?? '').toLowerCase()
+  if (type === 'bill' || /\bbills?\b/.test(subtype)) return 'T-Bill'
+  if (/\b(t[- ]?bills?|treasury bills?)\b/i.test(String(security?.name ?? ''))) return 'T-Bill'
+  return 'Bond'
+}
+
 function perUnitCost(holding: { cost_basis?: number | null; quantity?: number | null }): number | null {
   const total = holding.cost_basis
   const qty = holding.quantity
@@ -295,7 +306,7 @@ function buildPendingRows(
         }
 
         if (isBond) {
-          const fixedIncomeSubtype = (security.type ?? '').toLowerCase() === 'bill' ? 'T-Bill' : 'Bond'
+          const fixedIncomeSubtype = classifyFixedIncomeSubtype(security)
           const name = security.name || symbol || 'Bond position'
           const key = assetNaturalKey({
             assetType: 'Fixed Income',

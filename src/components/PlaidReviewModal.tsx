@@ -17,6 +17,7 @@ import {
   buildCandidateLotsFromPlaidPayload,
   pairPlaidLots,
   trackedLotTotal,
+  sameValueDifferentUnits,
   type ManualMatchCandidate,
   type PlaidLot,
   type ExistingLot,
@@ -531,6 +532,12 @@ function PendingRow({
                   {trackedLotTotal(lotPlan.existing)} {unit} across {lotPlan.existing.length} lot
                   {lotPlan.existing.length !== 1 ? 's' : ''}; Plaid shows {Number((row.payload as any).count ?? 0)}.
                 </p>
+                {sameValueDifferentUnits(row.payload as any, lotPlan.existing) && (
+                  <p className="text-[11px] text-green-700 dark:text-green-500">
+                    The total value matches what you track — Plaid just counts in a different unit size, so this is
+                    very likely the same position. Link only is the right choice.
+                  </p>
+                )}
                 <label className="flex items-start gap-1.5 text-[11px] text-foreground">
                   <input type="radio" checked={!aggregateAddsLot} onChange={() => onAggregateAddsLotChange(false)} className="mt-0.5" />
                   <span>Link only — keep my lots exactly as they are (recommended)</span>
