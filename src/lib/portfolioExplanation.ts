@@ -22,7 +22,7 @@ import {
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
 import { computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
-import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, LLM_MODEL } from './llm'
 import { config } from '@/store/config'
 
 // ── Tunable constants ─────────────────────────────────────────────────────
@@ -1176,8 +1176,8 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   const { label, swingWord, timeWord } = promptContextForSlot(slot)
   const prompt = buildExplanationUserPrompt(movers, result.dayChangeDollars, result.dayChangePercent, result.themeMoves, marketHeadlines, previousSummary, label, swingWord)
-  const client = createLLMClient(config.llmProvider, config.activeApiKey)
-  const model = MODEL_FOR_PROVIDER[config.llmProvider]
+  const client = createLLMClient()
+  const model = LLM_MODEL
   const response = await client.chat.completions.create({
     model,
     max_tokens: 600,
@@ -1185,7 +1185,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
       { role: 'system', content: explanationSystemPrompt(timeWord) },
       { role: 'user', content: prompt },
     ],
-    ...(config.llmProvider === 'claude' ? { output_config: { effort: 'low' as const } } : {}),
+    output_config: { effort: 'low' as const },
   })
   // No links appended here — see stripSources' docstring. The caller
   // (CommandBar.tsx) renders movers/theme_moves/market_headlines as
@@ -1216,7 +1216,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   void logLlmUsage({
     feature: 'portfolio_explanation',
-    provider: config.llmProvider,
+    provider: 'claude',
     model,
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,

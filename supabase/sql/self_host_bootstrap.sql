@@ -396,8 +396,8 @@ alter table public.user_settings add column if not exists auto_theme_assignment_
 alter table public.user_settings add column if not exists price_alerts_enabled boolean not null default true;
 alter table public.user_settings add column if not exists vest_alerts_enabled boolean not null default true;
 alter table public.user_settings add column if not exists capital_gains_alerts_enabled boolean not null default true;
-alter table public.user_settings add column if not exists llm_provider text not null default 'claude';
-alter table public.user_settings add column if not exists groq_api_key text;
+alter table public.user_settings drop column if exists llm_provider;
+alter table public.user_settings drop column if exists groq_api_key;
 alter table public.user_settings add column if not exists coingecko_api_key text;
 alter table public.user_settings drop column if exists tax_harvest_threshold;
 -- Was a toggle for the (now removed) background generation path; the
@@ -986,3 +986,59 @@ create policy own_llm_usage_log
   to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Server-side Claude key (see migration 20261016000000)
+create table if not exists public.llm_credentials (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  -- llm_credential_secrets has no select policy, so this flag is the only way
+  -- the client can know the key actually made it to the database.
+  secret_set boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.llm_credentials enable row level security;
+
+drop policy if exists own_llm_credentials on public.llm_credentials;
+create policy own_llm_credentials
+  on public.llm_credentials
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Write-only from the client's perspective: insert/update only, no select
+-- policy, so the key can never be read back by authenticated/anon roles.
+create table if not exists public.llm_credential_secrets (
+  user_id uuid primary key references public.llm_credentials(user_id) on delete cascade,
+  api_key text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.llm_credential_secrets enable row level security;
+
+drop policy if exists own_llm_credential_secrets_insert on public.llm_credential_secrets;
+create policy own_llm_credential_secrets_insert
+  on public.llm_credential_secrets
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_llm_credential_secrets_update on public.llm_credential_secrets;
+create policy own_llm_credential_secrets_update
+  on public.llm_credential_secrets
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Per-user request log for the proxy's rate limit. RLS on with no policies:
+-- only the service-role edge function touches it.
+create table if not exists public.llm_proxy_calls (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  called_at timestamptz not null default now()
+);
+create index if not exists llm_proxy_calls_user_called_idx
+  on public.llm_proxy_calls (user_id, called_at desc);
+alter table public.llm_proxy_calls enable row level security;
+

@@ -1,7 +1,5 @@
 import { getSupabaseClient } from '../supabase'
-import type { LLMProvider } from '@/store/config'
-
-const VALID_PROVIDERS = ['claude', 'groq'] as const
+import { getLlmKeySet } from './llmCredentials'
 
 function extractMissingColumn(error: { message?: string; details?: string; hint?: string } | null | undefined): string | null {
   const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
@@ -10,9 +8,7 @@ function extractMissingColumn(error: { message?: string; details?: string; hint?
 }
 
 export async function loadApiKeys(): Promise<{
-  claudeApiKey: string
-  groqApiKey: string
-  llmProvider: LLMProvider
+  llmKeySet: boolean
   finnhubApiKey: string
   coingeckoApiKey: string
 } | null> {
@@ -25,12 +21,12 @@ export async function loadApiKeys(): Promise<{
     .maybeSingle()
   if (error && error.code !== 'PGRST116') throw error
   if (!data?.finnhub_api_key) return null
-  const hasAnyAIKey = data.claude_api_key || data.groq_api_key
-  if (!hasAnyAIKey) return null
+  // A key saved before the proxy existed still sits in user_settings until
+  // migrateLegacyClaudeKey() moves it, so it counts as "has a key" here.
+  const llmKeySet = (await getLlmKeySet().catch(() => false)) || !!data.claude_api_key
+  if (!llmKeySet) return null
   return {
-    claudeApiKey: data.claude_api_key ?? '',
-    groqApiKey: data.groq_api_key ?? '',
-    llmProvider: (VALID_PROVIDERS.includes(data.llm_provider as LLMProvider) ? data.llm_provider : 'claude') as LLMProvider,
+    llmKeySet,
     finnhubApiKey: data.finnhub_api_key,
     coingeckoApiKey: data.coingecko_api_key ?? '',
   }

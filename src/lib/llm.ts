@@ -1,10 +1,30 @@
 import Anthropic from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
-import type { LLMProvider } from '@/store/config'
+import { getSupabaseClient } from './supabase'
 
-export const MODEL_FOR_PROVIDER: Record<LLMProvider, string> = {
-  claude: 'claude-sonnet-5',
-  groq: 'llama-3.3-70b-versatile',
+export const LLM_MODEL = 'claude-sonnet-5'
+
+// The Claude API key never reaches the browser. The SDK is pointed at the
+// llm-proxy edge function, which swaps in the key saved on the user's account
+// and relays Anthropic's reply. The browser authenticates with its Supabase
+// session instead; `apiKey` here is a placeholder the proxy ignores.
+// (`dangerouslyAllowBrowser` is just the SDK's guard against shipping a real
+// key to a browser; nothing secret is held here.)
+function proxyBaseUrl(): string {
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
+  if (!url) throw new Error('Supabase is not configured.')
+  return `${url}/functions/v1/llm-proxy`
+}
+
+const proxyFetch: typeof fetch = async (input, init) => {
+  const { data: { session } } = await getSupabaseClient().auth.getSession()
+  if (!session) throw new Error('You are signed out. Sign in again to use AI features.')
+  const headers = new Headers(init?.headers)
+  headers.set('Authorization', `Bearer ${session.access_token}`)
+  return fetch(input, { ...init, headers })
+}
+
+function createAnthropic(): Anthropic {
+  return new Anthropic({ apiKey: 'proxy', baseURL: proxyBaseUrl(), dangerouslyAllowBrowser: true, fetch: proxyFetch })
 }
 
 // ── Normalized response type (OpenAI shape) ──────────────────────────────────
@@ -45,9 +65,9 @@ export interface LLMClient {
           temperature?: number
           messages: any[]
           tools?: any[]
-          // Claude-only: caps thinking/reasoning depth for simple, low-stakes
-          // calls (e.g. the portfolio explanation summary) that don't need
-          // Sonnet's default adaptive thinking. Ignored by GroqAdapter.
+          // Caps thinking/reasoning depth for simple, low-stakes calls (e.g. the
+          // portfolio explanation summary) that don't need Sonnet's default
+          // adaptive thinking.
           output_config?: { effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
         },
         callbacks?: StreamCallbacks,
@@ -108,11 +128,7 @@ function toNormalizedResponse(response: Anthropic.Message): NormalizedResponse {
 
 // ── Claude adapter ─────────────────────────────────────────────────────────
 class ClaudeAdapter {
-  private anthropic: Anthropic
-
-  constructor(apiKey: string) {
-    this.anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
-  }
+  private anthropic: Anthropic = createAnthropic()
 
   chat = {
     completions: {
@@ -155,92 +171,14 @@ class ClaudeAdapter {
   }
 }
 
-// ── Groq adapter (OpenAI-compatible) ─────────────────────────────────────────
-class GroqAdapter {
-  private openai: OpenAI
-
-  constructor(apiKey: string) {
-    this.openai = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1', dangerouslyAllowBrowser: true })
-  }
-
-  chat = {
-    completions: {
-      create: async (
-        params: {
-          model: string
-          max_tokens?: number
-          temperature?: number
-          messages: any[]
-          tools?: any[]
-        },
-        callbacks?: StreamCallbacks,
-      ): Promise<NormalizedResponse> => {
-        callbacks?.onStreamStart?.()
-        const stream = await this.openai.chat.completions.create({
-          model: params.model,
-          max_tokens: params.max_tokens,
-          ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
-          messages: params.messages,
-          ...(params.tools?.length ? { tools: params.tools } : {}),
-          stream: true,
-          // Without this, Groq's OpenAI-compatible stream never emits usage —
-          // the trailing chunk that carries it (choices: [], a top-level
-          // `usage` field) is opt-in.
-          stream_options: { include_usage: true },
-        })
-
-        let content = ''
-        // Tool-call argument fragments arrive indexed by position, in
-        // whatever order the model interleaves them — accumulate per index,
-        // not by concatenating chunks in arrival order.
-        const toolCallsByIndex = new Map<number, { id: string; name: string; arguments: string }>()
-        let usage: NormalizedUsage | undefined
-        let finishReason: string | null = null
-
-        for await (const chunk of stream) {
-          // The usage-only trailing chunk has an empty `choices` array (no
-          // delta to read) but carries `usage` at the top level — check it
-          // before bailing out on a missing delta below.
-          if (chunk.usage) {
-            usage = { inputTokens: chunk.usage.prompt_tokens ?? 0, outputTokens: chunk.usage.completion_tokens ?? 0 }
-          }
-          if (chunk.choices[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason
-          const delta = chunk.choices[0]?.delta
-          if (!delta) continue
-          if (delta.content) {
-            content += delta.content
-            callbacks?.onTextDelta?.(delta.content)
-          }
-          for (const tc of delta.tool_calls ?? []) {
-            const existing = toolCallsByIndex.get(tc.index) ?? { id: '', name: '', arguments: '' }
-            if (tc.id) existing.id = tc.id
-            if (tc.function?.name) existing.name += tc.function.name
-            if (tc.function?.arguments) existing.arguments += tc.function.arguments
-            toolCallsByIndex.set(tc.index, existing)
-          }
-        }
-
-        const toolCalls: NormalizedToolCall[] = [...toolCallsByIndex.values()].map(tc => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: { name: tc.name, arguments: tc.arguments },
-        }))
-        return { choices: [{ message: { content: content || null, tool_calls: toolCalls.length ? toolCalls : undefined }, finish_reason: finishReason }], usage }
-      },
-    },
-  }
-}
-
 // ── Factory ───────────────────────────────────────────────────────────────────
-export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClient {
-  if (provider === 'claude') return new ClaudeAdapter(apiKey)
-  return new GroqAdapter(apiKey)
+export function createLLMClient(): LLMClient {
+  return new ClaudeAdapter()
 }
 
-// ── Web search (Claude only) ─────────────────────────────────────────────────
+// ── Web search ───────────────────────────────────────────────────────────────
 // Anthropic's server-side web search tool: the API runs the searches itself
-// and returns a written answer with the pages it used. There is no equivalent
-// on the Groq path, so callers must check the provider first.
+// and returns a written answer with the pages it used.
 export interface WebSearchResult {
   answer: string
   sources: Array<{ title: string; url: string }>
@@ -248,10 +186,10 @@ export interface WebSearchResult {
   usage: NormalizedUsage
 }
 
-export async function claudeWebSearch(apiKey: string, query: string): Promise<WebSearchResult> {
-  const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+export async function claudeWebSearch(query: string): Promise<WebSearchResult> {
+  const anthropic = createAnthropic()
   const response: any = await anthropic.messages.create({
-    model: MODEL_FOR_PROVIDER.claude,
+    model: LLM_MODEL,
     max_tokens: 1024,
     system: 'Search the web and answer the query concisely and factually in a few sentences, including specific dates and figures when relevant. If the results do not answer it, say so.',
     messages: [{ role: 'user', content: query }],

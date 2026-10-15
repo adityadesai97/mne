@@ -1,4 +1,4 @@
-import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, LLM_MODEL } from './llm'
 import { config } from '@/store/config'
 import { getSupabaseClient } from './supabase'
 
@@ -59,14 +59,14 @@ async function suggestTickerThemes(
   existingThemes: string[],
   profile: { name: string; industry: string },
 ): Promise<string[]> {
-  if (!config.activeApiKey) return []
+  if (!config.llmKeySet && !config.legacyClaudeApiKey) return []
 
-  const client = createLLMClient(config.llmProvider, config.activeApiKey)
+  const client = createLLMClient()
   const existingThemeList = existingThemes.slice(0, 80)
 
   try {
     const response = await client.chat.completions.create({
-      model: MODEL_FOR_PROVIDER[config.llmProvider],
+      model: LLM_MODEL,
       max_tokens: 180,
       messages: [
         {

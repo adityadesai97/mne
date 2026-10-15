@@ -8,8 +8,7 @@ import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/
 import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage, type ConversationOrigin, type ConversationMessageExplanationDetail } from '@/lib/db/conversations'
 import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
-import { config } from '@/store/config'
-import { MODEL_FOR_PROVIDER } from '@/lib/llm'
+import { LLM_MODEL } from '@/lib/llm'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
 import { generatePortfolioExplanation, explanationTriggerQuestion, stripSources, type PortfolioInsightSlot } from '@/lib/portfolioExplanation'
@@ -571,13 +570,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       // conversation too.
       conversationIdRef.current = await saveConversation({ id: conversationIdRef.current, messages: serialized, origin: conversationOriginRef.current })
       if (usage && (usage.inputTokens > 0 || usage.outputTokens > 0)) {
-        const provider = config.llmProvider
-        const model = MODEL_FOR_PROVIDER[provider]
         void incrementConversationUsage(conversationIdRef.current, usage.inputTokens, usage.outputTokens)
         void logLlmUsage({
           feature: 'command_bar',
-          provider,
-          model,
+          provider: 'claude',
+          model: LLM_MODEL,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           conversationId: conversationIdRef.current,

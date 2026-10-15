@@ -13,6 +13,7 @@ import { computeTotalNetWorth } from '@/lib/portfolio'
 import { recordDailySnapshot, backfillHistoricalSnapshots } from '@/lib/db/snapshots'
 import { promoteStaleShortTermLots } from '@/lib/db/transactions'
 import { syncFinnhubKey } from '@/lib/db/settings'
+import { migrateLegacyClaudeKey } from '@/lib/db/llmCredentials'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
@@ -181,6 +182,11 @@ export default function AppLayout() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
+  }, [])
+
+  // One-time move of a pre-proxy Claude key from the browser to the server.
+  useEffect(() => {
+    migrateLegacyClaudeKey().catch(e => console.warn('Could not move the Claude key to the server yet', e))
   }, [])
 
   useEffect(() => {
