@@ -4,6 +4,7 @@ import {
   groupByLocation,
   computeUnrealizedPnLByPosition,
   computeCapitalGainsExposure,
+  listCapitalGainsSymbols,
   computeCostVsValue,
   computeRsuVesting,
   computeRsuVestEvents,
@@ -147,6 +148,14 @@ describe('computeCapitalGainsExposure', () => {
     expect(result.longTerm).toBe(500)
     // Short Term: 5 × (200 - 100) = 500
     expect(result.shortTerm).toBe(500)
+  })
+
+  test('filters to one ticker symbol', () => {
+    const other = { ...stockAsset, ticker: { symbol: 'ZZZ', current_price: 200 } }
+    const sym = (stockAsset as any).ticker.symbol
+    expect(computeCapitalGainsExposure([stockAsset, other], sym)).toEqual(computeCapitalGainsExposure([stockAsset]))
+    expect(computeCapitalGainsExposure([stockAsset], 'NOPE')).toEqual({ shortTerm: 0, longTerm: 0 })
+    expect(listCapitalGainsSymbols([stockAsset, other, cashAsset])).toEqual([sym, 'ZZZ'].sort())
   })
 })
 

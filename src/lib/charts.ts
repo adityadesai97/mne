@@ -54,11 +54,22 @@ export function computeUnrealizedPnLByPosition(assets: any[]) {
 
 // ── Capital Gains Exposure ────────────────────────────────────
 
-export function computeCapitalGainsExposure(assets: any[]) {
+// Distinct ticker symbols that have lots counted in the exposure chart, sorted.
+export function listCapitalGainsSymbols(assets: any[]): string[] {
+  const symbols = new Set<string>()
+  for (const a of assets) {
+    if (isTickerAsset(a) && a.ticker?.symbol) symbols.add(a.ticker.symbol)
+  }
+  return [...symbols].sort()
+}
+
+// `symbol` narrows the totals to one ticker (across all accounts); omit for everything.
+export function computeCapitalGainsExposure(assets: any[], symbol?: string) {
   let shortTerm = 0
   let longTerm = 0
   for (const a of assets) {
     if (!isTickerAsset(a)) continue
+    if (symbol && a.ticker?.symbol !== symbol) continue
     // No live price → no meaningful gain (treating it as $0 would report the
     // whole cost basis as a loss).
     const price = a.ticker?.current_price

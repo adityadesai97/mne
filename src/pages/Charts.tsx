@@ -19,6 +19,7 @@ import {
   groupByLocation,
   computeUnrealizedPnLByPosition,
   computeCapitalGainsExposure,
+  listCapitalGainsSymbols,
   computeCostVsValue,
   computeRsuVesting,
   computeThemeDistribution,
@@ -238,6 +239,7 @@ export default function Charts() {
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
+  const [gainsSymbol, setGainsSymbol] = useState('')
   const [hideValues] = useHideValues()
   const appTheme = useAppTheme()
   const centerTextColor = appTheme === 'light' ? TEXT_COLOR_LIGHT : TEXT_COLOR
@@ -289,7 +291,10 @@ export default function Charts() {
   }))
   const pnlData = computeUnrealizedPnLByPosition(assets)
   const totalPnl = pnlData.reduce((sum, p) => sum + p.gain, 0)
-  const { shortTerm, longTerm } = computeCapitalGainsExposure(assets)
+  const gainsSymbols = listCapitalGainsSymbols(assets)
+  // A refresh/delete can drop the selected ticker; fall back to "All".
+  const activeGainsSymbol = gainsSymbols.includes(gainsSymbol) ? gainsSymbol : ''
+  const { shortTerm, longTerm } = computeCapitalGainsExposure(assets, activeGainsSymbol || undefined)
   const cvvData = computeCostVsValue(assets)
   const rsuData = computeRsuVesting(assets)
   const themeDistributionData = computeThemeDistribution(assets, includeCashInThemeDistribution)
@@ -739,14 +744,25 @@ export default function Charts() {
 
         {/* CAPITAL GAINS EXPOSURE — just two bars, so it shares a row with
             the donuts above rather than stretching full width. */}
-        {(shortTerm !== 0 || longTerm !== 0) && (
+        {(activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) && (
           <motion.div
             {...revealUp(0.09)}
             whileHover={CARD_HOVER}
             className={`md:col-span-3 ${CARD_CLASS}`}
           >
-            <div className="mb-3">
+            <div className="flex items-start justify-between gap-3 mb-3">
               <CardEyebrow icon={Scale}>Capital Gains Exposure</CardEyebrow>
+              <select
+                aria-label="Filter capital gains by ticker"
+                value={activeGainsSymbol}
+                onChange={(e) => setGainsSymbol(e.target.value)}
+                className="text-[10px] bg-muted/50 text-foreground rounded-lg px-2 py-1 flex-shrink-0 border-0 outline-none cursor-pointer"
+              >
+                <option value="">All tickers</option>
+                {gainsSymbols.map((sym) => (
+                  <option key={sym} value={sym}>{sym}</option>
+                ))}
+              </select>
             </div>
             <div className={hiddenValueClass(hideValues)}>
               <ReactECharts option={capitalGainsOption} style={{ width: '100%', height: 220 }} notMerge opts={{ renderer: 'svg' }} />
