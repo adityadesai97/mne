@@ -230,3 +230,27 @@ export function findMatchingLot(lot: PlaidLot, existing: ExistingLot[]): Existin
     ) ?? null
   )
 }
+
+export interface LotPairing {
+  plaid: PlaidLot
+  /** Id of the tracked lot that matches automatically (same date, count and cost), else null. */
+  matchedLotId: string | null
+}
+
+/**
+ * Pairs each Plaid lot with the tracked lot it automatically matches, using each tracked
+ * lot at most once. Anything left unmatched is for the user to pair by hand.
+ */
+export function pairPlaidLots(plaidLots: PlaidLot[], existing: ExistingLot[]): LotPairing[] {
+  const used = new Set<string>()
+  return plaidLots.map((plaid) => {
+    const match = findMatchingLot(plaid, existing.filter((e) => !used.has(e.id)))
+    if (match) used.add(match.id)
+    return { plaid, matchedLotId: match?.id ?? null }
+  })
+}
+
+/** Total units across tracked lots (what Plaid's reported quantity is compared with). */
+export function trackedLotTotal(existing: ExistingLot[]): number {
+  return Math.round(existing.reduce((sum, l) => sum + Number(l.count), 0) * 1e8) / 1e8
+}

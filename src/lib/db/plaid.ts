@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../supabase'
 import { planLedger, type LedgerLot } from '../plaidLedger'
+import { allocationOps, validateAllocation } from '../plaidLotAllocation'
 import { localDateKey } from '../portfolio'
 import { deleteAsset } from './assets'
 
@@ -326,4 +327,142 @@ export async function resolvePlaidDrift(pos: PlaidDriftPosition): Promise<void> 
   }
   const { error } = await supabase.from('plaid_synced_positions').update({ drift_shares: 0 }).eq('id', pos.id)
   if (error) throw error
+}
+
+// ── Sells waiting for the user to pick lots ──────────────────────────────────
+// Plaid's investment transactions don't say which lot a sell came out of, so the
+// sync only applies one when the lot is provable; otherwise it parks it here
+// (plaid_synced_transactions.status = 'needs_lots') and changes nothing.
+
+export interface HeldSellLot {
+  id: string
+  count: number
+  cost_price: number
+  purchase_date: string
+}
+
+export interface HeldLotSell {
+  id: string
+  assetId: string
+  assetName: string
+  symbol: string | null
+  isCrypto: boolean
+  date: string
+  quantity: number
+  price: number | null
+  /** The position's regular (Market) lots as they stand now; RSU/ESPP lots are never part of a sync. */
+  lots: HeldSellLot[]
+}
+
+export async function listHeldLotSells(): Promise<HeldLotSell[]> {
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase
+    .from('plaid_synced_transactions')
+    .select('id, asset_id, txn_date, quantity, price, asset:assets(name, asset_type, ticker:tickers(symbol))')
+    .eq('status', 'needs_lots')
+    .order('txn_date', { ascending: true })
+  if (error) throw error
+  const rows = (data ?? []).filter((r: any) => r.asset_id && r.asset)
+  if (rows.length === 0) return []
+
+  const assetIds = Array.from(new Set(rows.map((r: any) => r.asset_id as string)))
+  const { data: subtypes, error: lotError } = await supabase
+    .from('stock_subtypes')
+    .select('asset_id, transactions(id, count, cost_price, purchase_date)')
+    .in('asset_id', assetIds)
+    .eq('subtype', 'Market')
+  if (lotError) throw lotError
+  const lotsByAsset = new Map<string, HeldSellLot[]>()
+  for (const s of subtypes ?? []) {
+    lotsByAsset.set(
+      (s as any).asset_id,
+      ((s as any).transactions ?? []).map((t: any) => ({
+        id: t.id,
+        count: Number(t.count),
+        cost_price: Number(t.cost_price),
+        purchase_date: String(t.purchase_date).slice(0, 10),
+      })),
+    )
+  }
+  return rows.map((r: any) => ({
+    id: r.id,
+    assetId: r.asset_id,
+    assetName: r.asset.name,
+    symbol: r.asset.ticker?.symbol ?? null,
+    isCrypto: r.asset.asset_type === 'Crypto',
+    date: String(r.txn_date ?? '').slice(0, 10),
+    quantity: Number(r.quantity),
+    price: r.price != null ? Number(r.price) : null,
+    lots: (lotsByAsset.get(r.asset_id) ?? []).sort((a, b) => a.purchase_date.localeCompare(b.purchase_date)),
+  }))
+}
+
+// Same cleanup a manual full sell does: a position with no shares left and no active
+// RSU grant is removed (an active grant keeps it, its future vests belong to it).
+async function removeAssetIfFullySold(assetId: string): Promise<void> {
+  const { data, error } = await getSupabaseClient()
+    .from('stock_subtypes')
+    .select('transactions(count, sold_at_vest), rsu_grants(id, ended_at)')
+    .eq('asset_id', assetId)
+  if (error) throw error
+  let shares = 0
+  let hasActiveGrant = false
+  for (const s of data ?? []) {
+    for (const t of (s as any).transactions ?? []) {
+      shares += Math.max(0, Number(t.count ?? 0) - Number(t.sold_at_vest ?? 0))
+    }
+    if (((s as any).rsu_grants ?? []).some((g: any) => !g.ended_at)) hasActiveGrant = true
+  }
+  if (shares <= 0 && !hasActiveGrant) await deleteAsset(assetId)
+}
+
+/** Applies the user's lot choice for a held sell, then marks it resolved. */
+export async function resolveHeldLotSell(sell: HeldLotSell, allocation: Record<string, number>): Promise<void> {
+  const problem = validateAllocation(sell.lots, allocation, sell.quantity)
+  if (problem) throw new Error(problem)
+  const supabase = getSupabaseClient()
+  for (const op of allocationOps(sell.lots, allocation)) {
+    const { error } =
+      op.kind === 'delete'
+        ? await supabase.from('transactions').delete().eq('id', op.lotId)
+        : await supabase.from('transactions').update({ count: op.count }).eq('id', op.lotId)
+    if (error) throw error
+  }
+  const { error } = await supabase.from('plaid_synced_transactions').update({ status: 'resolved' }).eq('id', sell.id)
+  if (error) throw error
+  await removeAssetIfFullySold(sell.assetId)
+}
+
+/** Leaves the lots untouched; the position's drift check will then show the difference. */
+export async function dismissHeldLotSell(id: string): Promise<void> {
+  const { error } = await getSupabaseClient().from('plaid_synced_transactions').update({ status: 'skipped' }).eq('id', id)
+  if (error) throw error
+}
+
+export interface PlaidLotPairing {
+  transactionId: string
+  plaidDate: string
+  plaidPrice: number
+}
+
+// Remembers which tracked lot the user paired with which Plaid lot, so the sync can
+// still recognise it when their date or cost basis differ slightly from Plaid's.
+// Best effort: losing a pairing only means a later sell falls back to manual matching.
+export async function savePlaidLotLinks(
+  row: Pick<PendingPlaidPosition, 'plaid_item_id' | 'external_account_id' | 'external_security_id'>,
+  pairings: PlaidLotPairing[],
+): Promise<void> {
+  if (pairings.length === 0 || !row.external_security_id) return
+  const { error } = await getSupabaseClient().from('plaid_lot_links').insert(
+    pairings.map((p) => ({
+      plaid_item_id: row.plaid_item_id,
+      external_account_id: row.external_account_id,
+      external_security_id: row.external_security_id,
+      transaction_id: p.transactionId,
+      plaid_lot_date: p.plaidDate,
+      plaid_lot_price: p.plaidPrice,
+    })),
+  )
+  // 23505: that lot already has a pairing — keep the existing one.
+  if (error && error.code !== '23505') console.error('Failed to save Plaid lot pairings', error)
 }

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PlaidReviewModal } from '../components/PlaidReviewModal'
-import { listPendingPositions, markPendingPositionConfirmed, dismissPendingPosition, recordPlaidSyncLink } from '../lib/db/plaid'
+import { listPendingPositions, markPendingPositionConfirmed, dismissPendingPosition, recordPlaidSyncLink, savePlaidLotLinks } from '../lib/db/plaid'
 import { executeTool, validateWriteToolInput } from '../lib/claude'
 import { getAllAssets } from '../lib/db/assets'
 
@@ -10,6 +10,7 @@ vi.mock('../lib/db/plaid', () => ({
   markPendingPositionConfirmed: vi.fn(),
   dismissPendingPosition: vi.fn(),
   recordPlaidSyncLink: vi.fn(),
+  savePlaidLotLinks: vi.fn(),
 }))
 
 vi.mock('../lib/claude', () => ({
@@ -76,6 +77,7 @@ beforeEach(() => {
   vi.mocked(markPendingPositionConfirmed).mockReset().mockResolvedValue(undefined)
   vi.mocked(dismissPendingPosition).mockReset().mockResolvedValue(undefined)
   vi.mocked(recordPlaidSyncLink).mockReset().mockResolvedValue(undefined)
+  vi.mocked(savePlaidLotLinks).mockReset().mockResolvedValue(undefined)
   vi.mocked(executeTool).mockReset().mockResolvedValue(undefined)
   vi.mocked(validateWriteToolInput).mockReset().mockReturnValue(null)
   vi.mocked(getAllAssets).mockReset().mockResolvedValue(fixtureAssets as any)
@@ -113,22 +115,116 @@ test('a matched flat-balance row reconciles via update_asset_value, not a duplic
   expect(executeTool).not.toHaveBeenCalledWith('add_cash_asset', expect.anything(), expect.anything())
 })
 
-test('a matched lot-based row cannot be confirmed until the duplicate-risk checkbox is checked', async () => {
+test('a matched stock row Plaid reports without lots links only, adding nothing, with no checkbox to tick', async () => {
   vi.mocked(listPendingPositions).mockResolvedValue([pendingStockMatched])
   const user = userEvent.setup()
   render(<PlaidReviewModal open={true} onClose={() => {}} />)
 
   const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
-  expect(confirmButton).toBeDisabled()
-  expect(executeTool).not.toHaveBeenCalled()
-
-  const checkbox = screen.getByRole('checkbox')
-  await user.click(checkbox)
   expect(confirmButton).toBeEnabled()
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(screen.getByText(/single total with no lot detail/i)).toBeInTheDocument()
 
   await user.click(confirmButton)
   await waitFor(() => {
-    expect(executeTool).toHaveBeenCalledWith('add_stock_transaction', expect.objectContaining({ symbol: 'AAPL' }), 'user-1')
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_stock_transaction',
+      expect.objectContaining({ symbol: 'AAPL', _matchedAssetId: 'asset-1', _plaidLots: [], _plaidLotsExplicit: true }),
+      'user-1',
+    )
+  })
+})
+
+test('a no-lot-detail row can add Plaid\'s total as a new lot when the user asks', async () => {
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingStockMatched])
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  await user.click(await screen.findByLabelText(/add plaid's total as a new lot/i))
+  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_stock_transaction',
+      expect.objectContaining({ _plaidLots: [{ count: 10, cost_price: 150, purchase_date: '2026-01-01' }], _plaidLotsExplicit: true }),
+      'user-1',
+    )
+  })
+})
+
+const trackedAapl = {
+  id: 'asset-1',
+  name: 'Existing Fidelity Stock',
+  asset_type: 'Stock',
+  ticker: { symbol: 'AAPL', kind: 'stock' },
+  location: { name: 'Fidelity' },
+  stock_subtypes: [
+    {
+      subtype: 'Market',
+      transactions: [
+        { id: 'lot-a', count: 5, cost_price: 100, purchase_date: '2026-01-01' },
+        { id: 'lot-b', count: 5, cost_price: 120, purchase_date: '2026-02-01' },
+      ],
+    },
+  ],
+}
+const pendingWithLots = {
+  ...pendingStockMatched,
+  payload: {
+    ...pendingStockMatched.payload,
+    _lots: [
+      { quantity: 5, purchase_price: 100, original_purchase_datetime: '2026-01-01T00:00:00.000Z' },
+      { quantity: 5, purchase_price: 119, original_purchase_datetime: '2026-02-01T00:00:00.000Z' },
+    ],
+  },
+}
+
+test('Plaid lots pair automatically where identical, and the rest must be decided before Confirm', async () => {
+  vi.mocked(getAllAssets).mockResolvedValue([trackedAapl] as any)
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingWithLots])
+  vi.mocked(executeTool).mockResolvedValue({ assetId: 'asset-1' })
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
+  expect(screen.getByText(/matched automatically/i)).toBeInTheDocument()
+  expect(confirmButton).toBeDisabled() // the second lot's cost differs by $1: the user must say what it is
+
+  const selects = screen.getAllByRole('combobox')
+  await user.selectOptions(selects[1], 'lot-b')
+  expect(confirmButton).toBeEnabled()
+  await user.click(confirmButton)
+
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_stock_transaction',
+      expect.objectContaining({ _plaidLots: [], _plaidLotsExplicit: true, _matchedAssetId: 'asset-1' }),
+      'user-1',
+    )
+  })
+  // both pairings are remembered, so a later sell can be matched even though lot-b's cost differs
+  expect(savePlaidLotLinks).toHaveBeenCalledWith(pendingWithLots, [
+    { transactionId: 'lot-a', plaidDate: '2026-01-01', plaidPrice: 100 },
+    { transactionId: 'lot-b', plaidDate: '2026-02-01', plaidPrice: 119 },
+  ])
+})
+
+test('a Plaid lot marked as a new purchase is the only thing inserted', async () => {
+  vi.mocked(getAllAssets).mockResolvedValue([trackedAapl] as any)
+  vi.mocked(listPendingPositions).mockResolvedValue([pendingWithLots])
+  vi.mocked(executeTool).mockResolvedValue({ assetId: 'asset-1' })
+  const user = userEvent.setup()
+  render(<PlaidReviewModal open={true} onClose={() => {}} />)
+
+  await screen.findByRole('button', { name: 'Confirm' })
+  await user.selectOptions(screen.getAllByRole('combobox')[1], 'new')
+  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+  await waitFor(() => {
+    expect(executeTool).toHaveBeenCalledWith(
+      'add_stock_transaction',
+      expect.objectContaining({ _plaidLots: [{ count: 5, cost_price: 119, purchase_date: '2026-02-01' }], _plaidLotsExplicit: true }),
+      'user-1',
+    )
   })
 })
 
@@ -169,7 +265,6 @@ test('confirming a matched stock row records the link with the created transacti
   render(<PlaidReviewModal open={true} onClose={() => {}} />)
 
   const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
-  await user.click(screen.getByRole('checkbox'))
   await user.click(confirmButton)
 
   await waitFor(() => {
@@ -260,7 +355,7 @@ test('picking a manual match reconciles via update_asset_value with the chosen a
   expect(executeTool).not.toHaveBeenCalledWith('add_cash_asset', expect.anything(), expect.anything())
 })
 
-test('a manually-matched lot-based row still requires the duplicate-risk checkbox, and passes _matchedAssetId/_plaidLots through', async () => {
+test('a manually-matched lot-based row gets the same lot matching, and passes _matchedAssetId/_plaidLots through', async () => {
   vi.mocked(listPendingPositions).mockResolvedValue([
     {
       id: 'pending-5',
@@ -284,9 +379,7 @@ test('a manually-matched lot-based row still requires the duplicate-risk checkbo
   await user.selectOptions(select, 'asset-msft')
 
   const confirmButton = screen.getByRole('button', { name: 'Confirm' })
-  expect(confirmButton).toBeDisabled() // manual lot-based matches need the same acknowledgment as automatic ones
-  await user.click(screen.getByRole('checkbox'))
-  expect(confirmButton).toBeEnabled()
+  expect(screen.getByText(/single total with no lot detail/i)).toBeInTheDocument() // same panel as an automatic match
   await user.click(confirmButton)
 
   await waitFor(() => {
@@ -295,7 +388,8 @@ test('a manually-matched lot-based row still requires the duplicate-risk checkbo
       expect.objectContaining({
         symbol: 'MSFT',
         _matchedAssetId: 'asset-msft',
-        _plaidLots: [{ count: 4, cost_price: 300, purchase_date: '2026-01-01' }],
+        _plaidLots: [],
+        _plaidLotsExplicit: true,
       }),
       'user-1',
     )
