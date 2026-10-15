@@ -1,5 +1,5 @@
 // src/__tests__/plaidMatching.test.ts
-import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, isCryptoHolding, perUnitCost } from '../lib/plaidMatching'
+import { assetNaturalKey, compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, findMatchingLot, normalizeCryptoSymbol, isCryptoHolding, pairPlaidLots, trackedLotTotal, plaidLotPurchaseDate, perUnitCost } from '../lib/plaidMatching'
 
 const base = {
   assetType: 'Stock',
@@ -199,4 +199,31 @@ test('isCryptoHolding recognizes coins reported as cash equivalents in a crypto 
   expect(isCryptoHolding({ type: 'cash', ticker_symbol: 'USD' }, acct)).toBe(false)
   expect(isCryptoHolding({ type: 'equity', ticker_symbol: 'AAPL' }, { name: 'Individual' })).toBe(false)
   expect(normalizeCryptoSymbol('CUR:BTC')).toBe('BTC')
+})
+
+test('Plaid lots are dated from original_purchase_datetime so they can match manual lots', () => {
+  expect(plaidLotPurchaseDate({ original_purchase_datetime: '2026-09-27T00:00:00.000Z' })).toBe('2026-09-27')
+  expect(plaidLotPurchaseDate({})).toBeNull()
+  const lots = buildCandidateLotsFromPlaidPayload({
+    _lots: [{ quantity: 5.9784, purchase_price: 164.884, original_purchase_datetime: '2026-09-27T00:00:00.000Z' }],
+  })
+  expect(lots).toEqual([{ count: 5.9784, cost_price: 164.884, purchase_date: '2026-09-27' }])
+  expect(findMatchingLot(lots[0], [{ id: 'a', count: '5.9784', cost_price: '164.882', purchase_date: '2026-09-27' }])?.id).toBe('a')
+})
+
+test('pairPlaidLots matches each Plaid lot to a distinct tracked lot and leaves the rest unmatched', () => {
+  const existing = [
+    { id: 'a', count: 5.9784, cost_price: 164.884, purchase_date: '2026-09-27' },
+    { id: 'b', count: 15.7033, cost_price: 253.253, purchase_date: '2026-09-29' },
+  ]
+  const pairs = pairPlaidLots(
+    [
+      { count: 5.9784, cost_price: 164.884, purchase_date: '2026-09-27' },
+      { count: 15.7033, cost_price: 250, purchase_date: '2026-09-29' }, // cost differs: user must pair it
+      { count: 5.9784, cost_price: 164.884, purchase_date: '2026-09-27' }, // same lot can't be claimed twice
+    ],
+    existing,
+  )
+  expect(pairs.map((p) => p.matchedLotId)).toEqual(['a', null, null])
+  expect(trackedLotTotal(existing)).toBe(21.6817)
 })

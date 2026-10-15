@@ -9,9 +9,18 @@ import {
   markPendingPositionConfirmed,
   dismissPendingPosition,
   recordPlaidSyncLink,
+  savePlaidLotLinks,
   type PendingPlaidPosition,
 } from '@/lib/db/plaid'
-import { compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, type ManualMatchCandidate } from '@/lib/plaidMatching'
+import {
+  compatibleManualMatchCandidates,
+  buildCandidateLotsFromPlaidPayload,
+  pairPlaidLots,
+  trackedLotTotal,
+  type ManualMatchCandidate,
+  type PlaidLot,
+  type ExistingLot,
+} from '@/lib/plaidMatching'
 
 // Review-first confirmation screen for positions a Plaid sync detected.
 // Nothing here has touched assets/transactions/fixed_income_lots yet —
@@ -26,6 +35,45 @@ import { compatibleManualMatchCandidates, buildCandidateLotsFromPlaidPayload, ty
 // "Individual") missing a manually-tracked "Joint" asset. Once picked, a
 // manual match is treated identically to an automatic one everywhere below
 // (same reconciliation, same duplicate-risk checkbox for lot-based types).
+
+// ── Lot matching for a row matched to an existing stock/crypto/bond position ──────────
+// Plaid's lots are paired with the lots already tracked: identical ones pair automatically,
+// the rest the user pairs by hand ("same purchase") or adds as new. A holding Plaid reports
+// with no lot breakdown (e.g. Chase) can be linked without adding anything. Nothing is ever
+// inserted unless the user chose it, so a position can't be double-counted by accident.
+
+const LOT_MATCHING_TYPES = new Set<PendingPlaidPosition['detected_type']>(['stock', 'fixed_income'])
+const NEW_LOT = 'new'
+
+interface RowLotPlan {
+  existing: ExistingLot[]
+  plaidLots: PlaidLot[]
+  autoMatches: (string | null)[]
+}
+
+function trackedLotsFor(asset: any, detectedType: PendingPlaidPosition['detected_type']): ExistingLot[] {
+  if (!asset) return []
+  if (detectedType === 'fixed_income') {
+    return (asset.fixed_income_lots ?? []).map((l: any) => ({
+      id: l.id, count: l.count, cost_price: l.cost_price, purchase_date: l.purchase_date,
+    }))
+  }
+  const market = (asset.stock_subtypes ?? []).find((s: any) => s.subtype === 'Market')
+  return (market?.transactions ?? []).map((t: any) => ({
+    id: t.id, count: t.count, cost_price: t.cost_price, purchase_date: t.purchase_date,
+  }))
+}
+
+function buildLotPlan(row: PendingPlaidPosition, asset: any): RowLotPlan {
+  const existing = trackedLotsFor(asset, row.detected_type)
+  // Only Plaid's own per-lot breakdown counts here — the aggregate fallback has no date to match on.
+  const plaidLots = buildCandidateLotsFromPlaidPayload({ _lots: (row.payload as any)._lots } as any)
+  return { existing, plaidLots, autoMatches: pairPlaidLots(plaidLots, existing).map((p) => p.matchedLotId) }
+}
+
+function describeLot(l: { count: number | string; cost_price: number | string; purchase_date: string | null }) {
+  return `${l.purchase_date ?? 'no date'} · ${Number(l.count)} @ $${Number(l.cost_price)}`
+}
 
 interface Props {
   open: boolean
@@ -118,6 +166,27 @@ const FIELDS_BY_TYPE: Record<PendingPlaidPosition['detected_type'], FieldConfig[
   ],
 }
 
+/** The choice per Plaid lot: the user's, else the automatic match, else '' (still undecided). */
+function resolveDecisions(plan: RowLotPlan, chosen: Record<number, string>): string[] {
+  return plan.plaidLots.map((_, i) => chosen[i] ?? plan.autoMatches[i] ?? '')
+}
+
+function lotInsertionInput(plan: RowLotPlan, decisions: string[], aggregateAddsLot: boolean, payload: Record<string, unknown>) {
+  if (plan.plaidLots.length > 0) {
+    return {
+      _plaidLots: plan.plaidLots.filter((_, i) => decisions[i] === NEW_LOT),
+      _plaidLotsExplicit: true,
+    }
+  }
+  // No per-lot breakdown from Plaid: link only, unless the user asked for Plaid's total as a lot.
+  return {
+    _plaidLots: aggregateAddsLot
+      ? [{ count: Number(payload.count), cost_price: Number(payload.cost_price), purchase_date: payload.purchase_date as string }]
+      : [],
+    _plaidLotsExplicit: true,
+  }
+}
+
 export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   const [rows, setRows] = useState<PendingPlaidPosition[]>([])
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({})
@@ -127,6 +196,10 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [acknowledgedDuplicateRisk, setAcknowledgedDuplicateRisk] = useState<Record<string, boolean>>({})
+  // Per row: Plaid lot index -> '' (undecided) | 'new' | id of the tracked lot it's the same purchase as.
+  const [lotChoices, setLotChoices] = useState<Record<string, Record<number, string>>>({})
+  // Per row, for holdings Plaid reports without lots: link only (default) or add Plaid's total as a lot.
+  const [aggregateAddsLot, setAggregateAddsLot] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!open) return
@@ -143,6 +216,8 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
       setEdits(initialEdits)
       setAllAssets(assets ?? [])
       setManualMatchedAssetId({})
+      setLotChoices({})
+      setAggregateAddsLot({})
     } finally {
       setLoading(false)
     }
@@ -158,7 +233,15 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   async function handleConfirm(row: PendingPlaidPosition) {
     const effectiveMatchedAssetId = row.matched_asset_id ?? manualMatchedAssetId[row.id] ?? null
     const isLotBasedMatch = !!effectiveMatchedAssetId && LOT_BASED_TYPES.has(row.detected_type)
-    if (isLotBasedMatch && !acknowledgedDuplicateRisk[row.id]) {
+    const lotMatching = !!effectiveMatchedAssetId && LOT_MATCHING_TYPES.has(row.detected_type)
+    const matchedAsset = effectiveMatchedAssetId ? allAssets.find((a) => a.id === effectiveMatchedAssetId) : undefined
+    const lotPlan = lotMatching ? buildLotPlan(row, matchedAsset) : null
+    const decisions = lotPlan ? resolveDecisions(lotPlan, lotChoices[row.id] ?? {}) : []
+    if (lotPlan && lotPlan.plaidLots.length > 0 && decisions.some((d) => d === '')) {
+      setErrors((prev) => ({ ...prev, [row.id]: 'Say how each Plaid lot relates to your existing lots first.' }))
+      return
+    }
+    if (isLotBasedMatch && !lotMatching && !acknowledgedDuplicateRisk[row.id]) {
       setErrors((prev) => ({ ...prev, [row.id]: 'Check the box above to confirm this won’t double-count an existing position.' }))
       return
     }
@@ -183,13 +266,21 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
       : {
           ...payload,
           ...(effectiveMatchedAssetId ? { _matchedAssetId: effectiveMatchedAssetId } : {}),
-          ...(LOT_BASED_TYPES.has(row.detected_type)
-            ? { _plaidLots: buildCandidateLotsFromPlaidPayload({ ...payload, _lots: (row.payload as any)._lots } as any) }
-            : {}),
+          ...(lotPlan
+            ? lotInsertionInput(lotPlan, decisions, !!aggregateAddsLot[row.id], payload)
+            : LOT_BASED_TYPES.has(row.detected_type)
+              ? { _plaidLots: buildCandidateLotsFromPlaidPayload({ ...payload, _lots: (row.payload as any)._lots } as any) }
+              : {}),
         }
     delete input._lots
 
-    const validationError = validateWriteToolInput(toolName, input)
+    // When the user chose to add nothing, the lot fields on the form aren't used, so validate
+    // the rest of the input against a harmless placeholder lot.
+    const addsNothing = !!lotPlan && (input._plaidLots as unknown[]).length === 0
+    const validationError = validateWriteToolInput(
+      toolName,
+      addsNothing ? { ...input, count: 1, cost_price: 0, purchase_date: new Date().toISOString().slice(0, 10) } : input,
+    )
     if (validationError) {
       setErrors((prev) => ({ ...prev, [row.id]: validationError }))
       return
@@ -209,6 +300,16 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         transactionId: row.detected_type === 'stock' || row.detected_type === 'stock_plan' ? result?.transactionId : undefined,
         fixedIncomeLotId: row.detected_type === 'fixed_income' ? result?.fixedIncomeLotId : undefined,
       })
+      if (lotPlan && row.detected_type === 'stock') {
+        await savePlaidLotLinks(
+          row,
+          lotPlan.plaidLots.flatMap((lot, i) =>
+            decisions[i] && decisions[i] !== NEW_LOT
+              ? [{ transactionId: decisions[i], plaidDate: lot.purchase_date!, plaidPrice: lot.cost_price }]
+              : [],
+          ),
+        )
+      }
       await markPendingPositionConfirmed(row.id)
       setRows((prev) => prev.filter((r) => r.id !== row.id))
       onChanged?.()
@@ -276,6 +377,17 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
                   }
                   error={errors[row.id]}
                   busy={busyId === row.id}
+                  lotPlan={
+                    effectiveMatchedId && LOT_MATCHING_TYPES.has(row.detected_type)
+                      ? buildLotPlan(row, allAssets.find((a) => a.id === effectiveMatchedId))
+                      : null
+                  }
+                  lotChoice={lotChoices[row.id] ?? {}}
+                  onLotChoice={(index, value) =>
+                    setLotChoices((prev) => ({ ...prev, [row.id]: { ...(prev[row.id] ?? {}), [index]: value } }))
+                  }
+                  aggregateAddsLot={!!aggregateAddsLot[row.id]}
+                  onAggregateAddsLotChange={(v) => setAggregateAddsLot((prev) => ({ ...prev, [row.id]: v }))}
                   acknowledgedDuplicateRisk={!!acknowledgedDuplicateRisk[row.id]}
                   onAcknowledgeDuplicateRiskChange={(checked) =>
                     setAcknowledgedDuplicateRisk((prev) => ({ ...prev, [row.id]: checked }))
@@ -303,6 +415,11 @@ function PendingRow({
   onManualMatchChange,
   error,
   busy,
+  lotPlan,
+  lotChoice,
+  onLotChoice,
+  aggregateAddsLot,
+  onAggregateAddsLotChange,
   acknowledgedDuplicateRisk,
   onAcknowledgeDuplicateRiskChange,
   onFieldChange,
@@ -318,6 +435,11 @@ function PendingRow({
   onManualMatchChange: (assetId: string | null) => void
   error?: string
   busy: boolean
+  lotPlan: RowLotPlan | null
+  lotChoice: Record<number, string>
+  onLotChoice: (index: number, value: string) => void
+  aggregateAddsLot: boolean
+  onAggregateAddsLotChange: (v: boolean) => void
   acknowledgedDuplicateRisk: boolean
   onAcknowledgeDuplicateRiskChange: (checked: boolean) => void
   onFieldChange: (key: string, value: unknown) => void
@@ -328,6 +450,14 @@ function PendingRow({
   const fields = isCrypto ? CRYPTO_FIELDS : FIELDS_BY_TYPE[row.detected_type]
   const isLotBasedMatch = !!matchedName && LOT_BASED_TYPES.has(row.detected_type)
   const isFlatBalanceMatch = !!matchedName && row.detected_type === 'cash'
+  const unit = isCrypto ? 'units' : row.detected_type === 'fixed_income' ? 'units' : 'shares'
+  const decisions = lotPlan ? resolveDecisions(lotPlan, lotChoice) : []
+  const hasLotDetail = !!lotPlan && lotPlan.plaidLots.length > 0
+  const undecided = hasLotDetail && decisions.some((d) => d === '')
+  // The count/cost/date form fields describe the lot being added; when the user is matching
+  // lots (or linking only) those aren't what gets written, so they're hidden.
+  const hideLotFields = !!lotPlan && (hasLotDetail || !aggregateAddsLot)
+  const visibleFields = hideLotFields ? fields.filter((f) => !['count', 'cost_price', 'purchase_date'].includes(f.key)) : fields
 
   return (
     <div className="rounded-md border border-border/70 p-3 space-y-2">
@@ -364,7 +494,60 @@ function PendingRow({
             Confirming updates "{matchedName}"'s value — it won't create a duplicate.
           </p>
         )}
-        {isLotBasedMatch && (
+        {lotPlan && (
+          <div className="mt-2 rounded border border-border/70 p-2 space-y-2">
+            {hasLotDetail ? (
+              <>
+                <p className="text-[11px] text-muted-foreground">
+                  Plaid lists {lotPlan.plaidLots.length} lot{lotPlan.plaidLots.length !== 1 ? 's' : ''}. Say which of your
+                  lots each one is, so nothing is counted twice and later sells land on the right lot.
+                </p>
+                {lotPlan.plaidLots.map((lot, i) => (
+                  <label key={i} className="block text-[11px] space-y-1">
+                    <span className="text-foreground">
+                      Plaid: {describeLot(lot)}
+                      {lotPlan.autoMatches[i] && decisions[i] === lotPlan.autoMatches[i] ? ' — matched automatically' : ''}
+                    </span>
+                    <select
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+                      value={decisions[i]}
+                      onChange={(e) => onLotChoice(i, e.target.value)}
+                    >
+                      <option value="">Choose…</option>
+                      <option value={NEW_LOT}>A new purchase — add it as a lot</option>
+                      {lotPlan.existing.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          Same as my lot: {describeLot(e)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-muted-foreground">
+                  Plaid reports this holding as a single total with no lot detail. You track{' '}
+                  {trackedLotTotal(lotPlan.existing)} {unit} across {lotPlan.existing.length} lot
+                  {lotPlan.existing.length !== 1 ? 's' : ''}; Plaid shows {Number((row.payload as any).count ?? 0)}.
+                </p>
+                <label className="flex items-start gap-1.5 text-[11px] text-foreground">
+                  <input type="radio" checked={!aggregateAddsLot} onChange={() => onAggregateAddsLotChange(false)} className="mt-0.5" />
+                  <span>Link only — keep my lots exactly as they are (recommended)</span>
+                </label>
+                <label className="flex items-start gap-1.5 text-[11px] text-foreground">
+                  <input type="radio" checked={aggregateAddsLot} onChange={() => onAggregateAddsLotChange(true)} className="mt-0.5" />
+                  <span>Add Plaid's total as a new lot (fill in its date below)</span>
+                </label>
+              </>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Once linked, later buys are added automatically. A sell is applied only when the lot can be proven;
+              otherwise you'll be asked which lots it came from.
+            </p>
+          </div>
+        )}
+        {isLotBasedMatch && !lotPlan && (
           <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
             <p className="text-[11px] text-amber-700 dark:text-amber-400">
               This looks like a position you may already track manually as "{matchedName}". Confirming
@@ -384,7 +567,7 @@ function PendingRow({
         )}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {fields.map((field) => (
+        {visibleFields.map((field) => (
           <label key={field.key} className="text-xs space-y-1 block">
             <span className="text-muted-foreground">
               {field.label}
@@ -422,7 +605,7 @@ function PendingRow({
       <div className="flex gap-2 pt-1">
         <button
           type="button"
-          disabled={busy || (isLotBasedMatch && !acknowledgedDuplicateRisk)}
+          disabled={busy || undecided || (isLotBasedMatch && !lotPlan && !acknowledgedDuplicateRisk)}
           onClick={onConfirm}
           className="flex-1 bg-primary text-primary-foreground rounded-md py-1.5 text-xs font-medium disabled:opacity-50"
         >
