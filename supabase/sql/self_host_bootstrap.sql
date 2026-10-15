@@ -1031,14 +1031,58 @@ create policy own_llm_credential_secrets_update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- Per-user request log for the proxy's rate limit. RLS on with no policies:
--- only the service-role edge function touches it.
-create table if not exists public.llm_proxy_calls (
+-- Per-user request log for the proxies' rate limits (kind: 'llm' | 'market').
+-- RLS on with no policies: only the service-role edge functions touch it.
+create table if not exists public.api_proxy_calls (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null,
   called_at timestamptz not null default now()
 );
-create index if not exists llm_proxy_calls_user_called_idx
-  on public.llm_proxy_calls (user_id, called_at desc);
-alter table public.llm_proxy_calls enable row level security;
+create index if not exists api_proxy_calls_user_kind_called_idx
+  on public.api_proxy_calls (user_id, kind, called_at desc);
+alter table public.api_proxy_calls enable row level security;
 
+-- Server-side Finnhub and CoinGecko keys (see migration 20261016000001)
+create table if not exists public.market_credentials (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  -- market_credential_secrets has no select policy, so these flags are the
+  -- only way the client can know a key actually made it to the database.
+  finnhub_set boolean not null default false,
+  coingecko_set boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.market_credentials enable row level security;
+
+drop policy if exists own_market_credentials on public.market_credentials;
+create policy own_market_credentials
+  on public.market_credentials
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create table if not exists public.market_credential_secrets (
+  user_id uuid primary key references public.market_credentials(user_id) on delete cascade,
+  finnhub_api_key text,
+  coingecko_api_key text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.market_credential_secrets enable row level security;
+
+drop policy if exists own_market_credential_secrets_insert on public.market_credential_secrets;
+create policy own_market_credential_secrets_insert
+  on public.market_credential_secrets
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists own_market_credential_secrets_update on public.market_credential_secrets;
+create policy own_market_credential_secrets_update
+  on public.market_credential_secrets
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

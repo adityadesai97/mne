@@ -4,6 +4,7 @@ import { config } from '@/store/config'
 import { isSupabaseReady, getSupabaseClient } from '@/lib/supabase'
 import { loadApiKeys, saveSettings } from '@/lib/db/settings'
 import { saveLlmKey } from '@/lib/db/llmCredentials'
+import { saveMarketKeys } from '@/lib/db/marketCredentials'
 import { getPlaidCredentialsStatus, savePlaidCredentials, createPlaidLinkToken, exchangePlaidPublicToken } from '@/lib/db/plaid'
 import { openPlaidLink } from '@/lib/plaidLink'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -171,13 +172,13 @@ export default function Onboarding({ onComplete }: Props) {
     setLoading(true)
     setError('')
     try {
-      const { data: { user } } = await getSupabaseClient().auth.getUser()
-      if (!user) { setError('Not authenticated'); setLoading(false); return }
-      await saveSettings({ user_id: user.id, finnhub_api_key: finnhubKey })
-      // The Claude key goes to the server (write-only); it never lands in
+      // Creates the user_settings row (alert preferences, which the price
+      // alert job iterates) without any key in it.
+      await saveSettings({})
+      // The API keys go to the server (write-only); they never land in
       // localStorage or a browser-readable table.
       await saveLlmKey(aiKey)
-      config.save({ finnhubApiKey: finnhubKey })
+      await saveMarketKeys({ finnhubApiKey: finnhubKey })
       setLoading(false)
       setStep('plaid')
     } catch (e: any) {

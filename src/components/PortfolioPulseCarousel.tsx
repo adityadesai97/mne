@@ -104,9 +104,9 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     return () => { cancelled = true }
   }, [])
   useEffect(() => {
-    if (!config.finnhubApiKey || tickerIds.length === 0) { setEarnings(new Map()); return }
+    if (!config.hasFinnhubKey || tickerIds.length === 0) { setEarnings(new Map()); return }
     let cancelled = false
-    fetchUpcomingEarnings(assets, config.finnhubApiKey)
+    fetchUpcomingEarnings(assets)
       .then(found => { if (!cancelled) setEarnings(found) })
       .catch(() => undefined)
     return () => { cancelled = true }

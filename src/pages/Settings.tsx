@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
 import { saveLlmKey } from '@/lib/db/llmCredentials'
+import { saveMarketKeys } from '@/lib/db/marketCredentials'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { config } from '@/store/config'
@@ -244,24 +245,15 @@ export default function Settings() {
   }
 
   async function handleSaveKeys() {
-    const mergedFinnhub = keyDraft.finnhubApiKey || config.finnhubApiKey
-    if (!mergedFinnhub) { setKeyError('Finnhub API key is required'); return }
+    if (!keyDraft.finnhubApiKey && !config.hasFinnhubKey) { setKeyError('Finnhub API key is required'); return }
     if (!keyDraft.claudeApiKey && !config.llmKeySet) { setKeyError('A Claude API key is required'); return }
     setKeySaving(true)
     setKeyError('')
     try {
-      const { data: { user } } = await getSupabaseClient().auth.getUser()
-      if (!user) { setKeyError('Not authenticated'); return }
-      const dbRow: Record<string, string> = { user_id: user.id, finnhub_api_key: mergedFinnhub }
-      if (keyDraft.coingeckoApiKey) dbRow.coingecko_api_key = keyDraft.coingeckoApiKey
-      await saveSettings(dbRow)
-      // The Claude key is write-only: it goes to the server and is never
-      // stored in the browser or in a table the browser can read.
+      // API keys are write-only: they go to the server and are never stored
+      // in the browser or in a table the browser can read.
       if (keyDraft.claudeApiKey) await saveLlmKey(keyDraft.claudeApiKey)
-      config.save({
-        finnhubApiKey: mergedFinnhub,
-        coingeckoApiKey: keyDraft.coingeckoApiKey || config.coingeckoApiKey,
-      })
+      await saveMarketKeys({ finnhubApiKey: keyDraft.finnhubApiKey, coingeckoApiKey: keyDraft.coingeckoApiKey })
       setEditingKeys(false)
     } catch (e: any) {
       setKeyError(e.message ?? 'Failed to save')
@@ -797,7 +789,7 @@ export default function Settings() {
             </div>
             <input
               type="password"
-              placeholder="your_key"
+              placeholder={config.hasFinnhubKey ? 'Saved. Enter a new key to replace it.' : 'your_key'}
               value={keyDraft.finnhubApiKey}
               onChange={e => setKeyDraft(d => ({ ...d, finnhubApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
@@ -812,7 +804,7 @@ export default function Settings() {
             </div>
             <input
               type="password"
-              placeholder="CG-..."
+              placeholder={config.coingeckoKeySet ? 'Saved. Enter a new key to replace it.' : 'CG-...'}
               value={keyDraft.coingeckoApiKey}
               onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"

@@ -12,8 +12,9 @@ import { getAllAssets } from '@/lib/db/assets'
 import { computeTotalNetWorth } from '@/lib/portfolio'
 import { recordDailySnapshot, backfillHistoricalSnapshots } from '@/lib/db/snapshots'
 import { promoteStaleShortTermLots } from '@/lib/db/transactions'
-import { syncFinnhubKey } from '@/lib/db/settings'
 import { migrateLegacyClaudeKey } from '@/lib/db/llmCredentials'
+import { migrateLegacyMarketKeys } from '@/lib/db/marketCredentials'
+import { finnhubFetch } from '@/lib/marketData'
 import { config } from '@/store/config'
 import { getSupabaseClient } from '@/lib/supabase'
 import { abortActiveImport } from '@/lib/importExport'
@@ -184,9 +185,10 @@ export default function AppLayout() {
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  // One-time move of a pre-proxy Claude key from the browser to the server.
+  // One-time move of pre-proxy API keys (Claude, Finnhub, CoinGecko) from the browser to the server.
   useEffect(() => {
     migrateLegacyClaudeKey().catch(e => console.warn('Could not move the Claude key to the server yet', e))
+    migrateLegacyMarketKeys().catch(e => console.warn('Could not move the market data keys to the server yet', e))
   }, [])
 
   useEffect(() => {
@@ -200,11 +202,10 @@ export default function AppLayout() {
         if (count > 0) {
           setCgAlert(`${count} lot${count !== 1 ? 's' : ''} promoted to Long Term capital gains status ✓`)
         }
-        await syncFinnhubKey()
         await refreshPlaidPendingCount()
 
         // Backfill logos for tickers that don't have one yet
-        if (config.finnhubApiKey) {
+        if (config.hasFinnhubKey) {
           const seen = new Set<string>()
           const tickersWithoutLogos = assets
             .filter(a => a.asset_type === 'Stock' && a.ticker && !a.ticker.logo && !seen.has(a.ticker.id) && seen.add(a.ticker.id))
@@ -212,7 +213,7 @@ export default function AppLayout() {
 
           await Promise.all(tickersWithoutLogos.map(async ticker => {
             try {
-              const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${ticker.symbol}&token=${config.finnhubApiKey}`)
+              const res = await finnhubFetch('stock/profile2', { symbol: ticker.symbol })
               const profile = await res.json()
               if (profile.logo) {
                 await getSupabaseClient().from('tickers').update({ logo: profile.logo }).eq('id', ticker.id)

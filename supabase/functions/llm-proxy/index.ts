@@ -67,8 +67,14 @@ export function bearerToken(header: string | null): string {
   return (header ?? '').replace(/^Bearer\s+/i, '').trim()
 }
 
-async function handle(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
+export async function handle(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    // The Anthropic SDK sends a changing set of x-stainless-* and
+    // anthropic-* headers, so echo whatever the browser says it will send
+    // instead of maintaining a list.
+    const requested = req.headers.get('Access-Control-Request-Headers')
+    return new Response('ok', { headers: { ...CORS_HEADERS, ...(requested ? { 'Access-Control-Allow-Headers': requested } : {}) } })
+  }
   if (req.method !== 'POST') return errorResponse(405, 'Method not allowed')
 
   const path = new URL(req.url).pathname
@@ -95,9 +101,10 @@ async function handle(req: Request): Promise<Response> {
 
   const since = new Date(Date.now() - 60_000).toISOString()
   const { count } = await admin
-    .from('llm_proxy_calls')
+    .from('api_proxy_calls')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
+    .eq('kind', 'llm')
     .gte('called_at', since)
   if ((count ?? 0) >= RATE_LIMIT_PER_MINUTE) {
     return new Response(JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'Too many requests. Wait a minute and try again.' } }), {
@@ -105,9 +112,9 @@ async function handle(req: Request): Promise<Response> {
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Retry-After': '30' },
     })
   }
-  await admin.from('llm_proxy_calls').insert({ user_id: user.id })
+  await admin.from('api_proxy_calls').insert({ user_id: user.id, kind: 'llm' })
   // Keep the log small: drop this user's rows older than a day.
-  await admin.from('llm_proxy_calls').delete().eq('user_id', user.id).lt('called_at', new Date(Date.now() - 86_400_000).toISOString())
+  await admin.from('api_proxy_calls').delete().eq('user_id', user.id).eq('kind', 'llm').lt('called_at', new Date(Date.now() - 86_400_000).toISOString())
 
   const { data: secret } = await admin
     .from('llm_credential_secrets')

@@ -257,7 +257,7 @@ export default function Charts() {
   }, [])
 
   const handleRefresh = useCallback(async () => {
-    if (config.finnhubApiKey) await refreshAllPrices(config.finnhubApiKey).catch(console.error)
+    if (config.hasFinnhubKey) await refreshAllPrices().catch(console.error)
     const fresh = await getAllAssets().catch(() => assets)
     setAssets((fresh as any[]) ?? assets)
   }, [assets])

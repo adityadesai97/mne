@@ -33,7 +33,7 @@ echo ""
 echo -e "  Open: ${BOLD}http://localhost:5173${RESET}"
 echo ""
 echo "  On first sign-in you'll be prompted for:"
-echo "    • An AI provider key — Claude (console.anthropic.com) or Groq (console.groq.com)"
+echo "    • A Claude API key (console.anthropic.com)"
 echo "    • A Finnhub API key  — finnhub.io/dashboard (free tier is sufficient)"
 echo ""
 

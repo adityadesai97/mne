@@ -2,6 +2,7 @@ import { createLLMClient, claudeWebSearch, LLM_MODEL } from './llm'
 import type { NormalizedResponse, NormalizedUsage, StreamCallbacks } from './llm'
 import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
+import { finnhubFetch } from './marketData'
 import { getAllAssets } from './db/assets'
 import { getSnapshots } from './db/snapshots'
 import { getAllTickers } from './db/tickers'
@@ -47,9 +48,9 @@ function clipText(value: unknown, maxLength = 220): string {
 }
 
 async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<void> {
-  if (!config.finnhubApiKey) return
+  if (!config.hasFinnhubKey) return
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${config.finnhubApiKey}`)
+    const res = await finnhubFetch('quote', { symbol })
     const quote = await res.json()
     if (quote.c) {
       await getSupabaseClient().from('tickers').update({
@@ -95,17 +96,16 @@ function findCapexLineItem(cfLines: unknown): { concept: string; label: string; 
 // failures (bad ticker, transient rate limit) are collected rather than
 // thrown, so one bad symbol in a batch doesn't blank out the rest.
 async function fetchCompanyFundamentals(symbols: string[]): Promise<{ results: any[]; errors: Array<{ symbol: string; message: string }> }> {
-  if (!config.finnhubApiKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
-  const token = config.finnhubApiKey
+  if (!config.hasFinnhubKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
   const results: any[] = []
   const errors: Array<{ symbol: string; message: string }> = []
 
   for (const symbol of symbols) {
     try {
       const [metricRes, recRes, financialsRes] = await Promise.all([
-        fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${token}`),
-        fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${token}`),
-        fetch(`https://finnhub.io/api/v1/stock/financials-reported?symbol=${symbol}&freq=annual&token=${token}`),
+        finnhubFetch('stock/metric', { symbol, metric: 'all' }),
+        finnhubFetch('stock/recommendation', { symbol }),
+        finnhubFetch('stock/financials-reported', { symbol, freq: 'annual' }),
       ])
       if (!metricRes.ok) throw new Error(`Basic financials lookup failed (${metricRes.status})`)
       const metricJson = await metricRes.json()

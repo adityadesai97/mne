@@ -1,6 +1,7 @@
 import { createLLMClient, LLM_MODEL } from './llm'
 import { config } from '@/store/config'
 import { getSupabaseClient } from './supabase'
+import { finnhubFetch } from './marketData'
 
 const EMPTY_ASSIGNMENT_RESULT = { assignedCount: 0, suggestedThemes: [] as string[] }
 
@@ -41,9 +42,9 @@ function parseThemeSuggestions(raw: string): string[] {
 }
 
 async function fetchTickerProfile(symbol: string): Promise<{ name: string; industry: string }> {
-  if (!config.finnhubApiKey) return { name: '', industry: '' }
+  if (!config.hasFinnhubKey) return { name: '', industry: '' }
   try {
-    const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${config.finnhubApiKey}`)
+    const res = await finnhubFetch('stock/profile2', { symbol })
     const profile = await res.json()
     return {
       name: String(profile?.name ?? '').trim(),

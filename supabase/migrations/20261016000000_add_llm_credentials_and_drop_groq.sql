@@ -50,16 +50,17 @@ create policy own_llm_credential_secrets_update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- Per-user request log for the proxy's rate limit. RLS on with no policies:
--- only the service-role edge function touches it.
-create table if not exists public.llm_proxy_calls (
+-- Per-user request log for the proxies' rate limits (kind: 'llm' | 'market').
+-- RLS on with no policies: only the service-role edge functions touch it.
+create table if not exists public.api_proxy_calls (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null,
   called_at timestamptz not null default now()
 );
-create index if not exists llm_proxy_calls_user_called_idx
-  on public.llm_proxy_calls (user_id, called_at desc);
-alter table public.llm_proxy_calls enable row level security;
+create index if not exists api_proxy_calls_user_kind_called_idx
+  on public.api_proxy_calls (user_id, kind, called_at desc);
+alter table public.api_proxy_calls enable row level security;
 
 alter table public.user_settings drop column if exists groq_api_key;
 alter table public.user_settings drop column if exists llm_provider;

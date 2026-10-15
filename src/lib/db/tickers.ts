@@ -3,6 +3,7 @@ import { recordTickerPriceSnapshots } from './tickerPriceHistory'
 import { CoinGeckoError, fetchCryptoQuotes } from '../coingecko'
 import { showAppAlert } from '../appAlerts'
 import { config } from '@/store/config'
+import { finnhubFetch } from '../marketData'
 
 export async function getAllTickers() {
   const { data, error } = await getSupabaseClient()
@@ -57,7 +58,7 @@ export async function updateTickerPrice(symbol: string, price: number, previousC
 // each call this) — resets on a real reload like priceRefresh's promise.
 let warnedCryptoRateLimit = false
 
-export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
+export async function refreshAllPrices(): Promise<void> {
   const tickers = await getAllTickers()
   const allTickers = (tickers ?? []).filter((t: any) => t.symbol)
   const stockTickers = allTickers.filter((t: any) => t.kind !== 'crypto')
@@ -65,7 +66,7 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
   const pricePoints: { tickerId: string; price: number }[] = []
   await Promise.all(stockTickers.map(async (ticker: any) => {
     try {
-      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker.symbol}&token=${finnhubApiKey}`)
+      const res = await finnhubFetch('quote', { symbol: ticker.symbol })
       const quote = await res.json()
       if (quote.c && Number.isFinite(Number(quote.c))) {
         const previousClose = Number.isFinite(Number(quote.pc)) ? Number(quote.pc) : null
@@ -77,7 +78,7 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
   if (cryptoTickers.length > 0) {
     try {
       // One batched CoinGecko call for every coin, however many are held.
-      const quotes = await fetchCryptoQuotes(cryptoTickers.map((t: any) => t.coingecko_id), config.coingeckoApiKey || undefined)
+      const quotes = await fetchCryptoQuotes(cryptoTickers.map((t: any) => t.coingecko_id))
       await Promise.all(cryptoTickers.map(async (ticker: any) => {
         const quote = quotes.get(ticker.coingecko_id)
         if (!quote) return
@@ -91,7 +92,7 @@ export async function refreshAllPrices(finnhubApiKey: string): Promise<void> {
       // But an existing account that never set a CoinGecko key would
       // otherwise just see crypto prices silently go stale, so say so once
       // per page load when the cause is the keyless rate limit.
-      if (error instanceof CoinGeckoError && error.rateLimited && !config.coingeckoApiKey && !warnedCryptoRateLimit) {
+      if (error instanceof CoinGeckoError && error.rateLimited && !config.coingeckoKeySet && !warnedCryptoRateLimit) {
         warnedCryptoRateLimit = true
         showAppAlert('Crypto prices couldn\'t refresh (CoinGecko keyless rate limit). Add a free CoinGecko key in Settings to fix this.', { variant: 'error', durationMs: 6000 })
       }

@@ -6,7 +6,7 @@ import { deleteAsset } from './assets'
 
 // Client-side helpers for the Plaid integration. Each user configures their
 // own Plaid developer credentials (client_id/secret) here, the same way they
-// configure their own Claude/Groq/Finnhub key — see CLAUDE.md's Plaid
+// configure their own Claude/Finnhub key — see CLAUDE.md's Plaid
 // Integration section. The secret itself is write-only from this client:
 // plaid_credential_secrets has no select policy, so it is never read back
 // here, only ever written.

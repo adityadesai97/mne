@@ -233,7 +233,7 @@ if [ -n "$PAT" ] && [ -n "$PROJECT_REF" ] && command -v zip &>/dev/null; then
   # verify_jwt:true, which breaks functions.invoke() from a browser (a
   # preflight never carries the app's Authorization header). Each
   # function does its own auth check internally instead.
-  for ENTRY in "plaid-create-link-token:false" "plaid-exchange-token:false" "plaid-sync:false" "plaid-sync-me:false" "plaid-remove-item:false"; do
+  for ENTRY in "plaid-create-link-token:false" "plaid-exchange-token:false" "plaid-sync:false" "plaid-sync-me:false" "plaid-remove-item:false" "llm-proxy:false" "market-proxy:false"; do
     SLUG="${ENTRY%%:*}"
     VERIFY_JWT="${ENTRY##*:}"
     FN_ZIP="/tmp/mne_fn_${SLUG}.zip"
@@ -292,6 +292,8 @@ if [ "$PLAID_FUNCTIONS_DEPLOYED" = "false" ]; then
   echo "    supabase functions deploy plaid-sync              --project-ref ${PLAID_REF} --no-verify-jwt"
   echo "    supabase functions deploy plaid-sync-me           --project-ref ${PLAID_REF} --no-verify-jwt"
   echo "    supabase functions deploy plaid-remove-item       --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy llm-proxy               --project-ref ${PLAID_REF} --no-verify-jwt"
+  echo "    supabase functions deploy market-proxy            --project-ref ${PLAID_REF} --no-verify-jwt"
   echo ""
 fi
 

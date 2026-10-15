@@ -81,7 +81,7 @@ bash run.sh
 
 ## Troubleshooting
 
-### `Could not find the 'groq_api_key' column of 'user_settings'`
+### `relation "public.llm_credentials" does not exist` or `Could not find the table 'public.market_credentials'`
 
 Your DB is behind the current schema. Re-run bootstrap SQL, then run:
 

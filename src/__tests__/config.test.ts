@@ -4,19 +4,19 @@ import { config } from '@/store/config'
 beforeEach(() => localStorage.clear())
 
 test('isConfigured is true with a server-side Claude key flag and a Finnhub key', () => {
-  config.save({ llmKeySet: true, finnhubApiKey: 'finn_xxx' })
+  config.save({ llmKeySet: true, finnhubKeySet: true })
   expect(config.isConfigured).toBe(true)
 })
 
 test('isConfigured stays true for a pre-proxy browser-held key until it is migrated', () => {
   localStorage.setItem('mne_claude_api_key', 'sk-ant-old')
-  config.save({ finnhubApiKey: 'finn_xxx' })
+  config.save({ finnhubKeySet: true })
   expect(config.isConfigured).toBe(true)
   expect(config.llmKeySet).toBe(false)
 })
 
 test('isConfigured is false with no Claude key anywhere', () => {
-  config.save({ finnhubApiKey: 'finn_xxx' })
+  config.save({ finnhubKeySet: true })
   expect(config.isConfigured).toBe(false)
 })
 
@@ -26,7 +26,7 @@ test('isConfigured is false when Finnhub is missing', () => {
 })
 
 test('isConfigured is false when the user needs to sign in', () => {
-  config.save({ llmKeySet: true, finnhubApiKey: 'finn_xxx' })
+  config.save({ llmKeySet: true, finnhubKeySet: true })
   config.markSignedOut()
   expect(config.isConfigured).toBe(false)
   expect(config.llmKeySet).toBe(false)
