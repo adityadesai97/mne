@@ -40,12 +40,29 @@ export function assetNaturalKey(params: AssetNaturalKeyParams): string {
 // Plaid may report a coin as "BTC", "btc", or a trading pair like "BTC-USD";
 // mne tracks the bare coin symbol (CoinGecko resolves it from there).
 export function normalizeCryptoSymbol(raw: unknown): string | null {
-  const text = String(raw ?? '').trim().toUpperCase()
+  const text = String(raw ?? '').trim().toUpperCase().replace(/^CUR:/, '')
   if (!text) return null
   // Only a delimited quote currency is a trading pair ("BTC-USD"); a bare
   // "USDT"/"USDC" is the coin itself and must survive.
   const pair = text.match(/^(.+?)[-/_ ](?:USD|USDT|USDC)$/)
   return pair ? pair[1] : text
+}
+
+// Robinhood reports the coins in its crypto account as is_cash_equivalent, so the
+// security type alone can't be trusted; a non-cash security with a ticker inside
+// an account whose subtype/name says "crypto" is a coin too. Without this the
+// whole account collapsed into one "Crypto Cash" balance.
+export function isCryptoHolding(
+  security: { type?: string | null; ticker_symbol?: string | null } | null | undefined,
+  account: { subtype?: string | null; name?: string | null; official_name?: string | null } | null | undefined,
+): boolean {
+  if (!security) return false
+  const type = String(security.type ?? '').toLowerCase()
+  if (type === 'cryptocurrency') return true
+  if (type === 'cash') return false
+  const inCryptoAccount = /crypto/i.test(`${account?.subtype ?? ''} ${account?.name ?? ''} ${account?.official_name ?? ''}`)
+  const coin = normalizeCryptoSymbol(security.ticker_symbol)
+  return inCryptoAccount && !!coin && coin !== 'USD'
 }
 
 // Plaid's holding-level cost_basis is the holding's total cost, not a per-unit
