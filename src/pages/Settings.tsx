@@ -21,7 +21,8 @@ import {
   listPlaidDriftPositions,
   listHeldLotSells,
   resolvePlaidDrift,
-  removePlaidItem,
+  disconnectPlaidItem,
+  listLinkedAssetsForItem,
   createPlaidLinkToken,
   exchangePlaidPublicToken,
   syncPlaidNow,
@@ -30,11 +31,13 @@ import {
   type PlaidItem,
   type PlaidDriftPosition,
   type HeldLotSell,
+  type LinkedPlaidAsset,
 } from '@/lib/db/plaid'
 import { openPlaidLink } from '@/lib/plaidLink'
 import { showAppAlert } from '@/lib/appAlerts'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 import { PlaidLotSellModal } from '@/components/PlaidLotSellModal'
+import { PlaidDisconnectDialog } from '@/components/PlaidDisconnectDialog'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -144,6 +147,7 @@ export default function Settings() {
   const [plaidResolvingId, setPlaidResolvingId] = useState<string | null>(null)
   const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
   const [plaidHeldSells, setPlaidHeldSells] = useState<HeldLotSell[]>([])
+  const [plaidDisconnecting, setPlaidDisconnecting] = useState<{ item: PlaidItem; assets: LinkedPlaidAsset[] | null } | null>(null)
   const [plaidMatchingSell, setPlaidMatchingSell] = useState<HeldLotSell | null>(null)
   const [plaidError, setPlaidError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -374,11 +378,31 @@ export default function Settings() {
     }
   }
 
-  async function handleRemovePlaidItem(id: string) {
-    setPlaidRemovingId(id)
+  // Opens the disconnect dialog; what happens to the linked assets is the user's call.
+  async function startDisconnectPlaidItem(item: PlaidItem) {
+    setPlaidDisconnecting({ item, assets: null })
     try {
-      await removePlaidItem(id)
+      const assets = await listLinkedAssetsForItem(item.id)
+      setPlaidDisconnecting({ item, assets })
+    } catch {
+      // Couldn't list them: offer the safe path only (the dialog shows no delete option for an empty list).
+      setPlaidDisconnecting({ item, assets: [] })
+    }
+  }
+
+  async function handleDisconnectPlaidItem(deleteAssets: boolean) {
+    if (!plaidDisconnecting) return
+    const { item } = plaidDisconnecting
+    setPlaidRemovingId(item.id)
+    try {
+      const { deleted, failed } = await disconnectPlaidItem(item.id, { deleteAssets })
+      setPlaidDisconnecting(null)
       await refreshPlaidData()
+      if (failed.length > 0) {
+        showAppAlert(`Disconnected, but couldn't delete: ${failed.join(', ')}`, { variant: 'error' })
+      } else if (deleteAssets) {
+        showAppAlert(`Disconnected and deleted ${deleted} asset${deleted !== 1 ? 's' : ''}`, { variant: 'success' })
+      }
     } catch (e: any) {
       showAppAlert(e.message ?? 'Failed to disconnect', { variant: 'error' })
     } finally {
@@ -983,7 +1007,7 @@ export default function Settings() {
                 <button
                   type="button"
                   disabled={plaidRemovingId === item.id}
-                  onClick={() => void handleRemovePlaidItem(item.id)}
+                  onClick={() => void startDisconnectPlaidItem(item)}
                   className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 text-xs disabled:opacity-50"
                 >
                   {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
@@ -1005,6 +1029,16 @@ export default function Settings() {
         </div>
       )}
       {plaidError && <p className="text-xs text-destructive mt-2 px-1">{plaidError}</p>}
+      {plaidDisconnecting && (
+        <PlaidDisconnectDialog
+          institutionName={plaidDisconnecting.item.institution_name || 'this account'}
+          assets={plaidDisconnecting.assets}
+          busy={plaidRemovingId === plaidDisconnecting.item.id}
+          onUnlink={() => void handleDisconnectPlaidItem(false)}
+          onDelete={() => void handleDisconnectPlaidItem(true)}
+          onCancel={() => setPlaidDisconnecting(null)}
+        />
+      )}
       <PlaidLotSellModal
         sell={plaidMatchingSell}
         onClose={() => setPlaidMatchingSell(null)}

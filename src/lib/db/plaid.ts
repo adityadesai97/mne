@@ -466,3 +466,48 @@ export async function savePlaidLotLinks(
   // 23505: that lot already has a pairing — keep the existing one.
   if (error && error.code !== '23505') console.error('Failed to save Plaid lot pairings', error)
 }
+
+export interface LinkedPlaidAsset {
+  id: string
+  name: string
+}
+
+/** Assets a connection has been confirmed into (what "delete linked assets" on disconnect would remove). */
+export async function listLinkedAssetsForItem(plaidItemId: string): Promise<LinkedPlaidAsset[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('plaid_synced_positions')
+    .select('asset_id, asset:assets(name)')
+    .eq('plaid_item_id', plaidItemId)
+    .not('asset_id', 'is', null)
+  if (error) throw error
+  const seen = new Map<string, LinkedPlaidAsset>()
+  for (const r of data ?? []) {
+    const id = (r as any).asset_id as string
+    if (!seen.has(id)) seen.set(id, { id, name: (r as any).asset?.name ?? 'Asset' })
+  }
+  return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Disconnects a connection. By default the assets it was confirmed into are kept
+ * (the link rows disappear with the connection); with deleteAssets they're removed
+ * too — after the disconnect succeeds, so a failed disconnect never costs you data.
+ */
+export async function disconnectPlaidItem(
+  plaidItemId: string,
+  options: { deleteAssets: boolean } = { deleteAssets: false },
+): Promise<{ deleted: number; failed: string[] }> {
+  const linked = options.deleteAssets ? await listLinkedAssetsForItem(plaidItemId) : []
+  await removePlaidItem(plaidItemId)
+  let deleted = 0
+  const failed: string[] = []
+  for (const asset of linked) {
+    try {
+      await deleteAsset(asset.id)
+      deleted += 1
+    } catch {
+      failed.push(asset.name)
+    }
+  }
+  return { deleted, failed }
+}
