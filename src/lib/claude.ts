@@ -1,4 +1,4 @@
-import { createLLMClient, MODEL_FOR_PROVIDER } from './llm'
+import { createLLMClient, claudeWebSearch, MODEL_FOR_PROVIDER } from './llm'
 import type { NormalizedResponse, StreamCallbacks } from './llm'
 import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
@@ -86,35 +86,6 @@ function findCapexLineItem(cfLines: unknown): { concept: string; label: string; 
     return label.includes('capital expenditure')
       || (label.includes('property') && (label.includes('plant') || label.includes('equipment')) && (label.includes('purchase') || label.includes('payment') || label.includes('acquisition')))
   }) ?? null
-}
-
-// Finnhub's free `calendar/earnings`, queried per symbol over a window wide
-// enough to catch the next quarterly report. Per-symbol failures are collected,
-// not thrown, same as fetchCompanyFundamentals below.
-const EARNINGS_CALENDAR_LOOKAHEAD_DAYS = 120
-
-async function fetchEarningsCalendar(symbols: string[], now: Date = new Date()): Promise<{ results: Array<{ symbol: string; nextEarningsDate: string | null; hour?: string; epsEstimate?: number | null }>; errors: Array<{ symbol: string; message: string }> }> {
-  if (!config.finnhubApiKey) throw new Error('Finnhub API key is not configured — add one in Settings.')
-  const from = now.toISOString().slice(0, 10)
-  const to = new Date(now.getTime() + EARNINGS_CALENDAR_LOOKAHEAD_DAYS * 86_400_000).toISOString().slice(0, 10)
-  const results: Array<{ symbol: string; nextEarningsDate: string | null; hour?: string; epsEstimate?: number | null }> = []
-  const errors: Array<{ symbol: string; message: string }> = []
-  await Promise.all(symbols.map(async (symbol) => {
-    try {
-      const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&symbol=${encodeURIComponent(symbol)}&token=${config.finnhubApiKey}`)
-      if (!res.ok) throw new Error(`Earnings calendar lookup failed (${res.status})`)
-      const json = await res.json()
-      const next = (Array.isArray(json?.earningsCalendar) ? json.earningsCalendar : [])
-        .filter((entry: any) => typeof entry?.date === 'string' && entry.date >= from && entry.date <= to)
-        .sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))[0]
-      results.push(next
-        ? { symbol, nextEarningsDate: next.date, hour: next.hour || undefined, epsEstimate: typeof next.epsEstimate === 'number' ? next.epsEstimate : null }
-        : { symbol, nextEarningsDate: null })
-    } catch (error: any) {
-      errors.push({ symbol, message: String(error?.message ?? 'Earnings lookup failed') })
-    }
-  }))
-  return { results, errors }
 }
 
 // All three endpoints are on Finnhub's free tier (same key already used for
@@ -1452,16 +1423,20 @@ export async function executeReadTool(
     }
   }
 
-  if (toolName === 'get_earnings_calendar') {
-    const symbols = Array.from(new Set(asStringArray(input?.symbols).map((symbol) => normalizeSymbol(symbol)).filter(Boolean))).slice(0, 5)
-    if (symbols.length === 0) throw new Error('At least one symbol is required.')
-    const { results, errors } = await fetchEarningsCalendar(symbols)
+  if (toolName === 'web_search') {
+    const query = String(input?.query ?? '').trim()
+    if (!query) throw new Error('A search query is required.')
+    // Web search runs on Anthropic's server-side tool, so it needs a Claude key
+    // and has no Groq equivalent.
+    if (config.llmProvider !== 'claude' || !config.claudeApiKey) {
+      throw new Error('Web search is only available with the Claude provider. Tell the user to switch the AI provider to Claude in Settings to use it.')
+    }
+    const { answer, sources } = await claudeWebSearch(config.claudeApiKey, query)
     return {
-      earnings: results,
-      errors,
-      lookaheadDays: EARNINGS_CALENDAR_LOOKAHEAD_DAYS,
-      note: `nextEarningsDate is null when Finnhub lists no report in the next ${EARNINGS_CALENDAR_LOOKAHEAD_DAYS} days (the date may simply not be announced yet).`,
-      source: 'Finnhub (free tier)',
+      query,
+      answer: answer || 'No answer found in the search results.',
+      sources,
+      note: 'Web results can be incomplete or out of date — cite the sources and say so if the answer is uncertain.',
     }
   }
 
@@ -1483,7 +1458,7 @@ const READ_TOOL_FRIENDLY_LABEL: Record<string, string> = {
   recommend_actions_for_goal: 'Worked out recommendations for your goal',
   get_rsu_vesting_schedule: 'Worked out your RSU vesting schedule',
   get_company_fundamentals: 'Looked up company fundamentals',
-  get_earnings_calendar: 'Looked up upcoming earnings dates',
+  web_search: 'Searched the web',
 }
 
 function friendlyReadToolLabel(toolName: string): string {
@@ -1729,7 +1704,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_transactions',
-      description: "Return normalized stock transaction lots with optional symbol/date/subtype/holding-period filters. Each lot has its subtype (Market/ESPP/RSU), purchaseDate, shares, costPrice and capitalGainsStatus (Short Term/Long Term). Use capital_gains_status to list only long-term or short-term lots in one call. The app does NOT store ESPP offering/grant dates, so it cannot tell a qualifying from a disqualifying ESPP disposition (that needs 2 years from offering AND 1 year from purchase) — when asked to filter on that, return the lots by the 1-year long-term status the app does track, and say plainly that qualified-vs-non-qualified can't be determined from stored data instead of failing.",
+      description: "Return normalized stock transaction lots with optional symbol/date/subtype/holding-period filters. Each lot has its subtype (Market/ESPP/RSU), purchaseDate, shares, costPrice and capitalGainsStatus (Short Term/Long Term). Use capital_gains_status to list only long-term or short-term lots in one call. The app does NOT store ESPP offering/grant dates, so it does not know the offering period. When a question depends on ESPP qualified vs. non-qualified (disqualifying) status, say plainly that the app doesn't have the offering period, and do not state, guess or imply which ESPP lots are qualified — you may still list the lots by the 1-year long-term status the app does track, labelled as that.",
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1874,14 +1849,14 @@ const tools = [
   {
     type: 'function' as const,
     function: {
-      name: 'get_earnings_calendar',
-      description: "Look up the next scheduled earnings report date for up to 5 ticker symbols (any public company, not just holdings), via Finnhub's free earnings calendar. Use for 'when is X's next earnings call/report?'. Returns nextEarningsDate (YYYY-MM-DD, null if none is listed in the next 120 days), plus report time of day (bmo = before market open, amc = after market close) and the EPS estimate when available.",
+      name: 'web_search',
+      description: "Search the web for current or external information the portfolio tools can't answer: upcoming events (earnings dates, Fed meetings), company or market news, definitions, tax rules, or any general-knowledge question. Not for the user's own holdings, balances or lots — use the portfolio tools for those. Returns a short sourced answer; mention the sources when relevant. Only works with the Claude provider.",
       parameters: {
         type: 'object' as const,
         properties: {
-          symbols: { type: 'array', items: { type: 'string' }, description: 'Ticker symbols, e.g. ["CRM"]. Up to 5 per call.' },
+          query: { type: 'string', description: 'A self-contained search query, e.g. "Salesforce next earnings date".' },
         },
-        required: ['symbols'],
+        required: ['query'],
       },
     },
   },
@@ -2309,7 +2284,7 @@ const READ_TOOL_NAMES = new Set([
   'recommend_actions_for_goal',
   'get_rsu_vesting_schedule',
   'get_company_fundamentals',
-  'get_earnings_calendar',
+  'web_search',
 ])
 
 const WRITE_TOOL_NAMES = new Set([
