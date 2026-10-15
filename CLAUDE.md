@@ -126,18 +126,19 @@ All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`) call `createLLMCl
 
 ### AI Command Bar
 
-`src/lib/claude.ts` is the core AI feature. The command bar (⌘K / Cmd+K) collects natural language input and routes it through the LLM. File attachments (CSV, PDF, image) are parsed by `src/lib/fileParser.ts` and injected into the prompt. The agent runs a read-tool loop until a write or navigation tool is selected.
+`src/lib/claude.ts` is the core AI feature. The command bar (⌘K / Cmd+K) collects natural language input and routes it through the LLM. File attachments (CSV, PDF, image) are parsed by `src/lib/fileParser.ts` and injected into the prompt. The agent runs a read-tool loop until a write or navigation tool is selected. If a turn ends with neither text nor a tool call, `runCommand` makes one text-only retry asking the model to answer or say what's missing, so "Could not understand command" is a last resort.
 
 **Read tools** (loop freely, no confirmation):
 - `get_portfolio_summary` — high-level net worth + allocation stats
 - `get_positions` — detailed position rows
-- `get_transactions` — tax lot details
+- `get_transactions` — tax lot details; filterable by symbol/subtype/date and `capital_gains_status` (Long/Short Term). The app stores no ESPP offering date, so qualified-vs-disqualifying ESPP can't be determined — the tool description tells the model to say so rather than fail
 - `get_net_worth_timeseries` — historical net worth snapshots
 - `get_exposure_breakdown` — breakdown by ticker / theme / asset_type / location
 - `analyze_tax_lots` — short/long-term capital gains analysis
 - `simulate_portfolio_actions` — hypothetical what-if scenarios
 - `recommend_actions_for_goal` — goal-based recommendations
 - `get_rsu_vesting_schedule` — shares vesting between two dates, per grant (discrete installment math, not a smooth-curve estimate)
+- `get_earnings_calendar` — next earnings report date (plus time of day / EPS estimate) for up to 5 symbols, any public company, via Finnhub's free `calendar/earnings` over a 120-day window (separate from the Pulse event cards' 7-day lookup in `portfolioPulseEvents.ts`)
 - `get_company_fundamentals` — valuation/profitability metrics, most-recent-fiscal-year capex, and latest analyst recommendation trend for up to 5 symbols, via Finnhub's free-tier `stock/metric`, `stock/financials-reported`, and `stock/recommendation` endpoints (same `finnhub_api_key` used elsewhere, no new provider; `stock/financials` with `statement=cf` is NOT free and is deliberately not used). Capex has no dedicated Finnhub field — `findCapexLineItem()` in `src/lib/claude.ts` pattern-matches the SEC "as reported" cash flow statement's XBRL `concept` field against known capex concepts (`us-gaap_PaymentsToAcquirePropertyPlantAndEquipment` and siblings, confirmed against a live AAPL 10-K filing), falling back to a label-text match; returns `null` when no line item matches, not an error. Returns raw data only — the tool description explicitly tells the model never to state its own buy/sell/hold call from it, matching `recommend_actions_for_goal`'s existing "educational guidance only" framing rather than opening a stock-picking-advice surface.
 
 **Navigation tool** (no confirmation):

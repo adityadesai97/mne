@@ -1,5 +1,5 @@
 import {
-  buildSystemPrompt, inferCashAccountType, computeRsuVestingSchedule,
+  buildSystemPrompt, executeReadTool, inferCashAccountType, computeRsuVestingSchedule,
   locationMentionedByUser, findCryptoPurchasesWithUnstatedLocation, asksUserAQuestion,
   cryptoToStockTransactionInput, cryptoSaleToSellSharesInput, buildPreviewSectionsFor, validateWriteToolInput, confirmationMessageFor,
 } from '../lib/claude'
@@ -294,4 +294,41 @@ test('the exchange guard also covers crypto sales, and the prompt routes crypto 
   const prompt = buildSystemPrompt([])
   expect(prompt).toMatch(/sell_crypto/)
   expect(prompt).toMatch(/NOT sell_shares/)
+})
+
+test('get_transactions filters lots by capital gains status', async () => {
+  const assets: any[] = [{
+    id: 'a1', name: 'CRM Stock', asset_type: 'Stock', ticker: { symbol: 'CRM', current_price: 200 },
+    location: { name: 'E*TRADE' },
+    stock_subtypes: [{
+      subtype: 'ESPP',
+      transactions: [
+        { count: 5, cost_price: 100, purchase_date: '2024-01-01', capital_gains_status: 'Long Term' },
+        { count: 3, cost_price: 150, purchase_date: '2026-09-01', capital_gains_status: 'Short Term' },
+      ],
+    }],
+  }]
+  const result: any = await executeReadTool('get_transactions', { symbols: ['CRM'], capital_gains_status: 'Long Term' }, { assets, getSnapshotsCached: async () => [] })
+  expect(result.count).toBe(1)
+  expect(result.transactions[0].purchaseDate).toBe('2024-01-01')
+})
+
+test('get_earnings_calendar returns the soonest listed report date', async () => {
+  const { config } = await import('../store/config')
+  const original = Object.getOwnPropertyDescriptor(config, 'finnhubApiKey')
+  Object.defineProperty(config, 'finnhubApiKey', { value: 'test-key', configurable: true })
+  const realFetch = globalThis.fetch
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => ({ earningsCalendar: [{ date: day(40), hour: 'amc' }, { date: day(20), hour: 'amc', epsEstimate: 2.5 }] }),
+  })) as any
+  try {
+    const result: any = await executeReadTool('get_earnings_calendar', { symbols: ['crm'] }, { assets: [], getSnapshotsCached: async () => [] })
+    expect(result.earnings).toEqual([{ symbol: 'CRM', nextEarningsDate: day(20), hour: 'amc', epsEstimate: 2.5 }])
+  } finally {
+    globalThis.fetch = realFetch
+    if (original) Object.defineProperty(config, 'finnhubApiKey', original)
+    else delete (config as any).finnhubApiKey
+  }
 })

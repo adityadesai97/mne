@@ -452,6 +452,8 @@ create table if not exists public.command_feedback (
 alter table public.command_feedback add column if not exists input_tokens int;
 alter table public.command_feedback add column if not exists output_tokens int;
 alter table public.command_feedback add column if not exists conversation_origin text not null default 'command_bar';
+alter table public.command_feedback add column if not exists addressed_at timestamptz;
+alter table public.command_feedback add column if not exists fix_commit text;
 
 -- Command bar conversation history. `messages` is a JSONB array of
 -- {role, content} — the same shape threaded through runCommand's history —
