@@ -30,10 +30,51 @@ export type LedgerOp =
   | { kind: 'update_lot'; txnId: string; lotId: string; count: number; cost_price?: number }
   | { kind: 'delete_lot'; txnId: string; lotId: string }
 
+// A reduction/removal of shares the user still has to attribute to specific lots:
+// Plaid's investment transactions never say which lot a sell came out of, so a
+// sell is only applied automatically when the lot is provable (see planLedger).
+export interface PendingLotSell {
+  txnId: string
+  date: string
+  type: string
+  quantity: number
+  price: number | null
+}
+
 export interface LedgerPlan {
   ops: LedgerOp[]
   applied: string[]
   skipped: Array<{ txnId: string; reason: string }>
+  /** Sells that couldn't be attributed to lots; nothing was changed for these. */
+  needsLots: PendingLotSell[]
+}
+
+/** One of Plaid's own tax lots for a holding (quantity still held, per-unit cost, purchase date). */
+export interface PlaidTaxLot {
+  quantity: number
+  price: number
+  date: string
+}
+
+/** A user-confirmed pairing of a tracked lot with the Plaid lot it corresponds to (for when their date/cost differ). */
+export interface LotLink {
+  lotId: string
+  plaidDate: string
+  plaidPrice: number
+}
+
+export interface PlanLedgerOptions {
+  /**
+   * What to do with a sell that can't be pinned to specific lots.
+   * 'defer' (default) leaves it for the user to match; 'fifo' takes the oldest lots
+   * first — only for callers acting on an explicit user request (drift resolution).
+   */
+  sellMode?: 'defer' | 'fifo'
+  /** Plaid's remaining lots for this holding; null/undefined when Plaid reports no usable lot breakdown. */
+  plaidLots?: PlaidTaxLot[] | null
+  lotLinks?: LotLink[]
+  /** True when earlier sells for this position are still waiting on the user, so lot state is stale. */
+  deferAllSells?: boolean
 }
 
 // 8 decimals throughout: crypto units and per-unit prices need them (the lot
@@ -50,7 +91,55 @@ interface WorkingLot extends LedgerLot {
   txnIds: string[]
 }
 
-export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): LedgerPlan {
+const LOT_PRICE_TOLERANCE = 0.01
+const ATTRIBUTION_TOLERANCE = 0.000001
+
+/**
+ * Works out which tracked lots a batch of sells came out of by comparing them with the lots
+ * Plaid says remain. Returns null unless the answer is certain: every Plaid lot must belong to
+ * a tracked lot, no lot may have grown, and the reductions must add up to the shares sold.
+ */
+export function attributeSellsFromPlaidLots(
+  tracked: Array<{ id: string; count: number; cost_price: number; purchase_date: string }>,
+  plaidLots: PlaidTaxLot[],
+  links: LotLink[],
+  totalSold: number,
+): Array<{ lotId: string; reduceBy: number }> | null {
+  const claimed = new Set<number>()
+  const remaining = new Map<string, number>()
+  for (const lot of tracked) {
+    const link = links.find((l) => l.lotId === lot.id)
+    const date = link ? link.plaidDate : lot.purchase_date
+    const price = link ? link.plaidPrice : Number(lot.cost_price)
+    let qty = 0
+    plaidLots.forEach((p, i) => {
+      if (p.date === date && Math.abs(p.price - price) < LOT_PRICE_TOLERANCE) {
+        if (claimed.has(i)) return
+        claimed.add(i)
+        qty += p.quantity
+      }
+    })
+    remaining.set(lot.id, qty)
+  }
+  // A Plaid lot we can't pair with anything tracked is unexplained, so nothing is certain.
+  if (claimed.size !== plaidLots.length) return null
+
+  const out: Array<{ lotId: string; reduceBy: number }> = []
+  let sum = 0
+  for (const lot of tracked) {
+    const reduceBy = round8(Number(lot.count) - (remaining.get(lot.id) ?? 0))
+    if (reduceBy < -ATTRIBUTION_TOLERANCE) return null
+    if (reduceBy > ATTRIBUTION_TOLERANCE) {
+      out.push({ lotId: lot.id, reduceBy })
+      sum += reduceBy
+    }
+  }
+  if (Math.abs(sum - totalSold) > ATTRIBUTION_TOLERANCE) return null
+  return out
+}
+
+export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[], options: PlanLedgerOptions = {}): LedgerPlan {
+  const sellMode = options.sellMode ?? 'defer'
   const working: WorkingLot[] = lots.map((l) => ({
     ...l,
     count: Number(l.count),
@@ -60,6 +149,9 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
   const ops: LedgerOp[] = []
   const applied: string[] = []
   const skipped: Array<{ txnId: string; reason: string }> = []
+  const needsLots: PendingLotSell[] = []
+  // Sells held back for lot attribution; may still be resolved together from Plaid's lots below.
+  let deferring = !!options.deferAllSells
 
   const sorted = [...txns].sort((a, b) =>
     a.date === b.date
@@ -146,12 +238,51 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
       })
       applied.push(id)
     } else {
-      const problem = consume(id, amount)
-      if (problem) {
-        skipped.push({ txnId: id, reason: problem })
+      const sell: PendingLotSell = { txnId: id, date: txn.date, type, quantity: amount, price: txn.price == null ? null : Number(txn.price) }
+      if (sellMode === 'fifo') {
+        const problem = consume(id, amount)
+        if (problem) skipped.push({ txnId: id, reason: problem })
+        else applied.push(id)
         continue
       }
-      applied.push(id)
+      // Once one sell is waiting on the user, lot state no longer reflects reality, so every
+      // later sell waits too rather than being judged against stale lots.
+      if (deferring) {
+        needsLots.push(sell)
+        continue
+      }
+      if (totalShares() + EPSILON < amount) {
+        skipped.push({ txnId: id, reason: `only ${round8(totalShares())} shares tracked, transaction reduces ${round8(amount)}` })
+        continue
+      }
+      const live = liveLots()
+      // Provable without guessing: the sale empties the position, or there is only one lot to take from.
+      if (Math.abs(totalShares() - amount) < EPSILON || live.length === 1) {
+        consume(id, amount)
+        applied.push(id)
+        continue
+      }
+      deferring = true
+      needsLots.push(sell)
+    }
+  }
+
+  // Sells that need lot attribution: Plaid reports the lots it still holds, so when every
+  // tracked lot can be paired with one and the per-lot reductions add up to exactly the
+  // shares sold, the lots are proven rather than guessed.
+  if (needsLots.length > 0 && options.plaidLots && options.plaidLots.length > 0) {
+    const totalSold = needsLots.reduce((sum, t) => sum + t.quantity, 0)
+    const reductions = attributeSellsFromPlaidLots(liveLots(), options.plaidLots, options.lotLinks ?? [], totalSold)
+    if (reductions) {
+      for (const r of reductions) {
+        const target = working.find((l) => l.id === r.lotId)!
+        target.count = round8(target.count - r.reduceBy)
+        if (target.count <= EPSILON) target.deleted = true
+        target.dirty = true
+        target.txnIds.push(needsLots[0].txnId)
+      }
+      for (const t of needsLots) applied.push(t.txnId)
+      needsLots.length = 0
     }
   }
 
@@ -179,7 +310,7 @@ export function planLedger(lots: LedgerLot[], txns: PlaidInvestmentTxn[]): Ledge
     }
   }
 
-  return { ops, applied, skipped }
+  return { ops, applied, skipped, needsLots }
 }
 
 export const DRIFT_TOLERANCE_SHARES = 0.000001

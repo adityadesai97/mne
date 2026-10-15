@@ -181,6 +181,14 @@ export interface ExistingLot {
   purchase_date: string | null
 }
 
+// Plaid's tax lots carry the date as `original_purchase_datetime` (an ISO
+// timestamp); `purchase_date` is not a field Plaid sends. Reading only the latter
+// left every lot undated, so no Plaid lot could ever match a manually entered one.
+export function plaidLotPurchaseDate(lot: { purchase_date?: string | null; original_purchase_datetime?: string | null } | null | undefined): string | null {
+  const raw = lot?.purchase_date ?? lot?.original_purchase_datetime ?? null
+  return raw ? String(raw).slice(0, 10) : null
+}
+
 export function buildCandidateLotsFromPlaidPayload(payload: {
   count?: number | string | null
   cost_price?: number | string | null
@@ -191,9 +199,10 @@ export function buildCandidateLotsFromPlaidPayload(payload: {
   if (rawLots && rawLots.length > 0) {
     return rawLots
       .map((l): PlaidLot | null => {
-        const lot = l as { quantity?: number | string | null; purchase_price?: number | string | null; purchase_date?: string | null }
-        if (lot.quantity == null || lot.purchase_price == null || !lot.purchase_date) return null
-        return { count: Number(lot.quantity), cost_price: Number(lot.purchase_price), purchase_date: lot.purchase_date }
+        const lot = l as { quantity?: number | string | null; purchase_price?: number | string | null; purchase_date?: string | null; original_purchase_datetime?: string | null }
+        const date = plaidLotPurchaseDate(lot)
+        if (lot.quantity == null || lot.purchase_price == null || !date) return null
+        return { count: Number(lot.quantity), cost_price: Number(lot.purchase_price), purchase_date: date }
       })
       .filter((l): l is PlaidLot => l != null && l.count > 0)
   }
@@ -220,4 +229,28 @@ export function findMatchingLot(lot: PlaidLot, existing: ExistingLot[]): Existin
         Math.abs(Number(t.cost_price) - lot.cost_price) < LOT_MATCH_COST_TOLERANCE,
     ) ?? null
   )
+}
+
+export interface LotPairing {
+  plaid: PlaidLot
+  /** Id of the tracked lot that matches automatically (same date, count and cost), else null. */
+  matchedLotId: string | null
+}
+
+/**
+ * Pairs each Plaid lot with the tracked lot it automatically matches, using each tracked
+ * lot at most once. Anything left unmatched is for the user to pair by hand.
+ */
+export function pairPlaidLots(plaidLots: PlaidLot[], existing: ExistingLot[]): LotPairing[] {
+  const used = new Set<string>()
+  return plaidLots.map((plaid) => {
+    const match = findMatchingLot(plaid, existing.filter((e) => !used.has(e.id)))
+    if (match) used.add(match.id)
+    return { plaid, matchedLotId: match?.id ?? null }
+  })
+}
+
+/** Total units across tracked lots (what Plaid's reported quantity is compared with). */
+export function trackedLotTotal(existing: ExistingLot[]): number {
+  return Math.round(existing.reduce((sum, l) => sum + Number(l.count), 0) * 1e8) / 1e8
 }

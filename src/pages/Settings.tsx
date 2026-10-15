@@ -19,6 +19,7 @@ import {
   savePlaidCredentials,
   listPlaidItems,
   listPlaidDriftPositions,
+  listHeldLotSells,
   resolvePlaidDrift,
   removePlaidItem,
   createPlaidLinkToken,
@@ -28,10 +29,12 @@ import {
   PLAID_ITEM_LIMIT,
   type PlaidItem,
   type PlaidDriftPosition,
+  type HeldLotSell,
 } from '@/lib/db/plaid'
 import { openPlaidLink } from '@/lib/plaidLink'
 import { showAppAlert } from '@/lib/appAlerts'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
+import { PlaidLotSellModal } from '@/components/PlaidLotSellModal'
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -140,6 +143,8 @@ export default function Settings() {
   const [plaidDrift, setPlaidDrift] = useState<PlaidDriftPosition[]>([])
   const [plaidResolvingId, setPlaidResolvingId] = useState<string | null>(null)
   const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
+  const [plaidHeldSells, setPlaidHeldSells] = useState<HeldLotSell[]>([])
+  const [plaidMatchingSell, setPlaidMatchingSell] = useState<HeldLotSell | null>(null)
   const [plaidError, setPlaidError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [allowedEmails, setAllowedEmails] = useState<{ id: string; email: string; is_admin: boolean }[]>([])
@@ -278,16 +283,18 @@ export default function Settings() {
 
   async function refreshPlaidData() {
     try {
-      const [status, items, pendingCount, drift] = await Promise.all([
+      const [status, items, pendingCount, drift, heldSells] = await Promise.all([
         getPlaidCredentialsStatus(),
         listPlaidItems(),
         getPendingPlaidPositionsCount(),
         listPlaidDriftPositions().catch(() => [] as PlaidDriftPosition[]),
+        listHeldLotSells().catch(() => [] as HeldLotSell[]),
       ])
       setPlaidStatus(status)
       setPlaidItems(items)
       setPlaidPendingCount(pendingCount)
       setPlaidDrift(drift)
+      setPlaidHeldSells(heldSells)
     } catch (e) {
       // Plaid tables may not exist yet on an older self-hosted schema —
       // fail quietly rather than blocking the rest of Settings.
@@ -928,6 +935,22 @@ export default function Settings() {
               onClick={() => setPlaidReviewOpen(true)}
             />
           )}
+          {plaidHeldSells.map(sell => (
+            <Row
+              key={sell.id}
+              label={`Match lots for ${sell.symbol ?? sell.assetName} sale`}
+              hint={`Plaid shows ${sell.quantity} ${sell.isCrypto ? 'units' : 'shares'} sold on ${sell.date} — choose which lots they came from`}
+              right={
+                <button
+                  type="button"
+                  onClick={() => setPlaidMatchingSell(sell)}
+                  className="text-primary hover:underline flex-shrink-0 text-xs"
+                >
+                  Choose lots
+                </button>
+              }
+            />
+          ))}
           {plaidDrift.map(pos => (
             <Row
               key={pos.id}
@@ -982,6 +1005,11 @@ export default function Settings() {
         </div>
       )}
       {plaidError && <p className="text-xs text-destructive mt-2 px-1">{plaidError}</p>}
+      <PlaidLotSellModal
+        sell={plaidMatchingSell}
+        onClose={() => setPlaidMatchingSell(null)}
+        onChanged={() => void refreshPlaidData()}
+      />
       <PlaidReviewModal
         open={plaidReviewOpen}
         onClose={() => setPlaidReviewOpen(false)}

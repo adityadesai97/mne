@@ -3064,7 +3064,8 @@ export async function executeTool(toolName: string, input: any, userId: string):
       // _plaidLots mirrors add_stock_transaction's reconciliation: insert
       // only lots not already tracked for this asset, never delete one
       // just because this sync pass didn't see it.
-      const lotsToInsert: PlaidLot[] = Array.isArray(input._plaidLots) && input._plaidLots.length > 0
+      const explicitLots = !!input._matchedAssetId && input._plaidLotsExplicit === true && Array.isArray(input._plaidLots)
+      const lotsToInsert: PlaidLot[] = explicitLots || (Array.isArray(input._plaidLots) && input._plaidLots.length > 0)
         ? input._plaidLots
         : [{ count: Number(input.count), cost_price: Number(input.cost_price), purchase_date: input.purchase_date }]
 
@@ -3282,7 +3283,11 @@ export async function executeTool(toolName: string, input: any, userId: string):
     // rather than re-inserted; nothing is ever deleted, so a lot Plaid
     // doesn't currently report (sparse data, or just not broken into lots)
     // is left completely untouched.
-    const lotsToInsert: PlaidLot[] = Array.isArray(input._plaidLots) && input._plaidLots.length > 0
+    // _plaidLotsExplicit (also Plaid-review-only, honored only with _matchedAssetId) means the
+    // user already paired every Plaid lot with a tracked one or chose to link without adding
+    // anything: the list is exactly what to insert, even when it's empty.
+    const explicitLots = !!input._matchedAssetId && input._plaidLotsExplicit === true && Array.isArray(input._plaidLots)
+    const lotsToInsert: PlaidLot[] = explicitLots || (Array.isArray(input._plaidLots) && input._plaidLots.length > 0)
       ? input._plaidLots
       : [{ count: Number(input.count), cost_price: Number(input.cost_price), purchase_date: input.purchase_date }]
 
