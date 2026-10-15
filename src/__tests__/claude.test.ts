@@ -313,22 +313,17 @@ test('get_transactions filters lots by capital gains status', async () => {
   expect(result.transactions[0].purchaseDate).toBe('2024-01-01')
 })
 
-test('get_earnings_calendar returns the soonest listed report date', async () => {
-  const { config } = await import('../store/config')
-  const original = Object.getOwnPropertyDescriptor(config, 'finnhubApiKey')
-  Object.defineProperty(config, 'finnhubApiKey', { value: 'test-key', configurable: true })
-  const realFetch = globalThis.fetch
-  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
-  globalThis.fetch = (async () => ({
-    ok: true,
-    json: async () => ({ earningsCalendar: [{ date: day(40), hour: 'amc' }, { date: day(20), hour: 'amc', epsEstimate: 2.5 }] }),
-  })) as any
+test('web_search is Claude-only and says so on the Groq provider', async () => {
+  localStorage.setItem('mne_llm_provider', 'groq')
   try {
-    const result: any = await executeReadTool('get_earnings_calendar', { symbols: ['crm'] }, { assets: [], getSnapshotsCached: async () => [] })
-    expect(result.earnings).toEqual([{ symbol: 'CRM', nextEarningsDate: day(20), hour: 'amc', epsEstimate: 2.5 }])
+    await expect(executeReadTool('web_search', { query: 'Salesforce next earnings date' }, { assets: [], getSnapshotsCached: async () => [] }))
+      .rejects.toThrow(/only available with the Claude provider/)
   } finally {
-    globalThis.fetch = realFetch
-    if (original) Object.defineProperty(config, 'finnhubApiKey', original)
-    else delete (config as any).finnhubApiKey
+    localStorage.removeItem('mne_llm_provider')
   }
+})
+
+test('web_search requires a query', async () => {
+  await expect(executeReadTool('web_search', { query: '  ' }, { assets: [], getSnapshotsCached: async () => [] }))
+    .rejects.toThrow(/query is required/)
 })

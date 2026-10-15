@@ -236,3 +236,43 @@ export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClien
   if (provider === 'claude') return new ClaudeAdapter(apiKey)
   return new GroqAdapter(apiKey)
 }
+
+// ── Web search (Claude only) ─────────────────────────────────────────────────
+// Anthropic's server-side web search tool: the API runs the searches itself
+// and returns a written answer with the pages it used. There is no equivalent
+// on the Groq path, so callers must check the provider first.
+export interface WebSearchResult {
+  answer: string
+  sources: Array<{ title: string; url: string }>
+  /** Tokens the search call itself consumed (search results fed back to the model are in inputTokens). */
+  usage: NormalizedUsage
+}
+
+export async function claudeWebSearch(apiKey: string, query: string): Promise<WebSearchResult> {
+  const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  const response: any = await anthropic.messages.create({
+    model: MODEL_FOR_PROVIDER.claude,
+    max_tokens: 1024,
+    system: 'Search the web and answer the query concisely and factually in a few sentences, including specific dates and figures when relevant. If the results do not answer it, say so.',
+    messages: [{ role: 'user', content: query }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+  } as any)
+  const blocks: any[] = Array.isArray(response?.content) ? response.content : []
+  const answer = blocks.filter(b => b.type === 'text').map(b => b.text).join('').trim()
+  const seen = new Set<string>()
+  const sources: Array<{ title: string; url: string }> = []
+  for (const block of blocks) {
+    if (block.type !== 'web_search_tool_result' || !Array.isArray(block.content)) continue
+    for (const hit of block.content) {
+      if (hit?.url && !seen.has(hit.url)) {
+        seen.add(hit.url)
+        sources.push({ title: String(hit.title ?? hit.url), url: hit.url })
+      }
+    }
+  }
+  return {
+    answer,
+    sources: sources.slice(0, 6),
+    usage: { inputTokens: response?.usage?.input_tokens ?? 0, outputTokens: response?.usage?.output_tokens ?? 0 },
+  }
+}
