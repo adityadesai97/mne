@@ -100,3 +100,32 @@ test('claude adapter normalizes Anthropic usage into the shared shape', async ()
   expect(response.choices[0].message.content).toBe('ok')
   expect(response.usage).toEqual({ inputTokens: 55, outputTokens: 12 })
 })
+
+test('claudeWebSearch extracts the answer, de-duplicated sources and the call\'s token usage', async () => {
+  vi.resetModules()
+  vi.doMock('@anthropic-ai/sdk', () => ({
+    default: class {
+      messages = {
+        create: vi.fn(async () => ({
+          content: [
+            { type: 'server_tool_use', name: 'web_search' },
+            { type: 'web_search_tool_result', content: [
+              { title: 'IR page', url: 'https://example.com/ir' },
+              { title: 'IR page again', url: 'https://example.com/ir' },
+              { title: 'News', url: 'https://example.com/news' },
+            ] },
+            { type: 'text', text: 'Earnings are ' },
+            { type: 'text', text: 'on Dec 3.' },
+          ],
+          usage: { input_tokens: 5400, output_tokens: 120 },
+        })),
+      }
+    },
+  }))
+  const { claudeWebSearch } = await import('@/lib/llm')
+  const result = await claudeWebSearch('key', 'q')
+  expect(result.answer).toBe('Earnings are on Dec 3.')
+  expect(result.sources.map(s => s.url)).toEqual(['https://example.com/ir', 'https://example.com/news'])
+  expect(result.usage).toEqual({ inputTokens: 5400, outputTokens: 120 })
+  vi.doUnmock('@anthropic-ai/sdk')
+})

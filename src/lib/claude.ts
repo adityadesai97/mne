@@ -1,5 +1,5 @@
 import { createLLMClient, claudeWebSearch, MODEL_FOR_PROVIDER } from './llm'
-import type { NormalizedResponse, StreamCallbacks } from './llm'
+import type { NormalizedResponse, NormalizedUsage, StreamCallbacks } from './llm'
 import type { FileAttachment } from './fileParser'
 import { config } from '@/store/config'
 import { getAllAssets } from './db/assets'
@@ -1247,6 +1247,8 @@ export async function executeReadTool(
   context: {
     assets: any[]
     getSnapshotsCached: () => Promise<any[]>
+    /** Lets a tool that makes its own LLM call (web_search) report its tokens into the turn total. */
+    addUsage?: (usage: NormalizedUsage) => void
   },
 ) {
   if (toolName === 'get_portfolio_summary') {
@@ -1431,7 +1433,10 @@ export async function executeReadTool(
     if (config.llmProvider !== 'claude' || !config.claudeApiKey) {
       throw new Error('Web search is only available with the Claude provider. Tell the user to switch the AI provider to Claude in Settings to use it.')
     }
-    const { answer, sources } = await claudeWebSearch(config.claudeApiKey, query)
+    const { answer, sources, usage } = await claudeWebSearch(config.claudeApiKey, query)
+    // The search runs as its own API call; fold its tokens into the turn's
+    // total so the reply's usage (and llm_usage_log) reflects the real cost.
+    context.addUsage?.(usage)
     return {
       query,
       answer: answer || 'No answer found in the search results.',
@@ -3972,8 +3977,13 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
   }
   // Accumulates usage across every internal LLM round this turn makes
   // (tool-use rounds included, not just the final reply) — runLLM below is
-  // the single call site that feeds this, so every round is counted.
+  // the single call site that feeds this, so every round is counted (plus any
+  // tool, like web_search, that makes its own LLM call via addUsage).
   const turnUsage: AgentTraceUsage = { inputTokens: 0, outputTokens: 0 }
+  const addUsage = (usage: NormalizedUsage) => {
+    turnUsage.inputTokens += usage.inputTokens
+    turnUsage.outputTokens += usage.outputTokens
+  }
   const withTrace = (payload: any) => ({
     ...payload,
     trace: {
@@ -4041,10 +4051,7 @@ export async function runCommand(messages: Message[], attachment?: FileAttachmen
       messages: [{ role: 'system' as const, content: systemPrompt }, ...inputMessages],
       tools: toolsOverride,
     }, streamCallbacks)
-    if (response.usage) {
-      turnUsage.inputTokens += response.usage.inputTokens
-      turnUsage.outputTokens += response.usage.outputTokens
-    }
+    if (response.usage) addUsage(response.usage)
     return response
   }
 
@@ -4170,6 +4177,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
         const result = await executeReadTool(tool.name, tool.input, {
           assets,
           getSnapshotsCached,
+          addUsage,
         })
         addTrace(friendlyReadToolLabel(tool.name), summarizeReadToolResult(tool.name, result))
         return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: true, result }) }
@@ -4208,6 +4216,7 @@ ${JSON.stringify(analysisContext, null, 2)}`
           const result = await executeReadTool(tool.name, tool.input, {
             assets,
             getSnapshotsCached,
+            addUsage,
           })
           addTrace(friendlyReadToolLabel(tool.name), summarizeReadToolResult(tool.name, result))
           return { role: 'tool' as const, tool_call_id: tool.id, content: JSON.stringify({ ok: true, result }) }

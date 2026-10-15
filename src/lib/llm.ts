@@ -244,6 +244,8 @@ export function createLLMClient(provider: LLMProvider, apiKey: string): LLMClien
 export interface WebSearchResult {
   answer: string
   sources: Array<{ title: string; url: string }>
+  /** Tokens the search call itself consumed (search results fed back to the model are in inputTokens). */
+  usage: NormalizedUsage
 }
 
 export async function claudeWebSearch(apiKey: string, query: string): Promise<WebSearchResult> {
@@ -268,5 +270,9 @@ export async function claudeWebSearch(apiKey: string, query: string): Promise<We
       }
     }
   }
-  return { answer, sources: sources.slice(0, 6) }
+  return {
+    answer,
+    sources: sources.slice(0, 6),
+    usage: { inputTokens: response?.usage?.input_tokens ?? 0, outputTokens: response?.usage?.output_tokens ?? 0 },
+  }
 }
