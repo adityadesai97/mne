@@ -405,26 +405,26 @@ export default function Home() {
     return (
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
+          <div className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
             <Skeleton className="h-3 w-32" />
             <Skeleton className="h-11 w-56" />
-            <Skeleton className="h-[130px] w-full rounded-xl" />
+            <Skeleton className="h-[130px] w-full rounded-md" />
           </div>
-          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
+          <div className="md:col-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
             <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-full" />
           </div>
-          <div className="md:col-span-2 bg-card shadow-card rounded-2xl p-5 space-y-4">
+          <div className="md:col-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
             <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-full" />
           </div>
-          <div className="md:col-span-4 bg-card shadow-card rounded-2xl p-5">
+          <div className="md:col-span-4 bg-card shadow-card rounded-lg p-5">
             <Skeleton className="h-3 w-24 mb-4" />
-            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-16 w-full rounded-md" />
           </div>
-          <Skeleton className="md:col-span-1 h-24 w-full rounded-2xl" />
-          <Skeleton className="md:col-span-1 h-24 w-full rounded-2xl" />
+          <Skeleton className="md:col-span-1 h-24 w-full rounded-lg" />
+          <Skeleton className="md:col-span-1 h-24 w-full rounded-lg" />
         </div>
       </div>
     )
@@ -435,18 +435,18 @@ export default function Home() {
       <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
         <motion.div
           {...revealUp(0)}
-          className="bg-card shadow-card rounded-2xl p-6 md:p-7 border border-border/70 relative overflow-hidden"
+          className="bg-card shadow-card rounded-lg p-6 md:p-7 border border-border/60 relative overflow-hidden"
         >
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute -top-8 left-1/4 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
           </div>
-          <div className="relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-subtle">
+          <div className="relative mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-brand-subtle">
             <Sparkles size={18} className="text-primary" />
           </div>
-          <p className="relative text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">
+          <p className="relative text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">
             {firstName ? `${firstName}'s Workspace` : 'Workspace'}
           </p>
-          <h1 className="relative font-syne text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
+          <h1 className="relative font-display text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
             Add your first asset to get started.
           </h1>
           <p className="relative mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
@@ -467,7 +467,7 @@ export default function Home() {
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
           <greeting.Icon size={16} className="text-primary" aria-hidden="true" />
         </div>
-        <p className="font-syne text-lg md:text-xl font-bold text-foreground tracking-tight">
+        <p className="font-display text-lg md:text-xl font-bold text-foreground tracking-tight">
           {greeting.text}{firstName ? `, ${firstName}` : ''}
         </p>
       </motion.div>
@@ -477,7 +477,7 @@ export default function Home() {
           line up row after row. Net Worth is a tall 4x2 tile; Allocation and
           P&L stack in the remaining 2x2 area beside it; Daily Movers, Best
           Performer, and Largest Holding split the row below unevenly
-          (4 + 1 + 1). Every card shares the same p-5 padding, rounded-2xl
+          (4 + 1 + 1). Every card shares the same p-5 padding, rounded-lg
           corners, and hover lift regardless of its span. */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
 
@@ -485,7 +485,7 @@ export default function Home() {
         <motion.div
           {...revealUp(0)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-2xl p-5 relative overflow-hidden"
+          className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 relative overflow-hidden"
         >
           {/* Ambient glow — neutral brand color until there's a day-over-day
               change to react to, then tints toward gain/loss color. */}
@@ -504,7 +504,7 @@ export default function Home() {
           <div className="mb-1 relative">
             <p
               ref={heroRef}
-              className={`text-[2.6rem] md:text-[3.1rem] font-bold tabular-nums tracking-tight leading-none font-syne ${hiddenValueClass(hideValues, '', 'lg')}`}
+              className={`text-4xl md:text-5xl font-bold tabular-nums tracking-tight leading-none font-display ${hiddenValueClass(hideValues, '', 'lg')}`}
             >
               {fmtCurrency(totalValue)}
             </p>
@@ -515,7 +515,7 @@ export default function Home() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.3 }}
-              className={`mb-4 relative inline-flex items-center gap-1 text-[11px] ${moodIsPositive ? 'text-gain' : 'text-loss'}`}
+              className={`mb-4 relative inline-flex items-center gap-1 text-xs ${moodIsPositive ? 'text-gain' : 'text-loss'}`}
             >
               {moodIsPositive ? <TrendingUp size={11} aria-hidden="true" /> : <TrendingDown size={11} aria-hidden="true" />}
               <span className={hiddenValueClass(hideValues)}>
@@ -534,17 +534,17 @@ export default function Home() {
               disabled={isRefreshingPrices}
               title="Refresh prices"
               aria-label="Refresh prices"
-              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground hover:text-foreground disabled:opacity-60 transition-colors"
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground hover:text-foreground disabled:opacity-60 transition-colors"
             >
               <RefreshCw size={11} className={isRefreshingPrices ? 'animate-spin' : ''} />
             </button>
-            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5">
               {HOME_CHART_RANGES.map((r) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => handleRangeChange(r)}
-                  className={`text-[10px] px-1.5 py-0.5 rounded-md transition-colors ${
+                  className={`text-xs px-1.5 py-0.5 rounded-md transition-colors ${
                     homeChartRange === r ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -570,12 +570,12 @@ export default function Home() {
           {/* Mini meta row — positions + asset types */}
           <div className="flex gap-5 pt-3 border-t border-white/[0.05] relative">
             <div>
-              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Positions</p>
+              <p className="text-muted-foreground text-xs uppercase tracking-widest">Positions</p>
               <p className="text-sm font-medium tabular-nums mt-0.5">{assets.length}</p>
             </div>
             <div className="w-px bg-border" />
             <div>
-              <p className="text-muted-foreground text-[9px] uppercase tracking-[0.12em]">Asset Types</p>
+              <p className="text-muted-foreground text-xs uppercase tracking-widest">Asset Types</p>
               <p className="text-sm font-medium tabular-nums mt-0.5">{uniqueAssetTypes}</p>
             </div>
           </div>
@@ -604,7 +604,7 @@ export default function Home() {
         <motion.div
           {...revealUp(0.05)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="md:col-span-2 bg-card shadow-card rounded-2xl p-5"
+          className="md:col-span-2 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
             <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
@@ -634,7 +634,7 @@ export default function Home() {
                         style={{ backgroundColor: color }}
                       />
                     </div>
-                    <p className={`text-[10px] tabular-nums text-muted-foreground mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(value)}</p>
+                    <p className={`text-xs tabular-nums text-muted-foreground mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(value)}</p>
                   </div>
                 )
               })}
@@ -648,15 +648,15 @@ export default function Home() {
         <motion.div
           {...revealUp(0.1)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="bg-card shadow-card rounded-2xl p-5 md:col-span-2"
+          className="bg-card shadow-card rounded-lg p-5 md:col-span-2"
         >
           <div className="mb-3">
             <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
           </div>
-          <p className={`text-lg font-bold tabular-nums leading-tight font-syne ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+          <p className={`text-lg font-bold tabular-nums leading-tight font-display ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
-          <p className={`text-[10px] tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
+          <p className={`text-xs tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
             {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
           </p>
         </motion.div>
@@ -673,15 +673,15 @@ export default function Home() {
         <motion.div
           {...revealUp(0.13)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="md:col-span-4 bg-card shadow-card rounded-2xl p-5"
+          className="md:col-span-4 bg-card shadow-card rounded-lg p-5"
         >
           <div className="flex items-center justify-between gap-2 mb-3">
             <CardEyebrow icon={Activity}>Daily Movers</CardEyebrow>
-            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5">
               <button
                 type="button"
                 onClick={() => setMoverSort('percent')}
-                className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
                   moverSort === 'percent' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -690,7 +690,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setMoverSort('value')}
-                className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
                   moverSort === 'value' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -712,7 +712,7 @@ export default function Home() {
                 >
                   <Link
                     to={`/portfolio/${mover.id}`}
-                    className="block rounded-xl bg-muted/40 p-3 transition-colors hover:bg-muted/60"
+                    className="block rounded-md bg-muted/40 p-3 transition-colors hover:bg-muted/60"
                   >
                     <div className="flex items-center gap-1 mb-1.5">
                       {isGain
@@ -720,11 +720,11 @@ export default function Home() {
                         : <TrendingDown size={11} className="text-loss flex-shrink-0" />}
                       <p className="text-xs font-semibold truncate">{mover.symbol}</p>
                     </div>
-                    <p className="text-[10px] text-muted-foreground truncate mb-1.5">{mover.name}</p>
-                    <p className={`text-sm font-bold tabular-nums font-syne ${isGain ? 'text-gain' : 'text-loss'}`}>
+                    <p className="text-xs text-muted-foreground truncate mb-1.5">{mover.name}</p>
+                    <p className={`text-sm font-bold tabular-nums font-display ${isGain ? 'text-gain' : 'text-loss'}`}>
                       {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
                     </p>
-                    <p className={`text-[10px] tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+                    <p className={`text-xs tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
                       {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
                     </p>
                   </Link>
@@ -742,7 +742,7 @@ export default function Home() {
         <motion.div
           {...revealUp(0.16)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="md:col-span-1 bg-card shadow-card rounded-2xl p-5"
+          className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
             <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best Performer</CardEyebrow>
@@ -750,10 +750,10 @@ export default function Home() {
           {bestAsset ? (
             <Link to={`/portfolio/${bestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
               <p className="text-sm font-semibold truncate">{bestAsset.name}</p>
-              <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+              <p className={`text-lg font-bold tabular-nums font-display mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
                 {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
               </p>
-              <p className={`text-[10px] tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+              <p className={`text-xs tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
                 {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
               </p>
             </Link>
@@ -767,7 +767,7 @@ export default function Home() {
         <motion.div
           {...revealUp(0.19)}
           whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
-          className="md:col-span-1 bg-card shadow-card rounded-2xl p-5"
+          className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
             <CardEyebrow icon={Crown} className="text-primary">Largest Holding</CardEyebrow>
@@ -775,8 +775,8 @@ export default function Home() {
           {largestAsset ? (
             <Link to={`/portfolio/${largestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
               <p className="text-sm font-semibold truncate">{largestAsset.name}</p>
-              <p className={`text-lg font-bold tabular-nums font-syne mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
-              <p className="text-[10px] tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
+              <p className={`text-lg font-bold tabular-nums font-display mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
+              <p className="text-xs tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
             </Link>
           ) : (
             <p className="text-sm font-semibold truncate">—</p>

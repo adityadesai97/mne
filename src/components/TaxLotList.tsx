@@ -103,54 +103,54 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
         <div key={t.id} className="border border-border rounded-lg p-3 space-y-2 bg-background">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Shares</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Shares</label>
               <input
                 type="number"
                 step={isCrypto ? "any" : "0.01"}
                 value={editValues.count}
                 onChange={e => setEditValues(v => ({ ...v, count: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
               />
             </div>
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Cost/share</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Cost/share</label>
               <input
                 type="number"
                 step={isCrypto ? "any" : "0.01"}
                 value={editValues.cost_price}
                 onChange={e => setEditValues(v => ({ ...v, cost_price: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
               />
             </div>
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Purchase date</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Purchase date</label>
               <input
                 type="date"
                 value={editValues.purchase_date}
                 onChange={e => setEditValues(v => ({ ...v, purchase_date: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
               />
             </div>
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Status</label>
               <select
                 value={editValues.capital_gains_status}
                 onChange={e => setEditValues(v => ({ ...v, capital_gains_status: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
               >
                 <option value="Short Term">Short Term</option>
                 <option value="Long Term">Long Term</option>
               </select>
             </div>
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Sold at vest</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Sold at vest</label>
               <input
                 type="number"
                 step={isCrypto ? "any" : "0.01"}
                 min="0"
                 value={editValues.sold_at_vest}
                 onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
                 placeholder="0"
               />
             </div>
@@ -166,7 +166,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     const isOpen = expandedIds.has(t.id)
 
     return (
-      <div key={t.id} className="rounded-lg border border-border/50 bg-muted/20">
+      <div key={t.id} className="rounded-lg border border-border/60 bg-muted/20">
         <button
           type="button"
           onClick={() => toggleExpanded(t.id)}
@@ -176,9 +176,9 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div>
               <p className="text-xs font-medium">{formatDateMDY(t.purchase_date)}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {isCrypto ? fmtCoins(shares) : shares.toFixed(shares % 1 === 0 ? 0 : 4)} {isCrypto ? 'coins' : 'shares'} @ <span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span>
-                {soldAtVest > 0 && <span className="text-muted-foreground/70"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
+                {soldAtVest > 0 && <span className="text-muted-foreground"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               <div className="flex items-center justify-between">
                 <Badge
                   variant={t.capital_gains_status === 'Long Term' ? 'secondary' : 'outline'}
-                  className="text-[10px]"
+                  className="text-xs"
                 >
                   {t.capital_gains_status}
                 </Badge>
@@ -285,7 +285,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                 <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 ${isSubtypeOpen ? 'rotate-180' : ''}`} />
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{st.subtype}</p>
               </div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
                 {transactions.length} tx
                 {rsuGrants.length > 0 && <> · {rsuGrants.length} grant{rsuGrants.length === 1 ? '' : 's'}</>}
               </p>
@@ -301,7 +301,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                       const summary = computeGrantSummary(group.transactions, ticker)
                       const isGrantOpen = expandedGrantIds.has(group.grant.id)
                       return (
-                        <div key={group.grant.id} className="rounded-lg border border-border/50 bg-muted/20">
+                        <div key={group.grant.id} className="rounded-lg border border-border/60 bg-muted/20">
                           <button
                             type="button"
                             onClick={() => toggleGrantExpanded(group.grant.id)}
@@ -311,7 +311,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
                               <div>
                                 <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
-                                <p className="text-[11px] text-muted-foreground tabular-nums">{isCrypto ? `${fmtCoins(summary.shares)} coins` : `${fmtShares(summary.shares)} shares`}</p>
+                                <p className="text-xs text-muted-foreground tabular-nums">{isCrypto ? `${fmtCoins(summary.shares)} coins` : `${fmtShares(summary.shares)} shares`}</p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-xs font-medium tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
@@ -330,11 +330,11 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                                     <p className="text-xs font-medium tabular-nums">{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</p>
                                     <div className="flex items-center gap-2">
                                       {group.grant.ended_at ? (
-                                        <Badge variant="outline" className="text-[10px]">Ended</Badge>
+                                        <Badge variant="outline" className="text-xs">Ended</Badge>
                                       ) : onEndGrant ? (
                                         <button
                                           onClick={() => { void onEndGrant(group.grant.id) }}
-                                          className="text-[11px] text-loss bg-loss/10 px-2 py-1 rounded hover:bg-loss/20 transition-colors"
+                                          className="text-xs text-loss bg-loss/10 px-2 py-1 rounded-sm hover:bg-loss/20 transition-colors"
                                         >
                                           End Grant
                                         </button>
@@ -350,10 +350,10 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                                       )}
                                     </div>
                                   </div>
-                                  <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                                  <p className="text-xs text-muted-foreground mt-1 tabular-nums">
                                     {fmtShares(vesting.unvestedShares)} unvested
                                   </p>
-                                  <p className="text-[10px] text-muted-foreground mt-1">
+                                  <p className="text-xs text-muted-foreground mt-1">
                                     Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
                                     {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
                                   </p>
@@ -363,7 +363,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                                   {group.transactions.length > 0 ? (
                                     group.transactions.map((t: any) => renderTransactionCard(t))
                                   ) : (
-                                    <p className="text-[11px] text-muted-foreground">No transactions mapped to this grant yet.</p>
+                                    <p className="text-xs text-muted-foreground">No transactions mapped to this grant yet.</p>
                                   )}
                                 </div>
                               </div>
@@ -375,7 +375,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
 
                     {rsuGrantGroups.unassignedTransactions.length > 0 && (
                       <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-3">
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Unmatched Transactions</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Unmatched Transactions</p>
                         <div className="space-y-2">
                           {rsuGrantGroups.unassignedTransactions.map((t: any) => renderTransactionCard(t))}
                         </div>
@@ -513,7 +513,7 @@ function computeGrantSummary(transactions: any[], ticker: any) {
 function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
   return (
     <div>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
     </div>
   )

@@ -98,7 +98,7 @@ export function AppAlertsHost() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -8, scale: 0.98 }}
                   transition={{ duration: 0.18 }}
-                  className={`pointer-events-auto w-full md:w-[28rem] border rounded-xl px-3 py-2.5 shadow-xl ${styles.card}`}
+                  className={`pointer-events-auto w-full md:w-[28rem] border rounded-md px-3 py-2.5 shadow-xl ${styles.card}`}
                 >
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 flex-shrink-0">{styles.icon}</span>

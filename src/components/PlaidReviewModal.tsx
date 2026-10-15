@@ -467,10 +467,10 @@ function PendingRow({
   const visibleFields = hideLotFields ? fields.filter((f) => !['count', 'cost_price', 'purchase_date'].includes(f.key)) : fields
 
   return (
-    <div className="rounded-md border border-border/70 p-3 space-y-2">
+    <div className="rounded-md border border-border/60 p-3 space-y-2">
       <div>
         <span
-          className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${
+          className={`inline-block text-xs font-medium px-1.5 py-0.5 rounded-sm ${
             matchedName ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
           }`}
         >
@@ -497,20 +497,20 @@ function PendingRow({
           </label>
         )}
         {isFlatBalanceMatch && (
-          <p className="text-[11px] text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Confirming updates "{matchedName}"'s value — it won't create a duplicate.
           </p>
         )}
         {lotPlan && (
-          <div className="mt-2 rounded border border-border/70 p-2 space-y-2">
+          <div className="mt-2 rounded-sm border border-border/60 p-2 space-y-2">
             {hasLotDetail ? (
               <>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Plaid lists {lotPlan.plaidLots.length} lot{lotPlan.plaidLots.length !== 1 ? 's' : ''}. Say which of your
                   lots each one is, so nothing is counted twice and later sells land on the right lot.
                 </p>
                 {lotPlan.plaidLots.map((lot, i) => (
-                  <label key={i} className="block text-[11px] space-y-1">
+                  <label key={i} className="block text-xs space-y-1">
                     <span className="text-foreground">
                       Plaid: {describeLot(lot)}
                       {lotPlan.autoMatches[i] && decisions[i] === lotPlan.autoMatches[i] ? ' — matched automatically' : ''}
@@ -533,42 +533,42 @@ function PendingRow({
               </>
             ) : (
               <>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Plaid reports this holding as a single total with no lot detail. You track{' '}
                   {trackedLotTotal(lotPlan.existing)} {unit} across {lotPlan.existing.length} lot
                   {lotPlan.existing.length !== 1 ? 's' : ''}; Plaid shows {Number((row.payload as any).count ?? 0)}.
                 </p>
                 {sameValueDifferentUnits(row.payload as any, lotPlan.existing) && (
-                  <p className="text-[11px] text-green-700 dark:text-green-500">
+                  <p className="text-xs text-green-700 dark:text-green-500">
                     The total value matches what you track — Plaid just counts in a different unit size, so this is
                     very likely the same position. Link only is the right choice.
                   </p>
                 )}
-                <label className="flex items-start gap-1.5 text-[11px] text-foreground">
+                <label className="flex items-start gap-1.5 text-xs text-foreground">
                   <input type="radio" checked={!aggregateAddsLot} onChange={() => onAggregateAddsLotChange(false)} className="mt-0.5" />
                   <span>Link only — keep my lots exactly as they are (recommended)</span>
                 </label>
-                <label className="flex items-start gap-1.5 text-[11px] text-foreground">
+                <label className="flex items-start gap-1.5 text-xs text-foreground">
                   <input type="radio" checked={aggregateAddsLot} onChange={() => onAggregateAddsLotChange(true)} className="mt-0.5" />
                   <span>Add Plaid's total as a new lot (fill in its date below)</span>
                 </label>
               </>
             )}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Once linked, later buys are added automatically. A sell is applied only when the lot can be proven;
               otherwise you'll be asked which lots it came from.
             </p>
           </div>
         )}
         {isLotBasedMatch && !lotPlan && (
-          <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
-            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          <div className="mt-2 rounded-sm border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
+            <p className="text-xs text-amber-700 dark:text-amber-400">
               This looks like a position you may already track manually as "{matchedName}". Confirming
               <strong> adds this as an additional lot</strong> rather than replacing anything — if it's the
               same purchase you already entered, confirming will double-count it. Skip this row instead if
               you're unsure, and adjust "{matchedName}" by hand if needed.
             </p>
-            <label className="flex items-center gap-1.5 text-[11px] text-foreground">
+            <label className="flex items-center gap-1.5 text-xs text-foreground">
               <input
                 type="checkbox"
                 checked={acknowledgedDuplicateRisk}

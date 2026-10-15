@@ -11,7 +11,7 @@ export function MiniSparkline({ values, color, height = 28 }: { values: number[]
   const width = 100
   // Keep the line's own local peaks/troughs inset from the top/bottom edge of
   // its box — otherwise a point that happens to be the min or max sits right
-  // on the boundary, and combined with a rounded card corner clipping the
+  // on the boundary, and combined with a rounded-sm card corner clipping the
   // box from outside, it reads as the line being cut off rather than just
   // reaching its natural high/low point.
   const vPadding = height * 0.18
@@ -65,16 +65,16 @@ export function MiniRing({ pct, color, size = 30 }: { pct: number; color: string
  * reads as "34% of something" at a glance, matching the same figure already
  * spelled out in the card's body text below it.
  */
-export function RingStat({ pct, color, label, size = 34 }: { pct: number; color: string; label: string; size?: number }) {
+export function RingStat({ pct, color, label, size = 44 }: { pct: number; color: string; label: string; size?: number }) {
   return (
     <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
       <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
         <MiniRing pct={pct} color={color} size={size} />
-        <span className="absolute text-[8px] font-bold tabular-nums" style={{ color }}>
+        <span className="absolute text-xs font-bold tabular-nums" style={{ color }}>
           {Math.round(pct)}%
         </span>
       </div>
-      <span className="text-[7px] uppercase tracking-wide text-muted-foreground leading-none">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground leading-none">{label}</span>
     </div>
   )
 }

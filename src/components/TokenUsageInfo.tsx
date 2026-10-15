@@ -32,7 +32,7 @@ export function TokenUsageInfo({ inputTokens, outputTokens }: { inputTokens?: nu
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev) }}
         aria-label="Show token usage"
         aria-expanded={open}
-        className="flex h-4 w-4 items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors"
+        className="flex h-4 w-4 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
       >
         <Info size={11} />
       </button>
@@ -40,7 +40,7 @@ export function TokenUsageInfo({ inputTokens, outputTokens }: { inputTokens?: nu
         <div
           onClick={(e) => e.stopPropagation()}
           role="tooltip"
-          className="absolute right-0 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-[11px] whitespace-nowrap shadow-md z-50 tabular-nums"
+          className="absolute right-0 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs whitespace-nowrap shadow-md z-50 tabular-nums"
         >
           {(inputTokens ?? 0).toLocaleString()} in · {(outputTokens ?? 0).toLocaleString()} out tokens
         </div>

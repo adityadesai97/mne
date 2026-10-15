@@ -193,7 +193,7 @@ export default function Watchlist() {
         <div>
           <h1 className="text-xl font-bold">Watchlist</h1>
           {formatRelativeTime(pricesRefreshedAt) && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Prices {formatRelativeTime(pricesRefreshedAt)}
             </p>
           )}
@@ -229,7 +229,7 @@ export default function Watchlist() {
             onSubmit={handleSubmit}
             className="mx-4 mb-4 overflow-hidden"
           >
-            <div className="bg-card border border-border rounded-xl p-3 flex flex-col gap-2 shadow-card">
+            <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2 shadow-card">
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -239,7 +239,7 @@ export default function Watchlist() {
                     value={symbol}
                     onChange={e => setSymbol(e.target.value)}
                     placeholder={isCrypto ? 'Symbol, e.g. BTC' : 'Symbol, e.g. AAPL'}
-                    className="w-full bg-muted/70 rounded-lg pl-8 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent focus:border-primary/40 focus:bg-background transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
+                    className="w-full bg-muted/60 rounded-lg pl-8 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent focus:border-primary/40 focus:bg-background transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
                   />
                 </div>
                 <button
@@ -263,7 +263,7 @@ export default function Watchlist() {
       {!loaded && (
         <div className="px-4 space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
+            <Skeleton key={i} className="h-[68px] w-full rounded-md" />
           ))}
         </div>
       )}
@@ -318,14 +318,14 @@ export default function Watchlist() {
                 <div className="flex flex-col items-end leading-tight">
                   <p className={`font-medium tabular-nums ${priceChangeClass}`}>${currentPrice.toFixed(2)}</p>
                   {percentChange != null && (
-                    <p className={`text-[10px] tabular-nums ${priceChangeClass || 'text-muted-foreground'}`}>
+                    <p className={`text-xs tabular-nums ${priceChangeClass || 'text-muted-foreground'}`}>
                       {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
                     </p>
                   )}
                 </div>
                 <ChevronDown
                   size={14}
-                  className={`text-muted-foreground/60 transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
+                  className={`text-muted-foreground transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
                   aria-hidden="true"
                 />
                 {!t.is_owned && (
@@ -363,7 +363,7 @@ export default function Watchlist() {
       })}
       {loaded && tickers.length === 0 && !showForm && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center mt-16 px-4">
-          <Star size={22} className="text-muted-foreground/50 mb-3" />
+          <Star size={22} className="text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-center text-sm">No tickers in watchlist yet.</p>
         </motion.div>
       )}
@@ -490,9 +490,9 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Pro
             value={newTheme}
             onChange={e => setNewTheme(e.target.value)}
             placeholder="Theme name"
-            className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="flex-1 bg-background border border-border rounded-sm px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <button type="submit" disabled={saving} className="text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors disabled:opacity-50">
+          <button type="submit" disabled={saving} className="text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-sm transition-colors disabled:opacity-50">
             Add
           </button>
           </form>

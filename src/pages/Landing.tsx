@@ -56,7 +56,7 @@ const FEATURES: Feature[] = [
           href="https://github.com/adityadesai97/mne"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-semibold text-[#1a4aa6] underline-offset-2 hover:underline"
+          className="font-semibold text-landing-blue-700 underline-offset-2 hover:underline"
         >
           GitHub
         </a>
@@ -115,15 +115,15 @@ function Sparkline() {
   const fill = `${line} L 120 80 L 0 80 Z`
 
   return (
-    <svg viewBox="0 0 120 80" className="h-16 w-full" preserveAspectRatio="none">
+    <svg viewBox="0 0 120 80" className="h-16 w-full text-landing-blue-600" preserveAspectRatio="none">
       <defs>
         <linearGradient id="landing-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#0d6efd" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#0d6efd" stopOpacity="0" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={fill} fill="url(#landing-fill)" />
-      <path d={line} fill="none" stroke="#0d6efd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -185,10 +185,10 @@ export default function Landing({ onSignIn, loading, error }: Props) {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#f5f7fb] text-[#101521]">
+    <div className="min-h-screen overflow-x-hidden bg-landing-canvas text-landing-ink-900">
       <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute left-[-6rem] top-[-4rem] h-[28rem] w-[28rem] rounded-full bg-[#92b3ff]/40 blur-[90px]" />
-        <div className="absolute bottom-[-10rem] right-[-8rem] h-[30rem] w-[30rem] rounded-full bg-[#9fe8d1]/35 blur-[100px]" />
+        <div className="absolute left-[-6rem] top-[-4rem] h-[28rem] w-[28rem] rounded-full bg-landing-blue-400/40 blur-[90px]" />
+        <div className="absolute bottom-[-10rem] right-[-8rem] h-[30rem] w-[30rem] rounded-full bg-landing-mint/35 blur-[100px]" />
       </div>
 
       <header
@@ -196,22 +196,22 @@ export default function Landing({ onSignIn, loading, error }: Props) {
         className="fixed left-0 right-0 z-50 px-4 sm:px-6 lg:px-8"
         style={{ top: 'calc(env(safe-area-inset-top) + 0.5rem)' }}
       >
-        <nav className="mx-auto flex w-full max-w-[1220px] items-center justify-between rounded-full border border-white/70 bg-white/90 px-4 py-3 shadow-[0_20px_40px_rgba(16,21,33,0.08)] backdrop-blur">
+        <nav className="mx-auto flex w-full max-w-[1220px] items-center justify-between rounded-full border border-white/70 bg-white/90 px-4 py-3 shadow-xl backdrop-blur">
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="mne" className="h-7 w-auto shrink-0 object-contain [filter:brightness(0)]" />
             <span className="text-sm font-semibold leading-none tracking-[0.01em]">mne</span>
           </div>
 
-          <div className="hidden items-center gap-8 text-sm font-medium text-[#2f394d] md:flex">
-            <button onClick={() => scrollToSection('features')} className="transition-colors hover:text-[#0d6efd]">Features</button>
-            <button onClick={() => scrollToSection('examples')} className="transition-colors hover:text-[#0d6efd]">Examples</button>
-            <button onClick={() => scrollToSection('workflow')} className="transition-colors hover:text-[#0d6efd]">How it works</button>
+          <div className="hidden items-center gap-8 text-sm font-medium text-landing-ink-800 md:flex">
+            <button onClick={() => scrollToSection('features')} className="transition-colors hover:text-landing-blue-600">Features</button>
+            <button onClick={() => scrollToSection('examples')} className="transition-colors hover:text-landing-blue-600">Examples</button>
+            <button onClick={() => scrollToSection('workflow')} className="transition-colors hover:text-landing-blue-600">How it works</button>
           </div>
 
           <button
             onClick={onSignIn}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-full bg-[#111827] px-4 py-2 text-[11px] font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
+            className="inline-flex items-center gap-2 rounded-full bg-landing-ink-900 px-4 py-2 text-xs font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
           >
             {loading ? (
               'Redirecting...'
@@ -227,30 +227,30 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
       <main className="mx-auto w-full max-w-[1260px] space-y-6 px-4 pb-8 pt-[calc(env(safe-area-inset-top)+6rem)] sm:px-6 sm:pb-10 sm:pt-[calc(env(safe-area-inset-top)+7rem)] lg:px-8">
         {error && (
-          <section role="alert" className="rounded-xl border border-[#f3b6b6] bg-[#fff1f1] px-4 py-3">
-            <p className="text-sm font-medium text-[#a81d1d]">{error}</p>
+          <section role="alert" className="rounded-md border border-landing-red-200 bg-landing-red-50 px-4 py-3">
+            <p className="text-sm font-medium text-landing-red-700">{error}</p>
           </section>
         )}
 
-        <section className="relative overflow-hidden rounded-[2rem] border border-[#c7dbff] bg-[linear-gradient(150deg,#d8e7ff_0%,#e9f2ff_45%,#f0f8ff_100%)] px-6 py-10 sm:px-9 sm:py-12">
+        <section className="relative overflow-hidden rounded-3xl border border-landing-blue-200 bg-gradient-to-br from-landing-blue-100 to-landing-blue-50 px-6 py-10 sm:px-9 sm:py-12">
           <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, ease }}
             >
-              <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#8eb7ff]/80 bg-white/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#185bc9]">
+              <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-landing-blue-300/80 bg-white/60 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-landing-blue-700">
                 <Sparkles size={14} />
                 Portfolio Intelligence
               </p>
 
-              <h1 className="font-syne text-[2.35rem] font-bold leading-[0.97] tracking-tight text-[#0f1b36] sm:text-[3.2rem] lg:text-[4rem]">
+              <h1 className="font-display text-4xl font-bold leading-[0.97] tracking-tight text-landing-ink-900 sm:text-5xl lg:text-6xl">
                 Serious portfolio tracking,
                 <br />
                 built for real decisions.
               </h1>
 
-              <p className="mt-6 max-w-xl text-[0.98rem] leading-relaxed text-[#33405b] sm:text-[1.03rem]">
+              <p className="mt-6 max-w-xl text-base leading-relaxed text-landing-ink-700 sm:text-base">
                 mne combines AI commands, live pricing, and lot-level tax context so you can move from raw positions to clear, high-confidence decisions.
               </p>
 
@@ -261,7 +261,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                     event.preventDefault()
                     scrollToSection('examples')
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0f172a] px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-landing-ink-900 px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5"
                 >
                   <Bot size={15} />
                   See examples
@@ -275,7 +275,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.22 + index * 0.08, duration: 0.35 }}
-                    className="rounded-full border border-white/90 bg-white/70 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-[#2f446c]"
+                    className="rounded-full border border-white/90 bg-white/70 px-3 py-1.5 text-xs font-semibold tracking-wide text-landing-ink-700"
                   >
                     {pill}
                   </motion.span>
@@ -288,16 +288,16 @@ export default function Landing({ onSignIn, loading, error }: Props) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.85, delay: 0.1, ease }}
             >
-              <div className="rounded-[1.4rem] border border-[#b7d0ff] bg-white p-5 shadow-[0_30px_65px_rgba(15,23,42,0.17)]">
+              <div className="rounded-lg border border-landing-blue-200 bg-white p-5 shadow-2xl">
                 <div className="mb-2 flex items-baseline justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#5a6785]">Net worth</p>
-                  <p className="text-xs font-semibold text-[#0b9444]">+14.3% YTD</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-landing-ink-600">Net worth</p>
+                  <p className="text-xs font-semibold text-landing-gain">+14.3% YTD</p>
                 </div>
-                <p className="font-syne text-[2rem] font-bold text-[#101a31]">${netWorth.toLocaleString()}</p>
+                <p className="font-display text-3xl font-bold text-landing-ink-900">${netWorth.toLocaleString()}</p>
                 <Sparkline />
 
-                <div className="mt-2 rounded-xl bg-[#f5f8ff] p-3">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#5d6a86]">
+                <div className="mt-2 rounded-md bg-landing-blue-50 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-landing-ink-600">
                     Positions
                   </p>
                   <div className="space-y-2">
@@ -309,22 +309,22 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                         transition={{ delay: 0.35 + index * 0.08, duration: 0.35 }}
                         className="flex items-center justify-between rounded-lg bg-white px-3 py-2"
                       >
-                        <p className="text-xs font-semibold text-[#1f2a44]">{position.symbol}</p>
+                        <p className="text-xs font-semibold text-landing-ink-800">{position.symbol}</p>
                         <div className="text-right">
-                          <p className="text-xs font-semibold text-[#1f2a44]">{position.value}</p>
-                          <p className="text-[10px] font-semibold text-[#0b9444]">{position.change}</p>
+                          <p className="text-xs font-semibold text-landing-ink-800">{position.value}</p>
+                          <p className="text-xs font-semibold text-landing-gain">{position.change}</p>
                         </div>
                       </motion.div>
                     ))}
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between rounded-xl border border-[#d7e4ff] bg-[#f8fbff] px-3 py-2">
+                <div className="mt-3 flex items-center justify-between rounded-md border border-landing-blue-200 bg-landing-blue-50 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <Zap size={14} className="text-[#0d6efd]" />
-                    <span className="text-xs font-medium text-[#2f3b58]">AI commands executed</span>
+                    <Zap size={14} className="text-landing-blue-600" />
+                    <span className="text-xs font-medium text-landing-ink-800">AI commands executed</span>
                   </div>
-                  <span className="font-syne text-sm font-bold text-[#0f1b36]">{commandsRun.toLocaleString()}</span>
+                  <span className="font-display text-sm font-bold text-landing-ink-900">{commandsRun.toLocaleString()}</span>
                 </div>
               </div>
             </motion.div>
@@ -333,10 +333,10 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
         <section
           id="features"
-          className="rounded-[2rem] border border-[#cbd8f0] bg-[#e8edf6] px-6 py-10 sm:px-9 sm:py-12"
+          className="rounded-3xl border border-landing-slate-200 bg-landing-slate-100 px-6 py-10 sm:px-9 sm:py-12"
         >
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4e5b77]">Core Features</p>
-          <h2 className="mx-auto mt-3 max-w-3xl text-center font-syne text-[2rem] font-bold leading-[1.04] text-[#111c35] sm:text-[2.8rem]">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-landing-ink-600">Core Features</p>
+          <h2 className="mx-auto mt-3 max-w-3xl text-center font-display text-3xl font-bold leading-[1.04] text-landing-ink-900 sm:text-5xl">
             Everything you need to monitor, reason, and act.
           </h2>
 
@@ -348,13 +348,13 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.35 }}
                 transition={{ duration: 0.45, delay: index * 0.07, ease }}
-                className="rounded-2xl border border-[#d3ddef] bg-white/82 p-5 sm:p-6"
+                className="rounded-lg border border-landing-slate-200 bg-white/80 p-5 sm:p-6"
               >
-                <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e5efff] text-[#0d6efd]">
+                <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-landing-blue-100 text-landing-blue-600">
                   {feature.icon}
                 </div>
-                <p className="font-syne text-xl font-semibold text-[#1a2642]">{feature.title}</p>
-                <p className="mt-2 text-sm leading-relaxed text-[#3e4a64]">{feature.text}</p>
+                <p className="font-display text-xl font-semibold text-landing-ink-800">{feature.title}</p>
+                <p className="mt-2 text-sm leading-relaxed text-landing-ink-700">{feature.text}</p>
               </motion.article>
             ))}
           </div>
@@ -362,10 +362,10 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
         <section
           id="examples"
-          className="rounded-[2rem] border border-[#eadbc8] bg-[#f8eee0] px-6 py-10 sm:px-9 sm:py-12"
+          className="rounded-3xl border border-landing-sand-300 bg-landing-sand-100 px-6 py-10 sm:px-9 sm:py-12"
         >
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b623f]">Real Command Examples</p>
-          <h2 className="mx-auto mt-3 max-w-3xl text-center font-syne text-[2rem] font-bold leading-[1.04] text-[#2d1f10] sm:text-[2.8rem]">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-landing-sand-600">Real Command Examples</p>
+          <h2 className="mx-auto mt-3 max-w-3xl text-center font-display text-3xl font-bold leading-[1.04] text-landing-sand-900 sm:text-5xl">
             These are commands that map directly to app actions.
           </h2>
 
@@ -377,21 +377,21 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.4 }}
                 transition={{ duration: 0.45, delay: index * 0.08, ease }}
-                className="overflow-hidden rounded-2xl border border-[#ebd5bc] bg-[#fffaf3]"
+                className="overflow-hidden rounded-lg border border-landing-sand-300 bg-landing-sand-50"
               >
-                <div className="border-b border-[#f1ddc8] bg-[#ffeacd] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#745535]">
+                <div className="border-b border-landing-sand-300 bg-landing-sand-200 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-landing-sand-600">
                   {example.label}
                 </div>
                 <div className="p-4">
-                  <p className="font-syne text-lg font-semibold text-[#2b2016]">{example.title}</p>
-                  <div className="mt-3 rounded-xl bg-[#231f1a] p-3 text-[#ece6da]">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#d2c4ac]">Prompt</p>
-                    <p className="mt-1 font-mono text-[11px] leading-relaxed">/{example.prompt}</p>
+                  <p className="font-display text-lg font-semibold text-landing-sand-900">{example.title}</p>
+                  <div className="mt-3 rounded-md bg-landing-sand-950 p-3 text-landing-sand-fg">
+                    <p className="text-xs uppercase tracking-widest text-landing-sand-fg-muted">Prompt</p>
+                    <p className="mt-1 font-mono text-xs leading-relaxed">/{example.prompt}</p>
                   </div>
                   <div className="mt-3 space-y-1.5">
                     {example.output.map(item => (
-                      <div key={item} className="flex items-start gap-2 text-sm text-[#4f3f2d]">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#a2723d]" />
+                      <div key={item} className="flex items-start gap-2 text-sm text-landing-sand-700">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-landing-sand-500" />
                         <span>{item}</span>
                       </div>
                     ))}
@@ -404,10 +404,10 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
         <section
           id="workflow"
-          className="rounded-[2rem] border border-[#d1e3d6] bg-[#dfede2] px-6 py-10 sm:px-9 sm:py-12"
+          className="rounded-3xl border border-landing-green-200 bg-landing-green-100 px-6 py-10 sm:px-9 sm:py-12"
         >
-          <p className="text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3b6a4c]">How It Works</p>
-          <h2 className="mx-auto mt-3 max-w-3xl text-center font-syne text-[2rem] font-bold leading-[1.04] text-[#0f2a1a] sm:text-[2.7rem]">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-landing-green-700">How It Works</p>
+          <h2 className="mx-auto mt-3 max-w-3xl text-center font-display text-3xl font-bold leading-[1.04] text-landing-green-900 sm:text-5xl">
             One clean workflow from login to better trades.
           </h2>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -418,13 +418,13 @@ export default function Landing({ onSignIn, loading, error }: Props) {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.4 }}
                 transition={{ duration: 0.45, delay: index * 0.08, ease }}
-                className="rounded-2xl border border-[#c6dacd] bg-white/70 p-5"
+                className="rounded-lg border border-landing-green-200 bg-white/70 p-5"
               >
-                <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#4f7b5f]">
+                <p className="text-xs font-semibold uppercase tracking-widest text-landing-green-700">
                   Step {index + 1}
                 </p>
-                <p className="mt-2 font-syne text-xl font-semibold text-[#173523]">{milestone.title}</p>
-                <p className="mt-2 text-sm leading-relaxed text-[#345543]">{milestone.body}</p>
+                <p className="mt-2 font-display text-xl font-semibold text-landing-green-900">{milestone.title}</p>
+                <p className="mt-2 text-sm leading-relaxed text-landing-green-800">{milestone.body}</p>
               </motion.article>
             ))}
           </div>
@@ -432,17 +432,17 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
         <section
           id="signin"
-          className="relative overflow-hidden rounded-[2rem] border border-[#bed2ff] bg-[linear-gradient(130deg,#dce8ff_0%,#cedfff_38%,#bed6ff_100%)] px-6 py-10 sm:px-9 sm:py-12"
+          className="relative overflow-hidden rounded-3xl border border-landing-blue-200 bg-gradient-to-br from-landing-blue-100 to-landing-blue-200 px-6 py-10 sm:px-9 sm:py-12"
         >
-          <div className="absolute inset-y-0 right-[-5rem] w-56 rounded-full bg-[#6ca6ff]/45 blur-[70px]" />
+          <div className="absolute inset-y-0 right-[-5rem] w-56 rounded-full bg-landing-blue-500/45 blur-[70px]" />
           <div className="relative">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1b56bc]">Ready To Start</p>
-            <h2 className="mt-2 font-syne text-[2rem] font-bold leading-[1.02] text-[#0e1b35] sm:text-[2.7rem]">
+            <p className="text-xs font-semibold uppercase tracking-widest text-landing-blue-700">Ready To Start</p>
+            <h2 className="mt-2 font-display text-3xl font-bold leading-[1.02] text-landing-ink-900 sm:text-5xl">
               Sign in and make your first
               <br />
               portfolio decision with context.
             </h2>
-            <p className="mt-4 max-w-xl text-sm leading-relaxed text-[#30486f] sm:text-base">
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-landing-ink-700 sm:text-base">
               Use the existing sign in flow, connect your account, and continue directly into your dashboard.
             </p>
 
@@ -450,7 +450,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
               <button
                 onClick={onSignIn}
                 disabled={loading}
-                className="inline-flex items-center justify-center gap-3 rounded-full bg-[#0f172a] px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-3 rounded-full bg-landing-ink-900 px-5 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? (
                   'Redirecting...'
@@ -463,7 +463,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
               </button>
             </div>
 
-            {error && <p className="mt-3 text-xs font-medium text-[#c62828]">{error}</p>}
+            {error && <p className="mt-3 text-xs font-medium text-landing-red-700">{error}</p>}
           </div>
         </section>
       </main>

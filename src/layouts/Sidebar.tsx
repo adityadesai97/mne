@@ -64,7 +64,7 @@ export default function Sidebar() {
           <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
               aria-hidden="true"
-              className="absolute top-0 left-0 rounded-xl pointer-events-none"
+              className="absolute top-0 left-0 rounded-md pointer-events-none"
               style={{
                 width: indicator.w,
                 height: indicator.h,
@@ -82,7 +82,7 @@ export default function Sidebar() {
             end={to === '/'}
             title={label}
             className={({ isActive }) =>
-              `flex items-center justify-center w-full aspect-square rounded-xl transition-colors duration-150 ${
+              `flex items-center justify-center w-full aspect-square rounded-md transition-colors duration-150 ${
                 isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
               }`
             }

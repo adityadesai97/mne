@@ -51,7 +51,7 @@ const ZEBRA_COLORS = ['transparent', 'rgba(255,255,255,0.025)']
 // Card shell shared with Home's bento grid — same background, corner
 // radius, padding, and hover lift — so Charts reads as the same page
 // system instead of its own component library.
-const CARD_CLASS = 'bg-card shadow-card rounded-2xl p-5'
+const CARD_CLASS = 'bg-card shadow-card rounded-lg p-5'
 const CARD_HOVER = { y: -2, transition: { duration: 0.15, delay: 0 } }
 
 const tooltipBase = {
@@ -218,8 +218,8 @@ function DonutWithLegend({
             key={slice.name}
             onMouseEnter={() => highlightSlice(slice.name)}
             onMouseLeave={() => downplaySlice(slice.name)}
-            className={`flex items-center gap-1.5 text-xs rounded px-1 -mx-1 py-0.5 transition-colors ${
-              hovered === slice.name ? 'bg-muted/60' : 'hover:bg-muted/30'
+            className={`flex items-center gap-1.5 text-xs rounded-sm px-1 -mx-1 py-0.5 transition-colors ${
+              hovered === slice.name ? 'bg-muted/60' : 'hover:bg-muted/20'
             }`}
           >
             <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: slice.color }} />
@@ -356,7 +356,7 @@ export default function Charts() {
             color: point.gain >= 0 ? GAIN_COLOR : LOSS_COLOR,
             // Round the end of the bar farthest from the zero baseline —
             // for a negative bar (extending left) that's the left edge, the
-            // mirror image of the positive case — otherwise the rounded
+            // mirror image of the positive case — otherwise the rounded-sm
             // corner sits at the baseline instead of the tip.
             borderRadius: point.gain >= 0 ? [0, 4, 4, 0] : [4, 0, 0, 4],
           },
@@ -441,7 +441,7 @@ export default function Charts() {
           // below it, not above (the 'top' side of its bounding box sits at
           // the shared baseline, not near the value it's labeling).
           label: { position: point.value >= 0 ? 'top' : 'bottom' },
-          // Glow that traces the bar's own (rounded) outline on hover —
+          // Glow that traces the bar's own (rounded-sm) outline on hover —
           // the actual hover feedback, now that there's no axis shadow.
           emphasis: {
             itemStyle: {
@@ -576,7 +576,7 @@ export default function Charts() {
             // Vested is normally the left segment of the stack, so its own
             // right edge is a mid-stack seam, not the bar's actual tip —
             // except at 100% vested, where Unvested has zero width and
-            // Vested becomes the whole (and therefore rounded) bar.
+            // Vested becomes the whole (and therefore rounded-sm) bar.
             borderRadius: point.unvestedShares === 0 ? [0, 4, 4, 0] : 0,
           },
         })),
@@ -617,13 +617,13 @@ export default function Charts() {
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className={`md:col-span-3 ${CARD_CLASS} space-y-4`}>
               <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-[220px] w-full rounded-xl" />
+              <Skeleton className="h-[220px] w-full rounded-md" />
             </div>
           ))}
           {[0, 1, 2].map((i) => (
             <div key={`row-${i}`} className={`md:col-span-6 ${CARD_CLASS} space-y-4`}>
               <Skeleton className="h-3 w-40" />
-              <Skeleton className="h-[200px] w-full rounded-xl" />
+              <Skeleton className="h-[200px] w-full rounded-md" />
             </div>
           ))}
         </div>
@@ -641,10 +641,10 @@ export default function Charts() {
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
           </div>
-          <div className="relative mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-subtle">
+          <div className="relative mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-brand-subtle">
             <Sparkles size={18} className="text-primary" aria-hidden="true" />
           </div>
-          <p className="relative font-syne text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+          <p className="relative font-display text-2xl md:text-3xl font-bold tracking-tight text-foreground">
             Add an asset first.
           </p>
           <p className="relative mt-2 text-sm text-muted-foreground">
@@ -660,12 +660,12 @@ export default function Charts() {
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="px-4 pt-5 pb-24 md:px-6 md:pt-6 space-y-3">
 
-      {/* HEADER — same icon-badge + font-syne treatment as Home's greeting row */}
+      {/* HEADER — same icon-badge + font-display treatment as Home's greeting row */}
       <motion.div {...revealUp(0)} className="flex items-center gap-2.5 px-1">
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
           <BarChart3 size={16} className="text-primary" aria-hidden="true" />
         </div>
-        <p className="font-syne text-lg md:text-xl font-bold text-foreground tracking-tight">Charts</p>
+        <p className="font-display text-lg md:text-xl font-bold text-foreground tracking-tight">Charts</p>
       </motion.div>
 
       {/* Bento grid — same 6-column system as Home, so cards that don't need
@@ -683,13 +683,13 @@ export default function Charts() {
         >
           <div className="flex items-start justify-between gap-3 mb-3">
             <CardEyebrow icon={PieChart}>Portfolio Allocation</CardEyebrow>
-            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5 flex-shrink-0">
+            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5 flex-shrink-0">
               {ALL_SUBTYPES.map((s) => (
                 <button
                   type="button"
                   key={s}
                   onClick={() => toggleSubtype(s)}
-                  className={`text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                  className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
                     activeSubtypes.has(s) ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -724,10 +724,10 @@ export default function Charts() {
             <button
               type="button"
               onClick={() => setIncludeCashInThemeDistribution((prev) => !prev)}
-              className={`text-[10px] px-2 py-0.5 rounded-full transition-colors flex-shrink-0 ${
+              className={`text-xs px-2 py-0.5 rounded-full transition-colors flex-shrink-0 ${
                 includeCashInThemeDistribution
                   ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                  : 'bg-muted/40 text-muted-foreground hover:text-foreground'
               }`}
             >
               {includeCashInThemeDistribution ? 'Cash Included' : 'Include Cash'}
@@ -756,7 +756,7 @@ export default function Charts() {
                 aria-label="Filter capital gains by ticker"
                 value={activeGainsSymbol}
                 onChange={(e) => setGainsSymbol(e.target.value)}
-                className="text-[10px] bg-muted/50 text-foreground rounded-lg px-2 py-1 flex-shrink-0 border-0 outline-none cursor-pointer"
+                className="text-xs bg-muted/40 text-foreground rounded-lg px-2 py-1 flex-shrink-0 border-0 outline-none cursor-pointer"
               >
                 <option value="">All tickers</option>
                 {gainsSymbols.map((sym) => (

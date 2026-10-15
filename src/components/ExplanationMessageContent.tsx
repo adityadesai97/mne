@@ -18,10 +18,10 @@ function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: ()
   if (target.kind === 'mover') {
     const { mover } = target
     return (
-      <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
+      <div className="mt-2 rounded-md bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
         <div className="flex items-center justify-between">
           <p className="font-medium text-foreground">{mover.symbol} — {mover.name}</p>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-[11px]">Close</button>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">Close</button>
         </div>
         <p className="text-muted-foreground">
           {fmtDollars(mover.dollarChange)} ({fmtPercent(mover.percentChange)}) · {mover.contributionPct}% of that day's swing
@@ -34,7 +34,7 @@ function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: ()
                 <a href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                   {h.title} <ExternalLink size={10} />
                 </a>
-                <span className="text-muted-foreground/70"> — {h.source}</span>
+                <span className="text-muted-foreground"> — {h.source}</span>
               </li>
             ))}
           </ul>
@@ -45,10 +45,10 @@ function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: ()
 
   const { move } = target
   return (
-    <div className="mt-2 rounded-xl bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
+    <div className="mt-2 rounded-md bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
       <div className="flex items-center justify-between">
         <p className="font-medium text-foreground">{move.theme}</p>
-        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-[11px]">Close</button>
+        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">Close</button>
       </div>
       <p className="text-muted-foreground">
         {move.memberSymbols.length} holdings moved {move.direction} together, avg {fmtPercent(move.avgPercentChange)}
@@ -106,7 +106,7 @@ export function ExplanationMessageContent({ content, detail }: { content: string
 
       {detail.marketHeadlines.length > 0 && (
         <div className="mt-2 text-xs text-muted-foreground space-y-1">
-          <p className="uppercase tracking-[0.1em] text-[10px]">Market context</p>
+          <p className="uppercase tracking-widest text-xs">Market context</p>
           {detail.marketHeadlines.map((h, i) => (
             <a key={i} href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
               {h.title} <ExternalLink size={10} />

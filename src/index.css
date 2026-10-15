@@ -16,7 +16,8 @@
     --secondary: 222 14% 11%;
     --secondary-foreground: 210 20% 94%;
     --muted: 222 14% 11%;
-    --muted-foreground: 222 8% 44%;
+    /* >=4.5:1 on background, card and muted surfaces (was 44%, ~3.3:1 on muted) */
+    --muted-foreground: 222 8% 54%;
     --accent: 220 100% 56%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
@@ -45,7 +46,7 @@
     --secondary: 210 16% 93%;
     --secondary-foreground: 222 22% 10%;
     --muted: 210 16% 93%;
-    --muted-foreground: 222 10% 46%;
+    --muted-foreground: 222 10% 42%;
     --accent: 220 100% 50%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
@@ -53,8 +54,8 @@
     --border: 220 13% 88%;
     --input: 210 16% 93%;
     --ring: 220 100% 50%;
-    --gain: 142 60% 36%;
-    --loss: 0 72% 51%;
+    --gain: 142 60% 30%;
+    --loss: 0 72% 47%;
     --hover: rgba(0, 0, 0, 0.04);
     --active: rgba(0, 0, 0, 0.07);
   }
@@ -91,10 +92,6 @@ html, body {
 /* Prevent iOS Safari from auto-zooming when focusing inputs with font-size < 16px */
 input, select, textarea {
   font-size: max(16px, 1em);
-}
-
-.font-syne {
-  font-family: var(--display-font, 'Manrope', sans-serif);
 }
 
 /* Brand spectrum — extracted from the cobalt M logo */
