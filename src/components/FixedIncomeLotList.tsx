@@ -81,32 +81,32 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
       <div className="border border-border rounded-lg p-3 space-y-2 bg-background">
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Units</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide">Units</label>
             <input
               type="number"
               step="0.0001"
               value={values.count}
               onChange={e => setValues(v => ({ ...v, count: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
             />
           </div>
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Cost/unit</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide">Cost/unit</label>
             <input
               type="number"
               step="0.01"
               value={values.cost_price}
               onChange={e => setValues(v => ({ ...v, cost_price: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
             />
           </div>
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Purchase date</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide">Purchase date</label>
             <input
               type="date"
               value={values.purchase_date}
               onChange={e => setValues(v => ({ ...v, purchase_date: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded px-2 py-1 text-xs"
+              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
             />
           </div>
         </div>
@@ -137,12 +137,12 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
         const totalCost = count * costPrice
         const totalFace = faceValue != null ? count * faceValue : null
         return (
-          <div key={lot.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
+          <div key={lot.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
             <div className="min-w-0">
               <p className="text-xs font-medium">{formatDateMDY(lot.purchase_date)}</p>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-xs text-muted-foreground truncate">
                 {fmtUnits(count)} units @ <span className={hiddenValueClass(hideValues)}>{fmt(costPrice)} = {fmt(totalCost)}</span>
-                {totalFace != null && <span className={hiddenValueClass(hideValues, 'text-muted-foreground/70')}> · face {fmt(totalFace)}</span>}
+                {totalFace != null && <span className={hiddenValueClass(hideValues, 'text-muted-foreground')}> · face {fmt(totalFace)}</span>}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

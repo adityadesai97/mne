@@ -17,7 +17,7 @@ export function CardEyebrow({
   return (
     <div className="flex items-center gap-1.5 min-w-0">
       <Icon size={11} className={`flex-shrink-0 ${className}`} aria-hidden="true" />
-      <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium truncate">{children}</p>
+      <p className="text-muted-foreground text-xs uppercase tracking-widest font-medium truncate">{children}</p>
     </div>
   )
 }

@@ -56,12 +56,12 @@ function Row({ label, hint, right, onClick, destructive, disabled }: {
   destructive?: boolean
   disabled?: boolean
 }) {
-  const cls = `flex items-center gap-3 px-4 py-4 bg-card rounded-xl ${onClick && !disabled ? 'cursor-pointer hover:bg-muted/40 active:bg-muted/60 transition-colors' : ''} ${disabled ? 'opacity-80' : ''}`
+  const cls = `flex items-center gap-3 px-4 py-4 bg-card rounded-md ${onClick && !disabled ? 'cursor-pointer hover:bg-muted/40 active:bg-muted/60 transition-colors' : ''} ${disabled ? 'opacity-80' : ''}`
   return (
     <div className={cls} onClick={onClick && !disabled ? onClick : undefined}>
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium ${destructive ? 'text-destructive' : ''}`}>{label}</p>
-        {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
       </div>
       {right}
       {onClick && !right && <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />}
@@ -108,8 +108,8 @@ function ThemePicker({ value, onChange }: { value: 'light' | 'dark' | 'system'; 
 function Hint({ text }: { text: string }) {
   return (
     <div className="relative group/hint inline-flex items-center">
-      <Info size={11} className="text-muted-foreground/40 cursor-help" />
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-[11px] whitespace-nowrap shadow-md opacity-0 group-hover/hint:opacity-100 transition-opacity pointer-events-none z-50">
+      <Info size={11} className="text-muted-foreground cursor-help" />
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs whitespace-nowrap shadow-md opacity-0 group-hover/hint:opacity-100 transition-opacity pointer-events-none z-50">
         {text}
       </div>
     </div>
@@ -539,14 +539,14 @@ export default function Settings() {
       {/* Appearance */}
       <SectionHeader><Sun size={10} className="inline mr-1.5 mb-0.5" />Appearance</SectionHeader>
       <div className="space-y-2">
-        <div className="bg-card rounded-xl px-4 py-4 space-y-2">
+        <div className="bg-card rounded-md px-4 py-4 space-y-2">
           <p className="text-sm font-medium">Theme</p>
           <ThemePicker value={theme} onChange={handleThemeChange} />
         </div>
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Privacy mode</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Blur dollar amounts on Home, Portfolio, and Charts
             </p>
           </div>
@@ -562,7 +562,7 @@ export default function Settings() {
       <SectionHeader><Sparkles size={10} className="inline mr-1.5 mb-0.5" />AI</SectionHeader>
       <div className="space-y-2">
         {/* AI Provider picker */}
-        <div className="bg-card rounded-xl px-4 py-4 space-y-2">
+        <div className="bg-card rounded-md px-4 py-4 space-y-2">
           <p className="text-sm font-medium">AI Provider</p>
           <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
             {(['claude', 'groq'] as LLMProvider[]).map(p => (
@@ -578,10 +578,10 @@ export default function Settings() {
           </div>
           {providerWarning && <p className="text-xs text-amber-500">{providerWarning}</p>}
         </div>
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Auto-assign themes</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Use AI to suggest themes when new tickers are created
             </p>
           </div>
@@ -624,7 +624,7 @@ export default function Settings() {
                   className="flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <p className="text-sm font-medium truncate">{c.title}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {formatDateMDY(c.updated_at)}
                     {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
                       <span className="tabular-nums"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
@@ -648,10 +648,10 @@ export default function Settings() {
       {/* Notifications */}
       <SectionHeader><Bell size={10} className="inline mr-1.5 mb-0.5" />Notifications</SectionHeader>
       <div className="space-y-2">
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-xl">
+        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Push notifications</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {pushEnabled ? 'Enabled' : 'Allow price and vest alerts'}
             </p>
           </div>
@@ -689,7 +689,7 @@ export default function Settings() {
         {pushEnabled && (
           <div className="ml-3 pl-3 border-l-2 border-border/40 space-y-1.5">
             {/* Price alerts */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
               <div className="flex items-center gap-1 flex-shrink-0">
                 <p className="text-sm font-medium">Price alerts</p>
                 <Hint text="Alert when price moves by this %" />
@@ -713,7 +713,7 @@ export default function Settings() {
             </div>
 
             {/* RSU vest reminders */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
               <div className="flex items-center gap-1 flex-shrink-0">
                 <p className="text-sm font-medium">RSU vest reminders</p>
                 <Hint text="Days before vest end to notify" />
@@ -737,7 +737,7 @@ export default function Settings() {
             </div>
 
             {/* Capital gains alerts */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-xl">
+            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
               <div className="flex items-center gap-1 flex-shrink-0">
                 <p className="text-sm font-medium">Capital gains alerts</p>
                 <Hint text="Notify when Short Term lots are promoted to Long Term (after 1 year)." />
@@ -805,11 +805,11 @@ export default function Settings() {
       {/* API Keys */}
       <SectionHeader><Key size={10} className="inline mr-1.5 mb-0.5" />API Keys</SectionHeader>
       {editingKeys ? (
-        <div className="bg-card rounded-xl p-4 space-y-3 animate-slideDown">
+        <div className="bg-card rounded-md p-4 space-y-3 animate-slideDown">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Claude API Key</label>
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
               </a>
             </div>
@@ -824,7 +824,7 @@ export default function Settings() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Groq API Key</label>
-              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
               </a>
             </div>
@@ -839,7 +839,7 @@ export default function Settings() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finnhub API Key</label>
-              <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+              <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
               </a>
             </div>
@@ -854,7 +854,7 @@ export default function Settings() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CoinGecko API Key <span className="normal-case tracking-normal">(optional)</span></label>
-              <a href="https://www.coingecko.com/en/api/pricing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors">
+              <a href="https://www.coingecko.com/en/api/pricing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
                 Get key <ExternalLink size={9} />
               </a>
             </div>
@@ -865,7 +865,7 @@ export default function Settings() {
               onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
               className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
             />
-            <p className="text-[11px] text-muted-foreground">Crypto prices work without one, but a free Demo key avoids CoinGecko's tight keyless rate limit and powers crypto price alerts.</p>
+            <p className="text-xs text-muted-foreground">Crypto prices work without one, but a free Demo key avoids CoinGecko's tight keyless rate limit and powers crypto price alerts.</p>
           </div>
           {keyError && <p className="text-xs text-destructive">{keyError}</p>}
           <div className="flex gap-2">
@@ -885,7 +885,7 @@ export default function Settings() {
           </div>
         </div>
       ) : (
-        <div className="bg-card rounded-xl overflow-hidden">
+        <div className="bg-card rounded-md overflow-hidden">
           <div
             className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
             onClick={() => { setKeyDraft({ claudeApiKey: '', groqApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
@@ -899,8 +899,8 @@ export default function Settings() {
       {/* Plaid */}
       <SectionHeader><Link2 size={10} className="inline mr-1.5 mb-0.5" />Connected Accounts (Plaid)</SectionHeader>
       {editingPlaidCreds ? (
-        <div className="bg-card rounded-xl p-4 space-y-3 animate-slideDown">
-          <p className="text-[11px] text-muted-foreground">
+        <div className="bg-card rounded-md p-4 space-y-3 animate-slideDown">
+          <p className="text-xs text-muted-foreground">
             Your own free Plaid developer credentials — not shared with other mne users. Get them at{' '}
             <a href="https://dashboard.plaid.com/team/keys" target="_blank" rel="noopener noreferrer" className="text-primary/70 hover:text-primary underline underline-offset-2">
               dashboard.plaid.com
@@ -944,7 +944,7 @@ export default function Settings() {
           </div>
         </div>
       ) : (
-        <div className="bg-card rounded-xl overflow-hidden">
+        <div className="bg-card rounded-md overflow-hidden">
           <Row
             label={plaidStatus.configured ? 'Plaid credentials configured' : 'Set up Plaid credentials'}
             hint={plaidStatus.configured ? undefined : 'Required once, free — connects accounts instead of manual entry'}
@@ -954,7 +954,7 @@ export default function Settings() {
       )}
 
       {plaidStatus.configured && (
-        <div className="bg-card rounded-xl overflow-hidden mt-2 divide-y divide-border/60">
+        <div className="bg-card rounded-md overflow-hidden mt-2 divide-y divide-border/60">
           {plaidPendingCount > 0 && (
             <Row
               label={`Review ${plaidPendingCount} synced position${plaidPendingCount !== 1 ? 's' : ''}`}
@@ -1057,7 +1057,7 @@ export default function Settings() {
       {isAdmin && (
         <>
           <SectionHeader><Shield size={10} className="inline mr-1.5 mb-0.5" />Admin — Allowed Users</SectionHeader>
-          <div className="bg-card rounded-xl p-4 space-y-3">
+          <div className="bg-card rounded-md p-4 space-y-3">
             {allowedEmails.length > 0 && (
               <div className="space-y-1">
                 {allowedEmails.map(e => (
@@ -1066,7 +1066,7 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={() => void handleToggleAdmin(e.id, !e.is_admin)}
-                      className={`text-xs px-1.5 py-0.5 rounded font-medium transition-colors flex-shrink-0 ${e.is_admin ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                      className={`text-xs px-1.5 py-0.5 rounded-sm font-medium transition-colors flex-shrink-0 ${e.is_admin ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
                       title={e.is_admin ? 'Remove admin' : 'Make admin'}
                     >
                       Admin

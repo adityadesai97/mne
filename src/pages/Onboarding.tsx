@@ -29,7 +29,7 @@ function Logo() {
       <div className="w-12 h-12 flex items-center justify-center">
         <img src="/logo.png" alt="mne" className="w-full h-full object-cover logo-adaptive" />
       </div>
-      <span className="font-syne text-lg font-semibold tracking-tight text-foreground">mne</span>
+      <span className="font-display text-lg font-semibold tracking-tight text-foreground">mne</span>
     </div>
   )
 }
@@ -60,7 +60,7 @@ function Field({
             href={hint.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary transition-colors"
+            className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
           >
             {hint.text}
             <ExternalLink size={10} />
@@ -261,7 +261,7 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'env') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-syne text-xl font-semibold text-foreground">Supabase not configured</h1>
+        <h1 className="font-display text-xl font-semibold text-foreground">Supabase not configured</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Set Supabase credentials via environment variables and restart the app.
         </p>
@@ -286,7 +286,7 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'auth') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-syne text-xl font-semibold text-foreground">Welcome</h1>
+        <h1 className="font-display text-xl font-semibold text-foreground">Welcome</h1>
         <p className="text-sm text-muted-foreground mt-1">Continue with Google to sign in or create your account.</p>
       </div>
       <button
@@ -309,7 +309,7 @@ export default function Onboarding({ onComplete }: Props) {
   return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-syne text-xl font-semibold text-foreground">API keys</h1>
+        <h1 className="font-display text-xl font-semibold text-foreground">API keys</h1>
         <p className="text-sm text-muted-foreground mt-1">Needed for AI commands and live prices.</p>
       </div>
       {/* Provider picker */}
@@ -355,7 +355,7 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'plaid' && plaidSubStep === 'credentials') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-syne text-xl font-semibold text-foreground">Connect accounts (optional)</h1>
+        <h1 className="font-display text-xl font-semibold text-foreground">Connect accounts (optional)</h1>
         <p className="text-sm text-muted-foreground mt-1">
           mne can pull your stock, 401k, cash, and bond/T-bill positions from Plaid instead of you entering them
           by hand. This needs your own free Plaid developer account — a short signup, not a copy-paste key like
@@ -394,7 +394,7 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'plaid' && plaidSubStep === 'connect') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-syne text-xl font-semibold text-foreground">Connect an account</h1>
+        <h1 className="font-display text-xl font-semibold text-foreground">Connect an account</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Credentials saved. Connect your first brokerage or bank account now, or do it later from Settings —
           you can add up to 10 free connections.

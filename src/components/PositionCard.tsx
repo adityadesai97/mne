@@ -18,7 +18,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
       // very likely sampled from this same logo) would otherwise disappear
       // into its own background.
       return (
-        <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm p-1.5">
+        <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm p-1.5">
           <img src={asset.ticker.logo} className="w-full h-full object-contain" alt={asset.ticker?.symbol ?? ''} />
         </div>
       )
@@ -28,7 +28,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
     // ticker-symbol initials, which look like a broken-logo placeholder
     // rather than an intentional choice.
     return (
-      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+      <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
         {asset.asset_type === 'Crypto' ? <Bitcoin size={19} style={{ color: accent }} /> : <ChartNoAxesCombined size={19} style={{ color: accent }} />}
       </div>
     )
@@ -43,7 +43,7 @@ function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
   const IconComponent = iconMap[asset.asset_type] ?? Wallet
 
   return (
-    <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+    <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
       <IconComponent size={19} style={{ color: accent }} />
     </div>
   )
@@ -60,13 +60,13 @@ function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
       return (
         <img
           src={asset.ticker.logo}
-          className="w-9 h-9 rounded-xl object-contain bg-muted flex-shrink-0"
+          className="w-9 h-9 rounded-md object-contain bg-muted flex-shrink-0"
           alt={asset.ticker?.symbol ?? ''}
         />
       )
     }
     return (
-      <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+      <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
         {asset.asset_type === 'Crypto' ? <Bitcoin size={16} style={{ color: accent }} /> : <ChartNoAxesCombined size={16} style={{ color: accent }} />}
       </div>
     )
@@ -81,7 +81,7 @@ function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
   const IconComponent = iconMap[asset.asset_type] ?? Wallet
 
   return (
-    <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+    <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
       <IconComponent size={17} style={{ color: accent }} />
     </div>
   )
@@ -160,7 +160,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                   {plaidSync.synced && (
                     <Badge
                       variant="secondary"
-                      className="mt-1 gap-0.5 text-[10px] px-1.5 py-0"
+                      className="mt-1 gap-0.5 text-xs px-1.5 py-0"
                       title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
                     >
                       <Link2 size={10} /> Synced
@@ -177,7 +177,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         </>
                       ) : (
                         <>
-                          <p className={`font-semibold font-syne tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                          <p className={`font-semibold font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                           <p
                             className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}
                             title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
@@ -187,7 +187,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         </>
                       )
                     ) : (
-                      <p className={`font-semibold font-syne tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                      <p className={`font-semibold font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                     )}
                   </div>
                   <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
@@ -217,7 +217,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
     >
       <Link to={`/portfolio/${asset.id}`} className="block h-full">
         <div
-          className="h-full rounded-2xl shadow-card transition-[box-shadow,background-color] duration-200 ease-out hover:shadow-card-hover p-4 flex flex-col text-white"
+          className="h-full rounded-lg shadow-card transition-[box-shadow,background-color] duration-200 ease-out hover:shadow-card-hover p-4 flex flex-col text-white"
           style={{ backgroundColor: accent }}
         >
           <AssetIcon asset={asset} accent={accent} />
@@ -227,7 +227,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
             <p className="text-white/70 text-xs truncate">{asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}</p>
             {plaidSync.synced && (
               <span
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-white/20 rounded-full px-1.5 py-0.5 mt-1"
+                className="inline-flex items-center gap-0.5 text-xs font-medium bg-white/20 rounded-full px-1.5 py-0.5 mt-1"
                 title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
               >
                 <Link2 size={9} /> Synced
@@ -239,20 +239,20 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
             {isStock ? (
               noPriceData ? (
                 <>
-                  <p className="font-semibold text-xl font-syne leading-tight text-white/70">—</p>
+                  <p className="font-semibold text-xl font-display leading-tight text-white/70">—</p>
                   <p className="text-xs text-white/70 mt-0.5">Price pending</p>
                 </>
               ) : (
                 <>
-                  <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                  <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span className="text-[11px] text-white/70 tabular-nums">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
+                    <span className="text-xs text-white/70 tabular-nums">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
                     {/* Direction is carried by the arrow icon + sign, not by a
                         green/red hue — a hue picked to signal gain/loss could
                         easily collide with (or vanish into) the tile's own
                         block color. */}
                     <span
-                      className="inline-flex items-center gap-0.5 text-[11px] font-semibold bg-white/20 rounded-full pl-1 pr-1.5 py-0.5"
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold bg-white/20 rounded-full pl-1 pr-1.5 py-0.5"
                       title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
                     >
                       {isGain ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
@@ -263,11 +263,11 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
               )
             ) : isTradable ? (
               <>
-                <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-                <span className="text-[11px] text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
+                <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                <span className="text-xs text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
               </>
             ) : (
-              <p className={`font-semibold text-xl font-syne tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+              <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
             )}
           </div>
         </div>

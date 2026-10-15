@@ -98,6 +98,19 @@ Seven pages in `src/pages/`:
 
 All data pages support pull-to-refresh on mobile via `usePullToRefresh` (`src/hooks/usePullToRefresh.ts`) + `PullToRefreshIndicator` (`src/components/PullToRefreshIndicator.tsx`).
 
+### Design System
+
+Tokens live in `src/index.css` (theme CSS variables, dark default + `html.light`) and `tailwind.config.ts`. Compose from these; don't introduce ad hoc values.
+
+- **Type scale**: Tailwind's defaults (12 14 16 18 20 24 30 36 48 60 72). No `text-[Npx]` / `text-[N rem]`; 12px (`text-xs`) is the floor. Display numerals/headings use `font-display` (Manrope via `--display-font`; formerly misnamed `font-syne`).
+- **Text color**: `text-foreground` / `text-muted-foreground` only. Never fade `muted-foreground` with an opacity suffix — `--muted-foreground`, `--gain` and `--loss` are tuned to >= 4.5:1 on background/card/muted in both themes, and opacity variants drop to ~2:1.
+- **Opacity steps** for surfaces/borders: `/10 /20 /40 /60 /80` (`bg-muted/40`, `border-border/60`).
+- **Radius roles**: `rounded-sm` small inputs/chips, `rounded-md` buttons/controls, `rounded-lg` cards/panels, `rounded-full` pills, `rounded-3xl` Landing panels. `rounded-xl`/`-2xl` are aliases of md/lg — don't use them.
+- **Shadows**: five elevations by z-position — `shadow-sm` (barely raised), `shadow`/`shadow-md` (dropdown), `shadow-lg` (popover), `shadow-xl` (dialog), `shadow-2xl` (modal); `shadow-card` is the in-flow card ring. No arbitrary `shadow-[...]`.
+- **Tracking**: `tracking-tight` for display, `tracking-wide`/`tracking-widest` for uppercase eyebrows.
+- **Landing page** (`src/pages/Landing.tsx`) is a fixed light marketing surface, not theme-aware: it uses the `landing-*` color ramps in `tailwind.config.ts` (ink / blue / slate / sand / green). Add shades there; no raw hex in the page (the Google logo's brand colors excepted).
+- Third-party/ported code keeps its own values: `src/components/fluid/`, `src/lib/fluid/`.
+
 ### Layouts
 
 `src/layouts/`:

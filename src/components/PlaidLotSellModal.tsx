@@ -80,7 +80,7 @@ export function PlaidLotSellModal({ sell, onClose, onChanged }: Props) {
         ) : (
           <div className="space-y-2">
             {sell.lots.map((lot) => (
-              <label key={lot.id} className="flex items-center gap-3 rounded-md border border-border/70 p-2 text-sm">
+              <label key={lot.id} className="flex items-center gap-3 rounded-md border border-border/60 p-2 text-sm">
                 <span className="flex-1">
                   <span className="block">{lot.purchase_date}</span>
                   <span className="block text-xs text-muted-foreground">

@@ -69,7 +69,7 @@ export default function BottomNav() {
         sitting on the pill inverts to `--primary-foreground` to stay legible
         on the solid color, same treatment as the desktop Sidebar's pill.
         Goo blur is kept small relative to the tab row: a large sigma would
-        smooth the pill's rounded ends into a shallower curve. There's only
+        smooth the pill's rounded-sm ends into a shallower curve. There's only
         ever one blob here (no neighbours to bridge into) — the liquid
         effect is purely the Move trail as the indicator slides tab to tab.
       */}
@@ -83,7 +83,7 @@ export default function BottomNav() {
           <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
               aria-hidden="true"
-              className="absolute left-0 rounded-2xl pointer-events-none"
+              className="absolute left-0 rounded-lg pointer-events-none"
               style={{
                 top: indicator.y,
                 width: indicator.w,

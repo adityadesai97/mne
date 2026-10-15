@@ -32,7 +32,7 @@ export function PlaidDisconnectDialog({ institutionName, assets, busy, onUnlink,
                 : `${count} asset${count !== 1 ? 's are' : ' is'} linked to this connection. Choose what happens to ${count !== 1 ? 'them' : 'it'}:`}
             </p>
             {count > 0 && (
-              <ul className="text-xs text-muted-foreground max-h-32 overflow-y-auto rounded-md border border-border/70 p-2 space-y-0.5">
+              <ul className="text-xs text-muted-foreground max-h-32 overflow-y-auto rounded-md border border-border/60 p-2 space-y-0.5">
                 {assets.map((a) => (
                   <li key={a.id}>{a.name}</li>
                 ))}
@@ -67,7 +67,7 @@ export function PlaidDisconnectDialog({ institutionName, assets, busy, onUnlink,
               </button>
             </div>
             {count > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Keeping them leaves the assets, lots and history exactly as they are; they just stop syncing. Deleting
                 removes each asset and all of its lots, and can't be undone.
               </p>

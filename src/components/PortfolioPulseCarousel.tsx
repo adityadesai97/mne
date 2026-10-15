@@ -223,7 +223,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
       {...revealUp(0.02)}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="md:col-span-6 bg-card shadow-card rounded-2xl p-5"
+      className="md:col-span-6 bg-card shadow-card rounded-lg p-5"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
@@ -267,7 +267,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
           >
             <p className="text-sm text-foreground leading-relaxed break-words">
               {c.type === 'move' && c.tag && (
-                <span className="mr-2 inline-block rounded-full bg-muted px-2 py-0.5 align-baseline text-[11px] font-medium text-muted-foreground">{c.tag}</span>
+                <span className="mr-2 inline-block rounded-full bg-muted px-2 py-0.5 align-baseline text-xs font-medium text-muted-foreground">{c.tag}</span>
               )}
               {c.type === 'move' ? c.teaser : c.event.text}{' '}
               <ArrowRight size={14} className="inline align-text-bottom text-muted-foreground" aria-hidden="true" />

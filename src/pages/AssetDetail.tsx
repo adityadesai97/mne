@@ -217,7 +217,7 @@ export default function AssetDetail() {
             <Skeleton className="h-4 w-1/3" />
           </div>
           <Skeleton className="h-10 w-1/2" />
-          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-md" />
         </main>
       </div>
     )
@@ -329,7 +329,7 @@ export default function AssetDetail() {
         {/* Hero card: title/type/ownership + value. AnimatePresence here is
             a single, standalone one (not nested inside another) — safe per
             the pattern used everywhere else in the app. */}
-        <motion.div {...revealUp(0)} className="bg-card shadow-card rounded-2xl p-5 relative overflow-hidden">
+        <motion.div {...revealUp(0)} className="bg-card shadow-card rounded-lg p-5 relative overflow-hidden">
           <div className="absolute inset-0 pointer-events-none">
             <div className={`absolute -top-8 left-1/4 w-64 h-32 rounded-full blur-3xl ${isStock ? (isGain ? 'bg-gain/[0.12]' : 'bg-loss/[0.12]') : 'bg-brand-subtle'}`} />
           </div>
@@ -351,7 +351,7 @@ export default function AssetDetail() {
                 <select
                   value={editValues.ownership}
                   onChange={e => setEditValues(v => ({ ...v, ownership: e.target.value }))}
-                  className="bg-card border border-border rounded px-2 py-1 text-sm"
+                  className="bg-card border border-border rounded-sm px-2 py-1 text-sm"
                 >
                   <option value="Individual">Individual</option>
                   <option value="Joint">Joint</option>
@@ -454,10 +454,10 @@ export default function AssetDetail() {
                 transition={{ duration: 0.15 }}
                 className="relative"
               >
-                <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-2 font-medium">
+                <p className="text-muted-foreground text-xs uppercase tracking-widest mb-2 font-medium">
                   {asset.location?.name} · {asset.asset_type}{isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}
                 </p>
-                <h2 className="font-syne text-2xl font-bold tracking-tight">{asset.name}</h2>
+                <h2 className="font-display text-2xl font-bold tracking-tight">{asset.name}</h2>
                 {isStock && asset.ticker && !noPriceData && (
                   <p className="text-sm mt-1 flex items-center gap-1.5">
                     <span className="text-muted-foreground">{asset.ticker.symbol}</span>
@@ -493,7 +493,7 @@ export default function AssetDetail() {
                     </>
                   ) : (
                     <>
-                      <p className="text-3xl font-bold tabular-nums font-syne">
+                      <p className="text-3xl font-bold tabular-nums font-display">
                         <span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>
                         {isStock && (
                           <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
@@ -517,9 +517,9 @@ export default function AssetDetail() {
 
         {/* Stock activity */}
         {isStock && hasStockActivity && (
-          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-2xl p-5">
+          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-lg p-5">
             <div className="mb-3">
-              <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">Stock Activity</p>
+              <p className="text-muted-foreground text-xs uppercase tracking-widest font-medium">Stock Activity</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
                 {stockGrantCount > 0 && (
@@ -540,9 +540,9 @@ export default function AssetDetail() {
 
         {/* Fixed Income lots (Bond/T-Bill) — units bought over time, mirroring stock tax lots */}
         {isTradable && (
-          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-2xl p-5">
+          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-lg p-5">
             <div className="mb-3">
-              <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] font-medium">Lots</p>
+              <p className="text-muted-foreground text-xs uppercase tracking-widest font-medium">Lots</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {fixedIncomeLots.length} lot{fixedIncomeLots.length === 1 ? '' : 's'} · {fmtShares(lotUnits)} units total
               </p>
@@ -562,8 +562,8 @@ export default function AssetDetail() {
             gain, so it lives in its own card rather than next to the hero
             value the way a stock's unrealized gain does. */}
         {expectedReturn && (
-          <motion.div {...revealUp(0.08)} className="bg-card shadow-card rounded-2xl p-5">
-            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">Expected Return to Maturity</p>
+          <motion.div {...revealUp(0.08)} className="bg-card shadow-card rounded-lg p-5">
+            <p className="text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">Expected Return to Maturity</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               <Metric label="Cost basis" value={fmt(expectedReturn.costBasis)} hidden={hideValues} />
               <Metric label="Face value at maturity" value={fmt(expectedReturn.faceValueTotal)} hidden={hideValues} />
@@ -591,8 +591,8 @@ export default function AssetDetail() {
 
         {/* Notes (read mode only) */}
         {!editing && asset.notes && (
-          <motion.div {...revealUp(0.1)} className="bg-card shadow-card rounded-2xl p-5">
-            <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-2 font-medium">Notes</p>
+          <motion.div {...revealUp(0.1)} className="bg-card shadow-card rounded-lg p-5">
+            <p className="text-muted-foreground text-xs uppercase tracking-widest mb-2 font-medium">Notes</p>
             <p className="text-foreground/90 text-sm whitespace-pre-wrap">{asset.notes}</p>
           </motion.div>
         )}
@@ -613,7 +613,7 @@ function fmtShares(n: number, maximumFractionDigits = 2) {
 function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
   return (
     <div>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
     </div>
   )

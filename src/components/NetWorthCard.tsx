@@ -33,8 +33,8 @@ export function NetWorthCard({ value, gainLoss, gainLossPercent }: Props) {
       <div className="absolute inset-0 flex items-start justify-center pt-8 pointer-events-none">
         <div className="w-64 h-32 bg-brand-subtle rounded-full blur-3xl" />
       </div>
-      <p className="text-muted-foreground text-[10px] uppercase tracking-[0.15em] mb-3 font-medium">Net Worth</p>
-      <p ref={valueRef} className="text-5xl font-bold text-foreground tabular-nums font-syne">
+      <p className="text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">Net Worth</p>
+      <p ref={valueRef} className="text-5xl font-bold text-foreground tabular-nums font-display">
         {formatCurrency(value)}
       </p>
       <div className="flex items-center gap-2 mt-2">

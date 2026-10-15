@@ -105,7 +105,7 @@ function OptionDropdown<T extends string>({
             transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
             role="listbox"
             aria-label={ariaLabel}
-            className="absolute right-0 top-full mt-1.5 z-20 min-w-[9.5rem] rounded-xl border border-border bg-card shadow-lg p-1 origin-top-right"
+            className="absolute right-0 top-full mt-1.5 z-20 min-w-[9.5rem] rounded-md border border-border bg-card shadow-lg p-1 origin-top-right"
           >
             {options.map(({ v, label, icon: Icon }) => {
               const isActive = v === value
@@ -140,7 +140,7 @@ function PortfolioSkeleton() {
         <Skeleton className="h-7 w-32 rounded-lg" />
       </div>
       <div className="px-4 mb-3">
-        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-10 w-full rounded-md" />
       </div>
       <div className="flex gap-2 px-4 mb-3">
         <Skeleton className="h-7 w-14 rounded-full" />
@@ -149,7 +149,7 @@ function PortfolioSkeleton() {
       </div>
       <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-[3/4] sm:aspect-square w-full rounded-2xl" />
+          <Skeleton key={i} className="aspect-[3/4] sm:aspect-square w-full rounded-lg" />
         ))}
       </div>
     </div>
@@ -275,12 +275,12 @@ export default function Portfolio() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-          className="mt-4 rounded-2xl border border-border bg-card p-6 text-center"
+          className="mt-4 rounded-lg border border-border bg-card p-6 text-center"
         >
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
             <PackageOpen size={20} className="text-primary" />
           </div>
-          <p className="font-syne text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
+          <p className="font-display text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Portfolio data appears after your first asset is added.
           </p>
@@ -297,7 +297,7 @@ export default function Portfolio() {
         <div>
           <h1 className="text-xl font-bold">Portfolio</h1>
           {formatRelativeTime(pricesRefreshedAt) && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Prices {formatRelativeTime(pricesRefreshedAt)}
             </p>
           )}
@@ -314,7 +314,7 @@ export default function Portfolio() {
           onChange={setSearch}
           placeholder="Search positions…"
           icon={<Search size={15} className="absolute left-3 top-1/2 z-[4] -translate-y-1/2 text-muted-foreground pointer-events-none" />}
-          wrapperClassName="w-full bg-muted/70 rounded-xl border border-transparent focus-within:border-primary/40 focus-within:bg-card transition-colors focus-within:ring-1 focus-within:ring-primary/40"
+          wrapperClassName="w-full bg-muted/60 rounded-md border border-transparent focus-within:border-primary/40 focus-within:bg-card transition-colors focus-within:ring-1 focus-within:ring-primary/40"
           fieldClassName="pl-9 pr-9 py-2.5 text-sm"
         />
       </div>
@@ -376,7 +376,7 @@ export default function Portfolio() {
           animate={{ opacity: 1 }}
           className="flex flex-col items-center mt-16 px-4"
         >
-          <SearchX size={22} className="text-muted-foreground/50 mb-3" />
+          <SearchX size={22} className="text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-center text-sm">
             No results match your search.
           </p>
