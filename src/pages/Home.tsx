@@ -399,7 +399,7 @@ export default function Home() {
               trend alone doesn't read as a dollar figure); NetWorthChart turns
               the scrub tooltip, which prints exact values, off. */}
           <div className="mne-chart-wrap" style={{ marginTop: 6 }}>
-            <div className="mne-chart-range">
+            <div className="mne-chart-range max-sm:hidden">
               <SegmentedControl
                 label="Chart range"
                 value={homeChartRange}
