@@ -1,84 +1,32 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { LayoutDashboard, BarChart2, PieChart, Star, Settings } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
+import { Home, LayoutGrid, LineChart, Eye, Settings } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 
-const nav = [
-  { to: '/', icon: LayoutDashboard, label: 'Home' },
-  { to: '/portfolio', icon: BarChart2, label: 'Portfolio', requiresAssets: true },
-  { to: '/charts', icon: PieChart, label: 'Charts', requiresAssets: true },
-  { to: '/watchlist', icon: Star, label: 'Watchlist' },
+export const NAV_ITEMS = [
+  { to: '/', icon: Home, label: 'Home' },
+  { to: '/portfolio', icon: LayoutGrid, label: 'Portfolio', requiresAssets: true },
+  { to: '/charts', icon: LineChart, label: 'Charts', requiresAssets: true },
+  { to: '/watchlist', icon: Eye, label: 'Watchlist' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-function isNavActive(to: string, pathname: string) {
-  return to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`)
-}
-
+// Desktop navigation: the design system's 240px labelled sidebar (wordmark + vertical nav).
+// NavLink sets aria-current="page" on the active item, which .mne-nav styles.
 export default function Sidebar() {
   const { hasAssets } = useHasAssets()
-  const visibleNav = nav.filter((item) => !item.requiresAssets || hasAssets)
-  const { pathname } = useLocation()
-  const activeIndex = visibleNav.findIndex((t) => isNavActive(t.to, pathname))
-
-  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([])
-  const [indicator, setIndicator] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-
-  const measure = () => {
-    const el = itemRefs.current[activeIndex]
-    if (el) setIndicator({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight })
-  }
-
-  useLayoutEffect(measure, [activeIndex, visibleNav.length])
-
-  useEffect(() => {
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex])
+  const items = NAV_ITEMS.filter(item => !item.requiresAssets || hasAssets)
 
   return (
-    <nav className="hidden md:flex flex-col items-center w-16 bg-card border-r border-white/[0.05] fixed left-0 top-0 bottom-0 z-40 py-5">
-      {/* Logo mark */}
-      <div className="mb-6 w-10 h-10 flex-shrink-0 flex items-center justify-center">
-        <img src="/logo.png" alt="mne" className="w-full h-full object-cover logo-adaptive" />
-      </div>
-
-      {/* Active pill slides between items on the standard 180ms curve (no spring). */}
-      <div className="relative flex flex-col gap-1 flex-1 w-full px-2.5">
-        {indicator && (
-            <div
-              aria-hidden="true"
-              className="absolute top-0 left-0 rounded-md bg-muted pointer-events-none"
-              style={{
-                width: indicator.w,
-                height: indicator.h,
-                transform: `translate(${indicator.x}px, ${indicator.y}px)`,
-                transition: 'transform var(--dur-standard) var(--ease-standard)',
-              }}
-            />
-
-        )}
-        {visibleNav.map(({ to, icon: Icon, label }, i) => (
-          <NavLink
-            key={to}
-            ref={(el) => { itemRefs.current[i] = el }}
-            to={to}
-            end={to === '/'}
-            title={label}
-            className={({ isActive }) =>
-              `relative flex items-center justify-center w-full aspect-square rounded-md transition-colors duration-150 ${
-                isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-              }`
-            }
-          >
-            <motion.span whileTap={{ scale: 0.96 }} className="flex items-center justify-center">
-              <Icon size={20} strokeWidth={1.5} />
-            </motion.span>
+    <aside className="mne-side hidden md:flex fixed left-0 top-0 bottom-0 z-40 w-60 bg-background">
+      <div className="mne-brand">mne</div>
+      <nav className="mne-nav is-side" aria-label="Main">
+        {items.map(({ to, icon: Icon, label }) => (
+          <NavLink key={to} to={to} end={to === '/'}>
+            <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+            <span>{label}</span>
           </NavLink>
         ))}
-      </div>
-    </nav>
+      </nav>
+    </aside>
   )
 }

@@ -277,3 +277,40 @@ input[type="number"] { -moz-appearance: textfield; }
   }
   .animate-spin { animation-duration: 900ms !important; animation-iteration-count: infinite !important; }
 }
+
+/* ---- Design system component tokens (--mne-*), consumed by src/styles/mne.css ----
+   Aliases of the theme variables above so light/dark switching keeps working. */
+:root {
+  --mne-surface-100: hsl(var(--background));
+  --mne-surface-200: hsl(var(--card));
+  --mne-surface-300: hsl(var(--muted));
+  --mne-ink: hsl(var(--foreground));
+  --mne-ink-muted: hsl(var(--muted-foreground));
+  --mne-line: hsl(var(--border));
+  --mne-line-strong: hsl(var(--border-strong));
+  --mne-accent: hsl(var(--primary));
+  --mne-on-accent: hsl(var(--primary-foreground));
+  --mne-amber: hsl(var(--amber));
+  --mne-on-amber: hsl(var(--amber-foreground));
+  --mne-gain: hsl(var(--gain));
+  --mne-loss: hsl(var(--loss));
+  --mne-focus: hsl(var(--ring));
+  --mne-chart-1: hsl(var(--chart-1));
+  --mne-chart-2: hsl(var(--chart-2));
+  --mne-chart-3: hsl(var(--chart-3));
+  --mne-chart-4: hsl(var(--chart-4));
+  --mne-chart-5: hsl(var(--chart-5));
+  --mne-radius-sm: 10px;
+  --mne-radius-md: 14px;
+  --mne-radius-lg: 24px;
+  --mne-radius-pill: 999px;
+  --mne-space-1: 4px;
+  --mne-space-2: 8px;
+  --mne-space-3: 12px;
+  --mne-space-4: 16px;
+  --mne-space-6: 24px;
+  --mne-space-8: 32px;
+  --mne-shadow-card: var(--shadow-card);
+  --mne-font-sans: var(--body-font);
+  --mne-font-serif: var(--display-font);
+}
