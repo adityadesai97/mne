@@ -19,24 +19,68 @@
   border-radius: var(--mne-radius-sm);
 }
 
-/* Command bar: the panel is .mne-cmd (flat, no stacked rows), content inside
-   keeps the design's 12px rhythm. */
-.mne-cmd.cmdk-panel { padding: 0; gap: 0; box-shadow: var(--mne-shadow-card); }
-.cmdk-section { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.cmdk-section + .cmdk-section, .cmdk-foot { border-top: 1px solid var(--mne-line); }
-.cmdk-foot { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+/* Command bar. Two containers around one conversation: a docked right panel beside the page on wide
+   screens (.cmdk-dock, >= 1024px) and a bottom sheet with Half/Full detents below that (.cmdk-sheet).
+   Both are .mne-cmd surfaces; content keeps the design's 12px rhythm. Standard moves 180ms, layout moves 430ms. */
+.mne-cmd.cmdk-panel { padding: 0; gap: 0; min-width: 0; }
+.cmdk-dock { position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; max-width: 100vw; border-radius: 0; border-width: 0 0 0 1px; overflow: hidden; }
+.cmdk-sheet-wrap { position: fixed; left: 0; right: 0; top: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
+.cmdk-sheet { pointer-events: auto; width: 100%; max-width: 640px; height: 58%; border-radius: var(--mne-radius-lg) var(--mne-radius-lg) 0 0; border-bottom-width: 0; overflow: hidden; padding-bottom: env(safe-area-inset-bottom, 0px); transition: height var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.cmdk-sheet[data-detent="full"] { height: calc(100% - env(safe-area-inset-top, 0px) - 8px); }
+.cmdk-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(27, 22, 18, .4); }
+
+.cmdk-head { flex: none; padding: 6px 12px 0; }
+.cmdk-grabber { display: block; position: relative; width: 64px; height: 20px; margin: 0 auto; border: 0; background: transparent; cursor: pointer; border-radius: var(--mne-radius-pill); }
+.cmdk-grabber::after { content: ''; position: absolute; left: 50%; top: 8px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--mne-line-strong); }
+.cmdk-grabber:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.cmdk-head-row { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 4px 0 8px 4px; }
+.cmdk-head-icon { flex: none; color: var(--mne-accent); }
+.cmdk-heading { margin: 0; font: 500 20px/24px var(--mne-font-serif); letter-spacing: -.01em; color: var(--mne-ink); white-space: nowrap; }
+.cmdk-context { font-size: 12px; line-height: 16px; color: var(--mne-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cmdk-head .mne-seg button { padding: 4px 12px; font-size: 12px; line-height: 16px; }
+@media (max-width: 520px) { .cmdk-context { display: none; } }
+
+.cmdk-thread { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 14px; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; }
+.cmdk-thread > * { flex: none; min-width: 0; }
+.cmdk-empty { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.cmdk-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmdk-suggest-chip { font: 500 13px/18px var(--mne-font-sans); color: var(--mne-ink); cursor: pointer; transition: background var(--mne-dur, 180ms) linear, border-color var(--mne-dur, 180ms) linear; text-align: left; }
+.cmdk-suggest-chip:hover { background: var(--mne-surface-300); border-color: var(--mne-accent); }
+.cmdk-suggest-chip:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+
+.cmdk-card { border: 1px solid var(--mne-line); border-radius: var(--mne-radius-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cmdk-foot { flex: none; border-top: 1px solid var(--mne-line); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.cmdk-pin:empty { display: none; }
+.cmdk-actions { display: flex; flex-direction: column; gap: 8px; }
+.cmdk-actions-row { display: flex; gap: 8px; }
+/* Thumb-height confirm bar: the pending write is always one tap away, above the composer. */
+.cmdk-actions-row .mne-btn { flex: 1; min-height: 44px; font-size: 14px; line-height: 20px; }
+.cmdk-sheet .cmdk-actions-row .mne-btn { min-height: 48px; }
+.cmdk-send { flex: none; display: grid; place-content: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--mne-accent); color: var(--mne-on-accent); cursor: pointer; transition: opacity var(--mne-dur, 180ms) linear, transform var(--mne-dur, 180ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.cmdk-send:disabled { opacity: .4; cursor: default; }
+.cmdk-send:not(:disabled):active { transform: scale(.96); }
+.cmdk-send:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+
+/* The docked panel pushes the page over by its own width instead of covering it. */
+@media (min-width: 768px) {
+  .mne-with-side.mne-with-dock { transition: margin-left var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)), margin-right var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mne-with-side.mne-with-dock, .cmdk-sheet { transition: none; }
+}
+
 .cmdk-ibtn { flex: none; display: grid; place-content: center; width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--mne-ink-muted); cursor: pointer; transition: background var(--mne-dur) linear, color var(--mne-dur) linear; }
 .cmdk-ibtn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
 .cmdk-ibtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
 .cmdk-ibtn svg { width: 16px; height: 16px; }
 /* Pill field that hosts the textarea (design: pill .mne-input in .mne-cmd-row). */
-.cmdk-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-pill); padding: 4px 6px 4px 16px; transition: border-color var(--mne-dur) linear; }
+.cmdk-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-pill); padding: 4px 4px 4px 16px; transition: border-color var(--mne-dur) linear; }
 .cmdk-field:hover { border-color: var(--mne-ink-muted); }
 .cmdk-field:focus-within { border-color: var(--mne-accent); }
 .cmdk-field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; resize: none; color: var(--mne-ink); padding: 6px 0; font: 400 15px/22px var(--mne-font-sans); max-height: 144px; }
 .cmdk-field textarea::placeholder { color: var(--mne-ink-muted); }
 @media (pointer: coarse) { .cmdk-field textarea { font-size: 16px; } }
-.cmdk-bubble-user { align-self: flex-end; max-width: 90%; background: var(--mne-surface-300); border-radius: var(--mne-radius-md); padding: 8px 14px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmdk-bubble-user { align-self: flex-end; max-width: 90%; background: var(--mne-surface-300); border-radius: var(--mne-radius-md); padding: 8px 14px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; margin-left: auto; width: fit-content; }
 .cmdk-reply { color: var(--mne-ink-muted); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .cmdk-reply .cmdk-md-strong, .cmdk-reply strong { color: var(--mne-ink); }
 .cmdk-attach { display: flex; align-items: center; gap: 6px; color: var(--mne-ink-muted); font: 400 12px/16px var(--mne-font-sans); }
@@ -47,5 +91,5 @@
 .cmdk-title { font: 500 12px/16px var(--mne-font-sans); letter-spacing: .08em; text-transform: uppercase; color: var(--mne-ink-muted); }
 .cmdk-feedback-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--mne-ink-muted); font: 500 12px/16px var(--mne-font-sans); transition: color var(--mne-dur) linear; }
 .cmdk-feedback-link:hover { color: var(--mne-ink); }
-.cmdk-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(27, 22, 18, .5); }
+.cmdk-feedback-link:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
 .mne-thumb { padding: 0; }

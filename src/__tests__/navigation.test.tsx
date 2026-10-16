@@ -170,7 +170,8 @@ test('clicking through every nav tab does not crash the app', async () => {
 
   const tabOrder = ['Portfolio', 'Charts', 'Watchlist', 'Settings', 'Home']
   for (const label of tabOrder) {
-    const links = screen.getAllByText(label)
+    // Settings has no text label (icon-only in the sidebar and header), so find it by name.
+    const links = label === 'Settings' ? screen.getAllByRole('link', { name: 'Settings' }) : screen.getAllByText(label)
     await user.click(links[0])
     // Give framer-motion transitions + effects a moment to settle, and make
     // sure the app didn't unmount to a blank document (React's default

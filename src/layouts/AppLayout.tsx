@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles } from 'lucide-react'
-import { BorderBeam } from 'border-beam'
 import BottomNav from './BottomNav'
+import TopBar from './TopBar'
 import Sidebar, { useSidebarCollapsed, sidebarWidthPx } from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
 import { AppAlertsHost } from '@/components/AppAlertsHost'
-import { useAppTheme } from '@/hooks/useAppTheme'
+import { useDockedViewport, DOCK_WIDTH_PX } from '@/hooks/useDockedViewport'
 import { getAllAssets } from '@/lib/db/assets'
 import { computeTotalNetWorth } from '@/lib/portfolio'
 import { recordDailySnapshot, backfillHistoricalSnapshots } from '@/lib/db/snapshots'
@@ -56,69 +54,17 @@ function readSafeAreaInsets() {
   return { top, bottom }
 }
 
-function CmdKFab({ onOpen }: { onOpen: () => void }) {
-  const theme = useAppTheme()
-  return (
-    // Fixed positioning lives on this wrapper, not on the BorderBeam div below
-    // it: BorderBeam's own stylesheet sets `position: relative` on the
-    // element it renders, which would fight a `fixed` class placed directly
-    // on it. The button stays the `layoutId="cmdk"` shared-transition anchor
-    // — it's still the same DOM node CommandBar's panel morphs from/to, just
-    // now normally in-flow inside the beam's box instead of positioned itself.
-    //
-    // translateZ(0) forces this onto its own GPU compositor layer — without
-    // it, iOS Safari can fail to keep a `position: fixed` element pinned
-    // during an active touch-scroll (it visibly trails/scrolls with the
-    // page and only snaps back to the correct spot once the gesture ends).
-    // That's a distinct bug from the overflow-x-hidden containing-block
-    // issue fixed elsewhere in this file — promoting to a layer is the
-    // standard mitigation for it.
-    //
-    // The bottom offset reads env(safe-area-inset-bottom) directly, not the
-    // JS-measured --app-safe-bottom var: on iOS Safari that inset isn't a
-    // device constant, it actually tracks the bottom toolbar's own
-    // show/hide state (0 while the toolbar covers the home-indicator area,
-    // the full inset once it auto-hides on scroll and exposes it). The
-    // browser updates env() in the same paint as its native toolbar
-    // animation; round-tripping that same value through a debounced
-    // React-state probe (necessarily a tick or more behind) is exactly
-    // what made this element visibly lag/misplace itself while the toolbar
-    // was animating — i.e. right at the top/bottom of a scroll gesture.
-    <div
-      className="fixed bottom-[var(--fab-bottom)] right-4 md:bottom-6 md:right-6 z-40"
-      style={{
-        ['--fab-bottom' as string]: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
-        transform: 'translateZ(0)',
-      }}
-    >
-      {/*
-        `bg-card` (the button's original fill) sits only ~3 lightness points
-        from `bg-background` in both themes — with the rotating "sm" beam
-        dim at any given instant everywhere except the one point it's
-        currently passing through, the button could fall back to nearly
-        that fill alone and read as blending into the page. `bg-secondary`
-        has roughly double the contrast gap in both themes, plus a
-        persistent shadow for elevation that doesn't depend on the beam's
-        rotation phase at all — brightness/strength raise the beam itself
-        on top of that baseline, rather than being the only thing carrying
-        the button's visibility.
-      */}
-      <BorderBeam size="sm" colorVariant="ocean" theme={theme} brightness={1.6} strength={1}>
-        <motion.button
-          layoutId="cmdk"
-          onClick={onOpen}
-          className="bg-secondary text-muted-foreground text-xs px-3.5 py-2 md:px-3 md:py-1.5 rounded-full hover:text-foreground transition-colors shadow-lg"
-          aria-label="Open command bar"
-          style={{ borderRadius: 999 }}
-        >
-          <span className="inline-flex items-center md:hidden" aria-hidden="true">
-            <Sparkles size={16} />
-          </span>
-          <span className="hidden md:inline">⌘K</span>
-        </motion.button>
-      </BorderBeam>
-    </div>
-  )
+const CMDK_PANEL_ID = 'cmdk-panel'
+
+/** What the command bar's header calls the page it is sitting beside. */
+function pageContextLabel(pathname: string): string {
+  if (pathname === '/') return 'Home'
+  if (/^\/portfolio\/.+/.test(pathname)) return 'Asset detail'
+  if (pathname.startsWith('/portfolio')) return 'Portfolio'
+  if (pathname.startsWith('/charts')) return 'Charts'
+  if (pathname.startsWith('/watchlist')) return 'Watchlist'
+  if (pathname.startsWith('/settings')) return 'Settings'
+  return ''
 }
 
 export default function AppLayout() {
@@ -133,6 +79,9 @@ export default function AppLayout() {
   const [plaidPendingCount, setPlaidPendingCount] = useState(0)
   const [plaidBannerDismissed, setPlaidBannerDismissed] = useState(false)
   const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
+  // Wide screens dock the command bar beside the page, which then reflows by the panel's width.
+  const docked = useDockedViewport()
+  const dockOffset = cmdOpen && docked ? DOCK_WIDTH_PX : 0
 
   const refreshPlaidPendingCount = async () => {
     try {
@@ -175,16 +124,29 @@ export default function AppLayout() {
     })
   }, [])
 
+  // Header pill / mobile centre action: open the bar, or if it is already open but focus is out on the
+  // page, bring focus back to its input.
+  const focusCommandBarInput = useCallback(() => {
+    document.querySelector<HTMLTextAreaElement>(`#${CMDK_PANEL_ID} textarea`)?.focus()
+  }, [])
+  const askFromTrigger = useCallback(() => {
+    if (cmdOpen) focusCommandBarInput()
+    else setCmdOpen(true)
+  }, [cmdOpen, focusCommandBarInput])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        setCmdOpen(o => !o)
+        // Closed: open. Open with focus on the page: focus the input. Open with focus inside: close.
+        const panel = document.getElementById(CMDK_PANEL_ID)
+        if (cmdOpen && panel && !panel.contains(document.activeElement)) focusCommandBarInput()
+        else setCmdOpen(!cmdOpen)
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [])
+  }, [cmdOpen, focusCommandBarInput])
 
   // One-time move of pre-proxy API keys (Claude, Finnhub, CoinGecko) from the browser to the server.
   useEffect(() => {
@@ -235,15 +197,15 @@ export default function AppLayout() {
     const applyInsets = () => {
       const next = readSafeAreaInsets()
       // Bail out on a no-op recalculation so an unchanged value doesn't
-      // still trigger a re-render (and a CSS var rewrite on the fixed FAB
-      // and BottomNav) for nothing.
+      // still trigger a re-render (and a CSS var rewrite on a fixed element
+      // or BottomNav) for nothing.
       setSafeInsets(prev => (prev.top === next.top && prev.bottom === next.bottom ? prev : next))
     }
 
     // Mobile Safari/Chrome fire visualViewport 'resize'/'scroll' repeatedly
     // while their dynamic toolbar (address bar) animates open/closed during
     // a scroll gesture — recalculating (and re-rendering) on every one of
-    // those ticks was what made the fixed CmdKFab visibly jump mid-scroll.
+    // those ticks was what made fixed elements visibly jump mid-scroll.
     // Debouncing collapses a whole gesture's worth of events into one
     // recalculation after it settles, keeping the inset correction without
     // the mid-scroll churn.
@@ -292,13 +254,16 @@ export default function AppLayout() {
 
       {/* Main content — offset by sidebar on desktop */}
       <div
-        className="flex-1 mne-with-side min-h-screen flex flex-col overflow-x-hidden"
+        className="flex-1 mne-with-side mne-with-dock min-w-0 min-h-screen flex flex-col overflow-x-clip"
         style={{
           minHeight: '100dvh',
-          paddingTop: 'var(--app-safe-top, 0px)',
+          // The docked command bar pushes the page over instead of covering it (430ms layout move).
+          marginRight: dockOffset,
+          // The header carries the safe-area top inset itself, so it can stick to the very top.
           paddingBottom: 'calc(4rem + var(--app-safe-bottom, 0px))',
         }}
       >
+        <TopBar onAsk={askFromTrigger} open={cmdOpen} controlsId={CMDK_PANEL_ID} />
         {/*
           Plain CSS animation, not framer-motion AnimatePresence: this
           wrapper sits around every single page in the app (it's the one
@@ -324,7 +289,7 @@ export default function AppLayout() {
         `overflow` set to anything but `visible` as the containing block for
         `position: fixed` descendants instead of the viewport — so a fixed
         element nested inside that wrapper scrolls along with its content
-        rather than staying pinned. That's what made the command bar FAB
+        rather than staying pinned. That's what made the old floating command bar button
         (and would equally have hit BottomNav, CommandBar's own panel, the
         capital-gains banner, and toast alerts) appear to scroll with the
         page on mobile.
@@ -339,15 +304,16 @@ export default function AppLayout() {
         onExplanationRequestHandled={() => setPendingExplanationSlot(null)}
         prefillQuery={pendingPrefill}
         onPrefillHandled={() => setPendingPrefill(null)}
+        contextLabel={pageContextLabel(location.pathname)}
+        panelId={CMDK_PANEL_ID}
       />
       {cgAlert && (
         <div
           className="fixed top-0 left-0 right-0 mne-side-offset z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center"
-          // Native env(), not the JS-measured --app-safe-top var — see the
-          // CmdKFab comment above for why: the browser updates env() in
-          // sync with its own toolbar animation, a debounced React-state
-          // round-trip can't.
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
+          // Native env(), not the JS-measured --app-safe-top var: the browser
+          // updates env() in sync with its own toolbar animation, a debounced
+          // React-state round-trip can't.
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)', right: dockOffset, transition: 'right 430ms cubic-bezier(.4, 0, .2, 1)' }}
         >
           <span>{cgAlert}</span>
           <button onClick={() => setCgAlert(null)} className="ml-4 text-primary-foreground/70 hover:text-primary-foreground text-lg leading-none">×</button>
@@ -363,7 +329,7 @@ export default function AppLayout() {
       {plaidPendingCount > 0 && !plaidBannerDismissed && (
         <div
           className={`fixed left-0 right-0 mne-side-offset z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center ${cgAlert ? 'top-9' : 'top-0'}`}
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)', right: dockOffset, transition: 'right 430ms cubic-bezier(.4, 0, .2, 1)' }}
         >
           <span>
             {plaidPendingCount} synced position{plaidPendingCount !== 1 ? 's' : ''} to review
@@ -386,10 +352,8 @@ export default function AppLayout() {
           void refreshPlaidPendingCount()
         }}
       />
-      <AnimatePresence>
-        {!cmdOpen && <CmdKFab onOpen={() => setCmdOpen(true)} />}
-      </AnimatePresence>
-      {!cmdOpen && <BottomNav />}
+      {/* On phones the sheet covers the tab bar while it is open. */}
+      {!(cmdOpen && !docked) && <BottomNav onAsk={askFromTrigger} />}
     </div>
   )
 }
