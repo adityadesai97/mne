@@ -80,7 +80,7 @@ export default function Landing({ onSignIn, loading, error }: Props) {
 
           <p className="landing-ety">
             <b>Origin</b>
-            Money, with the vowels taken out and nothing else lost.
+            Money, with the vowels taken out.
           </p>
 
           <a className="landing-quiet" href="https://github.com/adityadesai97/mne" target="_blank" rel="noopener noreferrer">
