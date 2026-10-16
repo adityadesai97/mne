@@ -19,6 +19,7 @@ import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
 import '@/styles/home.css'
+import { Masonry, MasonryItem } from '@/components/mne/Masonry'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -303,22 +304,22 @@ export default function Home() {
     return (
       <div className="mne-main">
         <PageHead title={heroGreeting} />
-        <div className="mne-bento is-home" aria-busy="true" aria-label="Loading">
-          <section className="mne-card is-hero s4" style={{ display: 'grid', gap: 12 }}>
+        <Masonry>
+          <MasonryItem span={2}><section className="mne-card is-hero" style={{ display: 'grid', gap: 12 }}>
             <div className="mne-skel is-pill" style={{ height: 12, width: 90 }} />
             <div className="mne-skel" style={{ height: 52, width: '60%' }} />
             <div className="mne-skel is-pill" style={{ height: 26, width: 130 }} />
             <div className="mne-skel" style={{ height: 90 }} />
-          </section>
-          <section className="mne-card s2" style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+          </section></MasonryItem>
+          <section className="mne-card" style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
             <div className="mne-skel is-pill" style={{ height: 12, width: 80 }} />
             <div className="mne-skel is-pill" style={{ height: 14 }} />
             <div className="mne-skel" style={{ height: 20 }} />
             <div className="mne-skel" style={{ height: 20 }} />
           </section>
-          <section className="mne-card s3"><div className="mne-skel" style={{ height: 80 }} /></section>
-          <section className="mne-card s3"><div className="mne-skel" style={{ height: 80 }} /></section>
-        </div>
+          <section className="mne-card"><div className="mne-skel" style={{ height: 80 }} /></section>
+          <section className="mne-card"><div className="mne-skel" style={{ height: 80 }} /></section>
+        </Masonry>
       </div>
     )
   }
@@ -341,7 +342,6 @@ export default function Home() {
   // Rows below the hero/allocation/pulse rows pair up in halves; without any
   // daily movers the remaining three cards share the row in thirds instead.
   const hasMovers = dailyMovers.length > 0
-  const rest = hasMovers ? 's3' : 's2'
   const rangeLabel = homeChartRange === 'ALL' ? 'all time' : homeChartRange
 
   return (
@@ -360,10 +360,11 @@ export default function Home() {
         </button>
       </PageHead>
 
-      <div className="mne-bento is-home">
+      <Masonry>
 
         {/* NET WORTH HERO */}
-        <section className="mne-card is-hero s4">
+        <MasonryItem span={2}>
+        <section className="mne-card is-hero">
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <CardEyebrow icon={Wallet}>Net worth</CardEyebrow>
             <span className="mne-live"><i />live</span>
@@ -427,9 +428,10 @@ export default function Home() {
             </div>
           )}
         </section>
+        </MasonryItem>
 
         {/* ALLOCATION */}
-        <section className="mne-card s2">
+        <section className="mne-card">
           <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
           {typeEntries.length === 0 ? (
             <p className="mne-muted" style={{ marginTop: 14 }}>No assets yet</p>
@@ -455,11 +457,11 @@ export default function Home() {
         </section>
 
         {/* PORTFOLIO PULSE (renders nothing when there's no relevant insight) */}
-        <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />
+        <MasonryItem span="all"><PortfolioPulseCarousel assets={assets} netWorth={totalValue} /></MasonryItem>
 
         {/* DAILY MOVERS */}
         {hasMovers && (
-          <section className="mne-card s3">
+          <section className="mne-card">
             <div className="flex items-center justify-between gap-2">
               <CardEyebrow icon={Activity}>Daily movers</CardEyebrow>
               <SegmentedControl
@@ -490,7 +492,7 @@ export default function Home() {
         )}
 
         {/* LARGEST HOLDING */}
-        <section className={`mne-card ${rest}`}>
+        <section className="mne-card">
           <CardEyebrow icon={Crown} accent>Largest holding</CardEyebrow>
           {largestAsset ? (
             <Link to={`/portfolio/${largestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -507,7 +509,7 @@ export default function Home() {
         </section>
 
         {/* P&L */}
-        <section className={`mne-card ${rest}`}>
+        <section className="mne-card">
           <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&amp;L</CardEyebrow>
           <Stat
             className="mt-2.5"
@@ -518,7 +520,7 @@ export default function Home() {
         </section>
 
         {/* BEST PERFORMER */}
-        <section className={`mne-card ${rest}`}>
+        <section className="mne-card">
           <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best performer</CardEyebrow>
           {bestAsset ? (
             <Link to={`/portfolio/${bestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -533,7 +535,7 @@ export default function Home() {
           )}
         </section>
 
-      </div>
+      </Masonry>
     </div>
     </>
   )
