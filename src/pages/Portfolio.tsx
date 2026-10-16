@@ -209,7 +209,7 @@ export default function Portfolio() {
       <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
       <PageBody>
         <PageHead title="Portfolio">
-          {updated && <span className="mne-live"><i aria-hidden="true" />Prices {updated}</span>}
+          {updated && <span className="mne-live max-sm:!hidden"><i aria-hidden="true" />Prices {updated}</span>}
         </PageHead>
 
         <div className="pf-toolbar">

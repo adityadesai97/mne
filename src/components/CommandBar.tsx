@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useId, Fragment, useCallback } from 'react'
 import '@/styles/cmdbar.css'
-import { X, Paperclip, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { X, Paperclip, MessageSquare, Sparkles, SquarePen, ArrowUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
@@ -10,6 +11,8 @@ import { saveConversation, getConversation, incrementConversationUsage, type Con
 import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
 import { LLM_MODEL } from '@/lib/llm'
+import { useDockedViewport, DOCK_WIDTH_PX } from '@/hooks/useDockedViewport'
+import { SegmentedControl } from '@/components/mne'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
 import { generatePortfolioExplanation, explanationTriggerQuestion, stripSources, type PortfolioInsightSlot } from '@/lib/portfolioExplanation'
@@ -380,31 +383,49 @@ interface Props {
   startExplanationRequest?: PortfolioInsightSlot | null
   /** Called once the explanation request above has been consumed. */
   onExplanationRequestHandled?: () => void
-  /** Set by a Portfolio Pulse event card: a question to type into the input
-   *  (not submit) when the panel opens. */
+  /** Set by a Portfolio Pulse event card or an "Ask about this" chip: a question
+   *  that is sent as the next message when the panel opens. */
   prefillQuery?: string | null
-  /** Called once the prefill above has been placed in the input. */
+  /** Called once the prefill above has been consumed. */
   onPrefillHandled?: () => void
+  /** Name of the page the panel sits beside, shown as "Viewing …" in its header. */
+  contextLabel?: string
+  /** DOM id of the panel (the header pill's aria-controls points at it). */
+  panelId?: string
 }
 
-export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled }: Props) {
+type Detent = 'half' | 'full'
+
+const STANDARD_EASE = [0.4, 0, 0.2, 1] as const
+const LAYOUT_TRANSITION = { duration: 0.43, ease: STANDARD_EASE }
+// The conversation outlives the close animation: state is cleared once the panel has slid away.
+const RESET_AFTER_CLOSE_MS = 460
+const SUGGESTIONS = ["What's my net worth?", 'What changed this month?', 'Show my short-term lots']
+const DETENT_OPTIONS = [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] as const
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/** The command bar: a docked right-hand panel beside the page on wide screens (>= 1024px), a bottom sheet
+ *  with Half/Full detents below that. It is a re-container of one conversation; the logic is the same in both. */
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled, contextLabel, panelId = 'cmdk-panel' }: Props) {
+  const docked = useDockedViewport()
   const [query, setQuery] = useState('')
-  const [pendingQuery, setPendingQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [detent, setDetent] = useState<Detent>('half')
   const [loading, setLoading] = useState(false)
   const { displayed: streamingText, push: pushStreamDelta, startRound: startStreamRound, reset: resetStream } = useSmoothedStream()
-  const [done, setDone] = useState(false)
   const [writesDone, setWritesDone] = useState(false)
-  const [compactResult, setCompactResult] = useState<any>(null)
   const [attachment, setAttachment] = useState<FileAttachment | null>(null)
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
-  const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth < 768)
+  // Where a pending write confirmation's Confirm/Cancel bar is pinned (just above the composer).
+  const [pinSlot, setPinSlot] = useState<HTMLElement | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const msgIdRef = useRef(0)
+  // Bumped whenever the conversation is cleared, so a reply that was still in
+  // flight for the old one is dropped instead of landing in the new one.
+  const epochRef = useRef(0)
   // The DB row this thread is being saved to. null until the first
   // exchange is persisted (or a resumed conversation is loaded), after
   // which every later exchange updates the same row instead of creating a
@@ -425,7 +446,6 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   }
 
   const handleWriteDone = () => {
-    setDone(true)
     setWritesDone(true)
   }
 
@@ -444,29 +464,39 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     el.style.height = `${Math.min(el.scrollHeight, 144)}px`
   }, [])
 
+  const resetConversation = useCallback(() => {
+    epochRef.current += 1
+    setQuery('')
+    setDisplayMessages([])
+    setDetent('half')
+    setAttachment(null)
+    setLoading(false)
+    resetStream()
+    msgIdRef.current = 0
+    conversationIdRef.current = null
+    conversationOriginRef.current = 'command_bar'
+  }, [resetStream])
+
   useEffect(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight
     }
-  }, [displayMessages])
+  }, [displayMessages, loading, streamingText])
 
-  useEffect(() => {
-    const updateViewportClass = () => setIsMobileViewport(window.innerWidth < 768)
-    window.addEventListener('resize', updateViewportClass)
-    return () => window.removeEventListener('resize', updateViewportClass)
-  }, [])
-
-  // Focus input when panel opens
-  useEffect(() => {
-    if (open && !isExpanded) {
-      // Small delay to let the layout animation start first
-      const t = setTimeout(() => focusInput(), 80)
-      return () => clearTimeout(t)
-    }
-  }, [open, isExpanded, focusInput])
-
+  // Focus the input when the panel opens; give focus back to whatever opened it on close.
   useEffect(() => {
     if (!open) return
+    const opener = document.activeElement
+    const t = setTimeout(() => focusInput(), 80)
+    return () => {
+      clearTimeout(t)
+      if (opener instanceof HTMLElement && opener !== document.body && document.contains(opener)) opener.focus({ preventScroll: true })
+    }
+  }, [open, focusInput])
+
+  // Track the visual viewport so the phone sheet stays above the on-screen keyboard.
+  useEffect(() => {
+    if (!open || docked) return
     const vv = window.visualViewport
     const updateHeight = () => setViewportHeight(Math.round(vv?.height ?? window.innerHeight))
 
@@ -480,11 +510,12 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       vv?.removeEventListener('scroll', updateHeight)
       window.removeEventListener('resize', updateHeight)
     }
-  }, [open])
+  }, [open, docked])
 
-  // Lock body scroll while modal is open (prevents iOS keyboard viewport jump)
+  // Lock body scroll while the phone sheet is open (prevents iOS keyboard viewport jump).
+  // The docked panel is not modal: the page beside it stays scrollable and interactive.
   useEffect(() => {
-    if (!open) return
+    if (!open || docked) return
     const bodyStyle = document.body.style
     const htmlStyle = document.documentElement.style
     const prev = {
@@ -505,27 +536,17 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       htmlStyle.overflow = prev.htmlOverflow
       htmlStyle.overscrollBehaviorY = prev.htmlOverscrollBehaviorY
     }
-  }, [open])
+  }, [open, docked])
 
-  // Reset when closed
+  // Closing keeps the thread on screen while the panel slides away, then clears it. Reopening in
+  // that window cancels the clear, so the conversation simply continues.
   useEffect(() => {
-    if (!open) {
-      setQuery('')
-      setDisplayMessages([])
-      setIsExpanded(false)
-      setIsFullscreen(false)
-      setCompactResult(null)
-      setDone(false)
-      setAttachment(null)
-      setPendingQuery('')
-      resetStream()
-      msgIdRef.current = 0
-      conversationIdRef.current = null
-      conversationOriginRef.current = 'command_bar'
-    }
-  }, [open])
+    if (open) return
+    const t = setTimeout(resetConversation, RESET_AFTER_CLOSE_MS)
+    return () => clearTimeout(t)
+  }, [open, resetConversation])
 
-  // A Portfolio Pulse event card's question: sent straight away, like a
+  // A Portfolio Pulse event card's (or "Ask about this" chip's) question: sent straight away, like a
   // price-move card's. Runs after the reset-on-close effect above, so a panel
   // opening from closed starts from a clean state.
   useEffect(() => {
@@ -537,8 +558,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   }, [open, prefillQuery, onPrefillHandled])
 
   // Resuming a saved conversation from Settings' history list: load its
-  // messages, show them as an already-expanded thread, and keep saving
-  // further replies to that same row.
+  // messages as the thread and keep saving further replies to that same row.
   useEffect(() => {
     if (!open || !resumeConversationId) return
     let cancelled = false
@@ -553,7 +573,6 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
             ? { id: nextId(), role: 'user' as const, content: m.content }
             : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content, ...(m.explanationDetail ? { explanationDetail: m.explanationDetail } : {}) }
         )))
-        setIsExpanded(true)
       } catch (e) {
         console.error('Failed to load conversation', e)
       } finally {
@@ -603,7 +622,6 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       conversationOriginRef.current = 'portfolio_explanation'
       const userMessage: DisplayMessage = { id: nextId(), role: 'user', content: explanationTriggerQuestion(slot) }
       setDisplayMessages([userMessage])
-      setIsExpanded(true)
       setLoading(true)
       try {
         const row = await generatePortfolioExplanation(slot)
@@ -643,7 +661,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
 
   useEffect(() => {
     if (inputRef.current) autoGrow(inputRef.current)
-  }, [query, autoGrow])
+  }, [query, autoGrow, open])
 
   function buildHistory(newUserContent: string): Message[] {
     const history: Message[] = displayMessages.flatMap((m): Message[] => {
@@ -657,104 +675,201 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   async function handleSubmit(override?: string) {
     const userContent = (override ?? query).trim()
     if (!userContent) return
-    const wasExpanded = isExpanded
+    // A typed message waits for the previous reply; a programmatic one (chip / Pulse card) goes through.
+    if (loading && override === undefined) return
+    const epoch = epochRef.current
     setQuery('')
-    setPendingQuery(userContent)
     setLoading(true)
-    setDone(false)
-    setCompactResult(null)
     resetStream()
 
-    // Messages already on screen, plus the user's turn if the thread is
-    // already expanded (compact mode adds its user bubble below, once the
-    // reply shape is known). Captured explicitly, rather than via a
-    // functional setState update, so the exact resulting array can also be
-    // handed to persistConversation below.
-    const baseMessages: DisplayMessage[] = wasExpanded
-      ? [...displayMessages, { id: nextId(), role: 'user', content: userContent }]
-      : displayMessages
-    if (wasExpanded) {
-      setDisplayMessages(baseMessages)
-    }
+    // The user's turn goes on screen at once. Captured explicitly, rather than
+    // via a functional setState update, so the exact resulting array can also
+    // be handed to persistConversation below.
+    const baseMessages: DisplayMessage[] = [...displayMessages, { id: nextId(), role: 'user', content: userContent }]
+    setDisplayMessages(baseMessages)
 
     const pendingAttachment = attachment
+    let reply: DisplayMessage
+    let usage: AgentTrace['usage'] | undefined
     try {
       const action = await runCommand(buildHistory(userContent), pendingAttachment ?? undefined, {
         onStreamStart: startStreamRound,
         onTextDelta: pushStreamDelta,
       })
       if (action.type === 'text') {
-        const updated: DisplayMessage[] = [
-          ...baseMessages,
-          ...(!wasExpanded ? [{ id: nextId(), role: 'user' as const, content: userContent }] : []),
-          { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message, trace: action.trace },
-        ]
-        setDisplayMessages(updated)
-        setIsExpanded(true)
-        void persistConversation(updated, action.trace?.usage)
-      } else if (wasExpanded) {
-        const updated: DisplayMessage[] = [
-          ...baseMessages,
-          { id: nextId(), role: 'assistant' as const, kind: 'action', action },
-        ]
-        setDisplayMessages(updated)
-        void persistConversation(updated)
+        reply = { id: nextId(), role: 'assistant' as const, kind: 'text', content: action.message, trace: action.trace }
+        usage = action.trace?.usage
       } else {
-        setCompactResult(action)
-        // The compact panel doesn't render this exchange as a thread, but
-        // it still happened — record it in conversation history.
-        void persistConversation([
-          ...baseMessages,
-          { id: nextId(), role: 'user' as const, content: userContent },
-          { id: nextId(), role: 'assistant' as const, kind: 'action', action },
-        ])
+        reply = { id: nextId(), role: 'assistant' as const, kind: 'action', action }
       }
     } catch (e: any) {
-      const errAction = { type: 'error', message: normalizeErrorMessage(e.message || 'Something went wrong') }
-      if (wasExpanded) {
-        const updated: DisplayMessage[] = [
-          ...baseMessages,
-          { id: nextId(), role: 'assistant' as const, kind: 'action', action: errAction },
-        ]
-        setDisplayMessages(updated)
-        void persistConversation(updated)
-      } else {
-        setCompactResult(errAction)
-        void persistConversation([
-          ...baseMessages,
-          { id: nextId(), role: 'user' as const, content: userContent },
-          { id: nextId(), role: 'assistant' as const, kind: 'action', action: errAction },
-        ])
-      }
-    } finally {
-      setLoading(false)
-      resetStream()
+      reply = { id: nextId(), role: 'assistant' as const, kind: 'action', action: { type: 'error', message: normalizeErrorMessage(e.message || 'Something went wrong') } }
+    }
+    if (epoch !== epochRef.current) return
+    const updated = [...baseMessages, reply]
+    setDisplayMessages(updated)
+    void persistConversation(updated, usage)
+    setLoading(false)
+    resetStream()
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+      e.stopPropagation()
+      handleClose()
+      return
+    }
+    // The phone sheet is modal: keep Tab inside it.
+    if (e.key === 'Tab' && !docked && panelRef.current) {
+      const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(el => el.offsetParent !== null || el === document.activeElement)
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
     }
   }
 
-  // Once the first message has been sent, the compact panel switches from
-  // "input on top" to "input pinned to the bottom, fullscreen toggle stays
-  // up top" — same shape the expanded thread view uses.
-  const hasStarted = loading || done || !!compactResult
+  const hasMessages = displayMessages.length > 0
+  const lastIndex = displayMessages.length - 1
 
-  const expandedMinHeight = isMobileViewport ? 160 : 240
-  const expandedMaxHeight = Math.max(
-    expandedMinHeight,
-    Math.min(isMobileViewport ? 420 : 560, Math.floor(viewportHeight - (isMobileViewport ? 92 : 140))),
+  const panelBody = (
+    <>
+      <div className="cmdk-head">
+        {!docked && (
+          <button
+            type="button"
+            className="cmdk-grabber"
+            aria-label={detent === 'half' ? 'Expand to full height' : 'Collapse to half height'}
+            onClick={() => setDetent(d => (d === 'half' ? 'full' : 'half'))}
+          />
+        )}
+        <div className="cmdk-head-row">
+          <Sparkles size={18} strokeWidth={1.5} className="cmdk-head-icon" aria-hidden="true" />
+          <h2 className="cmdk-heading" id={`${panelId}-title`}>Ask mne</h2>
+          {contextLabel && <span className="mne-chip cmdk-context">Viewing {contextLabel}</span>}
+          <span className="flex-1" />
+          {hasMessages && (
+            <button type="button" className="cmdk-ibtn" onClick={resetConversation} aria-label="New conversation" title="New conversation">
+              <SquarePen />
+            </button>
+          )}
+          {!docked && (
+            <SegmentedControl label="Sheet height" value={detent} options={DETENT_OPTIONS} onChange={setDetent} />
+          )}
+          <button type="button" className="cmdk-ibtn" onClick={handleClose} aria-label="Close" title="Close">
+            <X />
+          </button>
+        </div>
+      </div>
+
+      <div ref={threadRef} className="cmdk-thread" role="log" aria-label="Conversation">
+        {!hasMessages && !loading && (
+          <div className="cmdk-empty">
+            <p className="mne-muted m-0 text-sm">Ask about your portfolio, or tell me what to add.</p>
+            <div className="cmdk-suggest">
+              {SUGGESTIONS.map(s => (
+                <button key={s} type="button" className="mne-chip is-outline cmdk-suggest-chip" onClick={() => { void handleSubmit(s) }}>{s}</button>
+              ))}
+            </div>
+            <p className="mne-muted m-0 text-xs">
+              Try: "Add 10 AAPL shares at $220 bought today"
+            </p>
+          </div>
+        )}
+        <AnimatePresence initial={false}>
+          {displayMessages.map((m, idx) => {
+            // The nearest preceding user turn — passed along so feedback
+            // on this reply carries the question that produced it.
+            const precedingUserMessage = [...displayMessages.slice(0, idx)].reverse().find(pm => pm.role === 'user')
+            return (
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18, ease: STANDARD_EASE }}
+              >
+                <MessageBubble
+                  message={m}
+                  onDone={handleWriteDone}
+                  actionsSlot={idx === lastIndex ? pinSlot : null}
+                  userQuery={precedingUserMessage?.role === 'user' ? precedingUserMessage.content : undefined}
+                  conversationOrigin={conversationOriginRef.current}
+                />
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+        <AnimatePresence>
+          {loading && (
+            <motion.div
+              key="thinking"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              transition={{ duration: 0.18, ease: STANDARD_EASE }}
+            >
+              <ThinkingBubble streamingText={streamingText} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="cmdk-foot">
+        {/* A pending write's Confirm/Cancel bar lands here (CommandResult portals into it). */}
+        <div ref={setPinSlot} className="cmdk-pin" />
+        {attachment && (
+          <div className="cmdk-attach">
+            <Paperclip size={12} className="shrink-0" />
+            <span className="truncate max-w-[220px]">{attachment.filename}</span>
+            <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+        <div className="mne-cmd-row">
+          <div className="cmdk-field">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              aria-label="Message"
+              placeholder={hasMessages ? 'Reply...' : 'Ask anything or issue a command...'}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSubmit() }
+              }}
+              className="overflow-y-auto"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="cmdk-ibtn"
+              title="Attach CSV, PDF, or image"
+              aria-label="Attach CSV, PDF, or image"
+            >
+              <Paperclip />
+            </button>
+            <button
+              type="button"
+              onClick={() => { void handleSubmit() }}
+              className="cmdk-send"
+              disabled={!query.trim() || (loading)}
+              aria-label="Send message"
+              title="Send"
+            >
+              <ArrowUp size={18} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   )
 
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen((v) => !v)
-    // Focus follows the panel resize — same "settle then focus" pattern
-    // used when the panel first expands.
-    setTimeout(() => focusInput(), 80)
-  }, [focusInput])
-
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Backdrop */}
+    <>
+      <AnimatePresence>
+        {open && !docked && (
           <motion.div
             key="backdrop"
             initial={{ opacity: 0 }}
@@ -764,300 +879,91 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
             className="cmdk-backdrop"
             onClick={handleClose}
           />
-
-          {/* Panel — shares layoutId with CmdKFab pill. Padding reads
-              env(safe-area-inset-*) directly rather than the JS-measured
-              --app-safe-* vars — see AppLayout.tsx's CmdKFab comment. */}
-          <div
-            className={`fixed left-0 right-0 top-0 z-50 flex items-start justify-center pointer-events-none ${isFullscreen ? '' : 'px-4'}`}
-            style={{
-              height: `${viewportHeight}px`,
-              paddingTop: isFullscreen
-                ? 'env(safe-area-inset-top, 0px)'
-                : isMobileViewport
-                  ? 'calc(env(safe-area-inset-top, 0px) + 0.5rem)'
-                  : 'max(4rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
-              paddingBottom: isFullscreen ? 'env(safe-area-inset-bottom, 0px)' : 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
-            }}
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {open && docked && (
+          <motion.aside
+            key="dock"
+            id={panelId}
+            ref={panelRef}
+            data-testid="cmdk-panel"
+            data-mode="dock"
+            aria-label="Ask mne"
+            className="mne-cmd cmdk-panel cmdk-dock shadow-lg"
+            style={{ width: DOCK_WIDTH_PX }}
+            initial={{ x: DOCK_WIDTH_PX }}
+            animate={{ x: 0 }}
+            exit={{ x: DOCK_WIDTH_PX }}
+            transition={LAYOUT_TRANSITION}
+            onKeyDown={handleKeyDown}
+          >
+            {panelBody}
+          </motion.aside>
+        )}
+        {open && !docked && (
+          // The wrapper tracks the visual viewport (so the sheet rides above the on-screen
+          // keyboard) and is a motion element only so the exit animation below is awaited.
+          <motion.div
+            key="sheet"
+            className="cmdk-sheet-wrap"
+            style={{ height: `${viewportHeight}px` }}
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 1 }}
+            transition={LAYOUT_TRANSITION}
           >
             <motion.div
-              layoutId="cmdk"
-              layout
+              id={panelId}
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Ask mne"
               data-testid="cmdk-panel"
-              data-fullscreen={isFullscreen}
-              className={`mne-cmd cmdk-panel pointer-events-auto overflow-hidden ${
-                isFullscreen ? 'w-full h-full max-w-none' : 'w-full max-w-lg'
-              }`}
-              style={{ borderRadius: isFullscreen && isMobileViewport ? 'var(--mne-radius-md)' : 'var(--mne-radius-lg)' }}
-              transition={{ duration: 0.43, ease: [0.4, 0, 0.2, 1] }}
+              data-mode="sheet"
+              data-detent={detent}
+              className="mne-cmd cmdk-panel cmdk-sheet shadow-xl"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={LAYOUT_TRANSITION}
+              onKeyDown={handleKeyDown}
             >
-              {!isExpanded ? (
-                <motion.div
-                  key="compact"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.12, delay: 0.08 }}
-                  className="flex flex-col"
-                >
-                  {hasStarted ? (
-                    <>
-                      {/* Header — fullscreen toggle stays pinned at the top once a message has gone out */}
-                      <div className="flex items-center justify-end gap-1 px-3 pt-2 pb-1 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          className="cmdk-ibtn"
-                          aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                        >
-                          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                        </button>
-                      </div>
-                      <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
-                        {loading && (
-                          <div className="cmdk-section">
-                            <div className="mne-cmd-q whitespace-pre-wrap break-words">{pendingQuery}</div>
-                            <ThinkingBubble streamingText={streamingText} />
-                          </div>
-                        )}
-                        {done && <p className="cmdk-section cmdk-ok m-0 text-sm">Done ✓</p>}
-                        {compactResult && !loading && !done && (
-                          <CommandResult action={compactResult} onDone={handleWriteDone} onClose={handleClose} />
-                        )}
-                      </div>
-                      {/* Input pinned to the bottom, matching the expanded thread's footer */}
-                      <div className="cmdk-foot flex-shrink-0">
-                        {attachment && (
-                          <div className="cmdk-attach">
-                            <Paperclip size={11} className="shrink-0" />
-                            <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                            <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
-                        <div className="mne-cmd-row">
-                          <div className="cmdk-field">
-                            <textarea
-                              ref={inputRef}
-                              rows={1}
-                              placeholder="Reply..."
-                              value={query}
-                              onChange={e => setQuery(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                                if (e.key === 'Escape') handleClose()
-                              }}
-                              className="overflow-y-auto"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="cmdk-ibtn"
-                              title="Attach CSV, PDF, or image"
-                              aria-label="Attach CSV, PDF, or image"
-                            >
-                              <Paperclip />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="cmdk-section">
-                        <div className="mne-cmd-row">
-                          <div className="cmdk-field">
-                            <textarea
-                              ref={inputRef}
-                              autoFocus
-                              rows={1}
-                              placeholder="Ask anything or issue a command..."
-                              value={query}
-                              onChange={e => setQuery(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                                if (e.key === 'Escape') handleClose()
-                              }}
-                              className="overflow-y-auto"
-                            />
-                            <button
-                              type="button"
-                              onClick={toggleFullscreen}
-                              className="cmdk-ibtn"
-                              aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                            >
-                              {isFullscreen ? <Minimize2 /> : <Maximize2 />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="cmdk-ibtn"
-                              title="Attach CSV, PDF, or image"
-                              aria-label="Attach CSV, PDF, or image"
-                            >
-                              <Paperclip />
-                            </button>
-                          </div>
-                          <span className="mne-kbd hidden md:inline-block" aria-hidden="true">⌘K</span>
-                        </div>
-                        {attachment && (
-                          <div className="cmdk-attach">
-                            <Paperclip size={12} className="shrink-0" />
-                            <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                            <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
-                        <p className="mne-muted m-0 text-xs">
-                          Try: "What's my net worth?" or "Add 10 AAPL shares at $220 bought today"
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="expanded"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.15 }}
-                  className="flex flex-col overflow-hidden"
-                  style={
-                    isFullscreen
-                      ? { height: '100%' }
-                      : { minHeight: `${expandedMinHeight}px`, maxHeight: `${expandedMaxHeight}px` }
-                  }
-                  onAnimationComplete={focusInput}
-                >
-                  {/* Header with fullscreen toggle + close button */}
-                  <div className="flex items-center justify-end gap-1 px-3 pt-2 pb-1 flex-shrink-0">
-                    <button
-                      onClick={toggleFullscreen}
-                      className="cmdk-ibtn"
-                      aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                      title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                    >
-                      {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                    </button>
-                    <button
-                      onClick={handleClose}
-                      className="cmdk-ibtn"
-                      aria-label="Close"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <div ref={threadRef} className="flex-1 overflow-y-auto px-4 pb-4 min-h-0 flex flex-col gap-3">
-                    <AnimatePresence initial={false}>
-                      {displayMessages.map((m, idx) => {
-                        // The nearest preceding user turn — passed along so feedback
-                        // on this reply carries the question that produced it.
-                        const precedingUserMessage = [...displayMessages.slice(0, idx)].reverse().find(pm => pm.role === 'user')
-                        return (
-                          <motion.div
-                            key={m.id}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-                          >
-                            <MessageBubble
-                              message={m}
-                              onDone={handleWriteDone}
-                              onClose={handleClose}
-                              userQuery={precedingUserMessage?.role === 'user' ? precedingUserMessage.content : undefined}
-                              conversationOrigin={conversationOriginRef.current}
-                            />
-                          </motion.div>
-                        )
-                      })}
-                    </AnimatePresence>
-                    <AnimatePresence>
-                      {loading && (
-                        <motion.div
-                          key="thinking"
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                          transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-                        >
-                          <ThinkingBubble streamingText={streamingText} />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div className="cmdk-foot flex-shrink-0">
-                    {attachment && (
-                      <div className="cmdk-attach">
-                        <Paperclip size={11} className="shrink-0" />
-                        <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                        <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
-                          <X size={12} />
-                        </button>
-                      </div>
-                    )}
-                    <div className="mne-cmd-row">
-                          <div className="cmdk-field">
-                            <textarea
-                              ref={inputRef}
-                              rows={1}
-                              placeholder="Reply..."
-                              value={query}
-                              onChange={e => setQuery(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                                if (e.key === 'Escape') handleClose()
-                              }}
-                              className="overflow-y-auto"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="cmdk-ibtn"
-                              title="Attach CSV, PDF, or image"
-                              aria-label="Attach CSV, PDF, or image"
-                            >
-                              <Paperclip />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                </motion.div>
-              )}
+              {panelBody}
             </motion.div>
-          </div>
-          <input
-            type="file"
-            accept=".csv,.pdf,image/*"
-            ref={fileInputRef}
-            className="hidden"
-            onChange={async e => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              try {
-                const parsed = await parseFileAttachment(file)
-                setAttachment(parsed)
-              } catch (err: any) {
-                console.error('File parse error:', err)
-                showAppAlert(normalizeErrorMessage(err?.message || 'Failed to read attachment'), { variant: 'error', durationMs: 5000 })
-              }
-              e.target.value = ''
-            }}
-          />
-        </>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {open && (
+        <input
+          type="file"
+          accept=".csv,.pdf,image/*"
+          ref={fileInputRef}
+          className="hidden"
+          onChange={async e => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            try {
+              const parsed = await parseFileAttachment(file)
+              setAttachment(parsed)
+            } catch (err: any) {
+              console.error('File parse error:', err)
+              showAppAlert(normalizeErrorMessage(err?.message || 'Failed to read attachment'), { variant: 'error', durationMs: 5000 })
+            }
+            e.target.value = ''
+          }}
+        />
       )}
-    </AnimatePresence>
+    </>
   )
 }
 
-function CommandResult({ action, onDone, onClose }: { action: any; onDone: () => void; onClose: () => void }) {
+function CommandResult({ action, onDone, actionsSlot }: { action: any; onDone: () => void; actionsSlot?: HTMLElement | null }) {
   const [executing, setExecuting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queueIndex, setQueueIndex] = useState(0)
   const [completed, setCompleted] = useState(false)
+  const [cancelled, setCancelled] = useState(false)
 
   const PreviewSections = ({ sections }: { sections: any[] }) => {
     if (!Array.isArray(sections) || sections.length === 0) return null
@@ -1122,110 +1028,113 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
     return `Confirm: ${label}${progress ? ` (${progress})` : ''}`
   }
 
+  // Cancel dismisses this confirmation only; the conversation stays open.
+  if (cancelled) {
+    return <p className="cmdk-card mne-muted m-0 text-sm">Cancelled. Nothing was changed.</p>
+  }
+
+  // The Confirm/Cancel bar is pinned above the composer when a slot is provided
+  // (the latest message), so it stays in reach however long the preview is.
+  const renderActions = (title: string, run: () => Promise<void>, confirmLabel: string) => {
+    const bar = (
+      <div className="cmdk-actions" role="group" aria-label="Confirm change">
+        <p className="cmdk-title m-0 truncate">{title}</p>
+        {error && <p className="cmdk-error m-0" role="alert">▼ {error}</p>}
+        <div className="cmdk-actions-row">
+          <button type="button" className="mne-btn is-ghost" onClick={() => setCancelled(true)}>
+            Cancel
+          </button>
+          <button type="button" disabled={executing} className="mne-btn" onClick={run}>
+            {executing ? 'Saving...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    )
+    return actionsSlot ? createPortal(bar, actionsSlot) : bar
+  }
+
   if (action.type === 'navigate') {
-    return <p className="cmdk-section cmdk-ok m-0 text-sm">Navigating to {action.route}...</p>
+    return <p className="cmdk-card cmdk-ok m-0 text-sm">Navigating to {action.route}...</p>
   }
 
   if (action.type === 'write_confirm_queue') {
     const confirmations = Array.isArray(action.confirmations) ? action.confirmations : []
     if (confirmations.length === 0) {
-      return <p className="cmdk-section mne-muted m-0 text-sm">Nothing to confirm.</p>
+      return <p className="cmdk-card mne-muted m-0 text-sm">Nothing to confirm.</p>
     }
 
     const current = confirmations[Math.min(queueIndex, confirmations.length - 1)]
     const progress = `${Math.min(queueIndex + 1, confirmations.length)} of ${confirmations.length}`
 
     if (completed) {
-      return <p className="cmdk-section cmdk-ok m-0 text-sm">Saved ✓</p>
+      return <p className="cmdk-card cmdk-ok m-0 text-sm">Saved ✓</p>
     }
 
+    const title = confirmTitle(current.previewSections, progress)
     return (
-      <div className="cmdk-section">
-        <div className="mne-cmd-q">{confirmTitle(current.previewSections, progress)}</div>
+      <div className="cmdk-card">
+        <div className="mne-cmd-q">{title}</div>
         <p className="mne-muted m-0 text-sm">{current.confirmationMessage}</p>
         <PreviewSections sections={current.previewSections} />
-        {error && <p className="cmdk-error m-0">▼ {error}</p>}
-        <div className="mne-cmd-actions">
-          <button className="mne-btn is-ghost is-sm" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            disabled={executing}
-            className="mne-btn is-sm"
-            onClick={async () => {
-              setExecuting(true)
-              setError(null)
-              try {
-                await current.execute()
-                setExecuting(false)
-                if (queueIndex < confirmations.length - 1) {
-                  setQueueIndex((prev) => prev + 1)
-                  return
-                }
-                setCompleted(true)
-                onDone()
-              } catch (e: any) {
-                setError(normalizeErrorMessage(e.message || 'Write failed'))
-                setExecuting(false)
-              }
-            }}
-          >
-            {executing ? 'Saving...' : queueIndex < confirmations.length - 1 ? 'Confirm & next' : 'Confirm'}
-          </button>
-        </div>
+        {renderActions(title, async () => {
+          setExecuting(true)
+          setError(null)
+          try {
+            await current.execute()
+            setExecuting(false)
+            if (queueIndex < confirmations.length - 1) {
+              setQueueIndex((prev) => prev + 1)
+              return
+            }
+            setCompleted(true)
+            onDone()
+          } catch (e: any) {
+            setError(normalizeErrorMessage(e.message || 'Write failed'))
+            setExecuting(false)
+          }
+        }, queueIndex < confirmations.length - 1 ? 'Confirm & next' : 'Confirm')}
       </div>
     )
   }
 
   if (action.type === 'write_confirm') {
     if (completed) {
-      return <p className="cmdk-section cmdk-ok m-0 text-sm">Saved ✓</p>
+      return <p className="cmdk-card cmdk-ok m-0 text-sm">Saved ✓</p>
     }
 
+    const title = confirmTitle(action.previewSections)
     return (
-      <div className="cmdk-section">
-        <div className="mne-cmd-q">{confirmTitle(action.previewSections)}</div>
+      <div className="cmdk-card">
+        <div className="mne-cmd-q">{title}</div>
         <p className="mne-muted m-0 text-sm">{action.confirmationMessage}</p>
         <PreviewSections sections={action.previewSections} />
-        {error && <p className="cmdk-error m-0">▼ {error}</p>}
-        <div className="mne-cmd-actions">
-          <button className="mne-btn is-ghost is-sm" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            disabled={executing}
-            className="mne-btn is-sm"
-            onClick={async () => {
-              setExecuting(true)
-              setError(null)
-              try {
-                await action.execute()
-                setExecuting(false)
-                setCompleted(true)
-                onDone()
-              } catch (e: any) {
-                setError(normalizeErrorMessage(e.message || 'Write failed'))
-                setExecuting(false)
-              }
-            }}
-          >
-            {executing ? 'Saving...' : 'Confirm'}
-          </button>
-        </div>
+        {renderActions(title, async () => {
+          setExecuting(true)
+          setError(null)
+          try {
+            await action.execute()
+            setExecuting(false)
+            setCompleted(true)
+            onDone()
+          } catch (e: any) {
+            setError(normalizeErrorMessage(e.message || 'Write failed'))
+            setExecuting(false)
+          }
+        }, 'Confirm')}
       </div>
     )
   }
 
-  return <p className="cmdk-section cmdk-error m-0">▼ {normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
+  return <p className="cmdk-card cmdk-error m-0">▼ {normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
 }
 
-function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string; conversationOrigin?: ConversationOrigin }) {
+function MessageBubble({ message, onDone, actionsSlot, userQuery, conversationOrigin }: { message: DisplayMessage; onDone: () => void; actionsSlot?: HTMLElement | null; userQuery?: string; conversationOrigin?: ConversationOrigin }) {
   const [showTrace, setShowTrace] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   if (message.role === 'user') {
-    // Design: the question is a bold line (`.mne-cmd-q`), the reply below it is muted.
-    return <div className="mne-cmd-q whitespace-pre-wrap break-words">{message.content}</div>
+    // The question is a right-aligned bubble; the reply below it is muted text.
+    return <div className="cmdk-bubble-user">{message.content}</div>
   }
   if (message.kind === 'text') {
     const traceSteps = message.trace?.steps ?? []
@@ -1281,11 +1190,7 @@ function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin
     )
   }
   return (
-    <div className="flex justify-start w-full">
-      <div className="w-full -mx-4" style={{ width: 'calc(100% + 2rem)' }}>
-        <CommandResult action={message.action} onDone={onDone} onClose={onClose} />
-      </div>
-    </div>
+    <CommandResult action={message.action} onDone={onDone} actionsSlot={actionsSlot} />
   )
 }
 

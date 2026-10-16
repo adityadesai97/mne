@@ -17,6 +17,7 @@ import {
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
+import { AskChip } from '@/components/AskChip'
 import '@/styles/portfolio.css'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
@@ -308,6 +309,7 @@ export default function AssetDetail() {
           <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
           Portfolio
         </button>
+        <AskChip className="ml-auto" prompt={`Tell me about ${asset.ticker?.symbol ?? asset.name}`} />
       </div>
 
       <section className="mne-card pf-fade">
@@ -415,7 +417,7 @@ export default function AssetDetail() {
               </div>
             )}
 
-            <div className="mne-stats" style={{ marginTop: 20 }}>
+            <div className="mne-stats pf-detail-stats" style={{ marginTop: 20 }}>
               {noPriceData ? (
                 <Stat label="Value" value={<span className="mne-muted">—</span>} sub="Price pending" subClassName="mne-muted" />
               ) : (
@@ -427,6 +429,7 @@ export default function AssetDetail() {
               )}
               {isStock && !noPriceData && (
                 <Stat
+                  className="max-sm:hidden"
                   label="Price"
                   value={<span className={hiddenValueClass(hideValues)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>}
                 />
@@ -453,7 +456,7 @@ export default function AssetDetail() {
       {isStock && (
         <section className="mne-card pf-fade">
           <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Tax lots</h3>
-          <p className="mne-help" style={{ marginBottom: 12 }}>
+          <p className="mne-help max-sm:hidden" style={{ marginBottom: 12 }}>
             {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
             {stockGrantCount > 0 && <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>}
           </p>

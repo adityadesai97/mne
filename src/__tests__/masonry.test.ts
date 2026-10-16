@@ -56,3 +56,21 @@ test('column count follows container width', () => {
   expect(columnsForWidth(1152, 300, 24, 3)).toBe(3)
   expect(columnsForWidth(3000, 300, 24, 3)).toBe(3)
 })
+
+test('packFill leaves no ragged column bottoms and no empty column beside a wide card', async () => {
+  const { packFill } = await import('@/components/mne/Masonry')
+  const items = [{ height: 260 }, { height: 100 }, { height: 260, span: 2 }, { height: 220 }, { height: 280, span: 2 }, { height: 230, span: 2 }]
+  const { placements, height } = packFill(items, 3, 24)
+  const bottoms = [0, 0, 0]
+  placements.forEach((p, i) => {
+    if (p.hidden) return
+    for (let c = p.column; c < p.column + p.span; c++) bottoms[c] = Math.max(bottoms[c], p.top + items[i].height + (p.stretch ?? 0))
+  })
+  for (const b of bottoms) expect(Math.abs(b - height)).toBeLessThan(1)
+})
+
+test('packFill falls back to plain packing in one column', async () => {
+  const { packFill } = await import('@/components/mne/Masonry')
+  const { placements } = packFill([{ height: 10 }, { height: 20 }], 1, 5)
+  expect(placements.map(p => p.top)).toEqual([0, 15])
+})

@@ -57,7 +57,7 @@
   .lot-side { text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
   .lot-gainchip { margin-top: 0; }
   .lot-foot { flex-wrap: wrap; gap: 6px; }
-  .lot-foot .lot-bar { flex: 1 1 100%; order: 3; max-width: none; }
+  .lot-foot .lot-bar { display: none; }
   .lot-acts { order: 2; }
 }
 

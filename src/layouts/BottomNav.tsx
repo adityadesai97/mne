@@ -1,11 +1,23 @@
 import { NavLink } from 'react-router-dom'
+import { Sparkles } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 import { NAV_ITEMS } from './Sidebar'
+import '@/styles/shell.css'
 
-// Mobile navigation: the design system's floating bottom tab bar.
-export default function BottomNav() {
+// Mobile navigation: the design system's floating bottom tab bar with a raised centre action that opens
+// the command bar sheet. Settings is not a tab here (it lives behind the header's Settings button) so
+// the bar stays at four destinations plus the action.
+export default function BottomNav({ onAsk }: { onAsk?: () => void }) {
   const { hasAssets } = useHasAssets()
-  const tabs = NAV_ITEMS.filter(item => !item.requiresAssets || hasAssets)
+  const tabs = NAV_ITEMS.filter(item => item.to !== '/settings' && (!item.requiresAssets || hasAssets))
+  const mid = Math.ceil(tabs.length / 2)
+
+  const renderTab = ({ to, icon: Icon, label }: (typeof tabs)[number]) => (
+    <NavLink key={to} to={to} end={to === '/'}>
+      <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+      <span>{label}</span>
+    </NavLink>
+  )
 
   return (
     <div
@@ -14,12 +26,13 @@ export default function BottomNav() {
       style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', transform: 'translateZ(0)' }}
     >
       <nav className="mne-nav is-bottom" aria-label="Main">
-        {tabs.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'}>
-            <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+        {tabs.slice(0, mid).map(renderTab)}
+        {onAsk && (
+          <button type="button" className="mne-nav-ask" onClick={onAsk} aria-label="Ask mne" aria-haspopup="dialog">
+            <Sparkles size={22} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        )}
+        {tabs.slice(mid).map(renderTab)}
       </nav>
     </div>
   )

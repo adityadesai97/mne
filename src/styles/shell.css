@@ -1,0 +1,34 @@
+/* App shell chrome: the slim header with the command pill (desktop) / wordmark + Settings (phone), the
+   raised centre action in the phone tab bar, and the quiet "Ask about this" chips. mne tokens only. */
+
+.mne-topbar { position: sticky; top: 0; z-index: 30; background: var(--mne-surface-100); border-bottom: 1px solid var(--mne-line); }
+.mne-topbar-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 16px; }
+@media (min-width: 768px) {
+  .mne-topbar-in { min-height: 56px; padding: 0 24px; justify-content: center; }
+  .mne-topbar .mne-brand, .mne-topbar .mne-topbar-btn { display: none; }
+}
+.mne-topbar .mne-brand { padding: 0; font-size: 24px; line-height: 28px; }
+
+.mne-askpill { display: none; align-items: center; gap: 8px; width: 100%; max-width: 440px; border: 1px solid var(--mne-line-strong); background: var(--mne-surface-200); border-radius: var(--mne-radius-pill); padding: 6px 8px 6px 14px; color: var(--mne-ink-muted); cursor: pointer; font: 400 14px/22px var(--mne-font-sans); transition: border-color var(--mne-dur, 180ms) linear, color var(--mne-dur, 180ms) linear; }
+@media (min-width: 768px) { .mne-askpill { display: flex; } }
+.mne-askpill:hover { border-color: var(--mne-ink-muted); color: var(--mne-ink); }
+.mne-askpill:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.mne-askpill svg { flex: none; color: var(--mne-accent); }
+.mne-askpill > span { flex: 1; text-align: left; }
+
+.mne-topbar-btn { display: inline-grid; place-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--mne-ink-muted); text-decoration: none; transition: background var(--mne-dur, 180ms) linear, color var(--mne-dur, 180ms) linear; }
+.mne-topbar-btn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
+.mne-topbar-btn[aria-current="page"] { background: var(--mne-surface-300); color: var(--mne-accent); }
+.mne-topbar-btn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+
+/* Raised centre action of the phone tab bar. */
+.mne-nav.is-bottom { align-items: center; }
+.mne-nav-ask { flex: none; display: grid; place-content: center; width: 56px; height: 56px; margin-top: -26px; border: 4px solid var(--mne-surface-100); border-radius: 50%; background: var(--mne-accent); color: var(--mne-on-accent); cursor: pointer; transition: transform var(--mne-dur, 180ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.mne-nav-ask:active { transform: scale(.96); }
+.mne-nav-ask:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+
+/* "Ask about this": quiet outlined chip. */
+.mne-askchip { align-items: center; gap: 6px; border: 1px solid var(--mne-line-strong); background: transparent; color: var(--mne-ink); border-radius: var(--mne-radius-pill); padding: 3px 10px 3px 8px; font: 500 12px/16px var(--mne-font-sans); cursor: pointer; white-space: nowrap; transition: background var(--mne-dur, 180ms) linear, border-color var(--mne-dur, 180ms) linear; }
+.mne-askchip:hover { background: var(--mne-surface-300); border-color: var(--mne-accent); }
+.mne-askchip:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.mne-askchip svg { color: var(--mne-accent); flex: none; }

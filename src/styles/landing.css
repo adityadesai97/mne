@@ -1,0 +1,44 @@
+/* Landing: one calm column. Tokens only; standard 180ms motion. */
+.landing { min-height: 100vh; overflow-x: hidden; background: hsl(var(--background)); color: hsl(var(--foreground)); display: flex; flex-direction: column; }
+.landing-wrap { width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 640px) { .landing-wrap { padding: 0 32px; } }
+
+.landing-head { padding-top: env(safe-area-inset-top); }
+.landing-nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+.landing-brand { display: flex; align-items: center; gap: 10px; }
+.landing-link { font-size: 14px; font-weight: 500; color: hsl(var(--muted-foreground)); background: none; border: 0; padding: 8px 4px; cursor: pointer; border-radius: 9999px; transition: color var(--dur-standard) var(--ease-standard); }
+.landing-link:hover:not(:disabled) { color: hsl(var(--foreground)); }
+.landing-link:disabled { opacity: .6; cursor: not-allowed; }
+.landing-link:focus-visible, .landing-cta:focus-visible, .landing-quiet:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+
+.landing-main { flex: 1; }
+.landing-hero { padding: 72px 0 56px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+@media (min-width: 820px) { .landing-hero { padding: 120px 0 80px; } }
+.landing-h1 { font-family: var(--display-font); font-weight: 500; letter-spacing: -0.02em; line-height: 1.04; font-size: clamp(2.5rem, 8.5vw, 5.5rem); max-width: 14ch; margin: 0; text-wrap: balance; }
+.landing-sub { margin: 24px 0 0; max-width: 34rem; font-size: 18px; line-height: 1.6; color: hsl(var(--muted-foreground)); }
+.landing-actions { margin-top: 36px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+@media (min-width: 520px) { .landing-actions { flex-direction: row; gap: 20px; } }
+.landing-cta { display: inline-flex; align-items: center; gap: 10px; padding: 12px 24px; border: 0; border-radius: 9999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 16px; font-weight: 500; cursor: pointer; transition: opacity var(--dur-standard) var(--ease-standard); }
+.landing-cta:hover:not(:disabled) { opacity: .9; }
+.landing-cta:disabled { opacity: .6; cursor: not-allowed; }
+.landing-g { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 9999px; background: #fff; }
+.landing-quiet { font-size: 14px; font-weight: 500; color: hsl(var(--muted-foreground)); text-decoration: none; padding: 8px 4px; border-radius: 9999px; transition: color var(--dur-standard) var(--ease-standard); }
+.landing-quiet:hover { color: hsl(var(--foreground)); }
+.landing-error { margin: 0 auto 8px; max-width: 34rem; text-align: center; font-size: 14px; font-weight: 500; color: hsl(var(--loss)); }
+
+.landing-visual { margin: 0 auto; width: 100%; max-width: 720px; text-align: left; }
+.landing-visual .mne-card { padding: 24px; }
+@media (min-width: 640px) { .landing-visual .mne-card { padding: 32px; } }
+.landing-visual-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.landing-figure { font-family: var(--display-font); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: 1.05; font-size: clamp(2.25rem, 7vw, 3.5rem); margin: 8px 0 16px; }
+
+.landing-props { list-style: none; margin: 0; padding: 72px 0; display: grid; gap: 32px; text-align: center; }
+@media (min-width: 820px) { .landing-props { grid-template-columns: repeat(3, 1fr); padding: 96px 0; } }
+.landing-props li { font-size: 16px; line-height: 1.5; }
+.landing-props strong { display: block; font-family: var(--display-font); font-weight: 500; font-size: 20px; margin-bottom: 4px; }
+.landing-props span { color: hsl(var(--muted-foreground)); }
+
+.landing-foot { padding: 24px 0 32px; border-top: 1px solid hsl(var(--border) / 0.6); }
+.landing-foot .landing-wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: hsl(var(--muted-foreground)); }
+.landing-foot a { color: inherit; text-decoration: none; transition: color var(--dur-standard) var(--ease-standard); }
+.landing-foot a:hover { color: hsl(var(--foreground)); }

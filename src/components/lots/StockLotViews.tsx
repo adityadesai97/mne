@@ -106,7 +106,7 @@ function StockLotRow({ lot, ctx }: { lot: StockLot; ctx: StockLotCtx }) {
         <div className="lot-title">{formatDateMDY(lot.date)} <TermChip isLong={lot.isLong} /></div>
         <div className="mne-help lot-num">
           {qtyText(lot.shares, isCrypto)} × <Hide hidden={hideValues}>{fmtMoney(lot.cost)}</Hide>
-          {' · '}cost <Hide hidden={hideValues}>{fmtMoney(lot.basis)}</Hide>
+          <span className="max-sm:hidden">{' · '}cost <Hide hidden={hideValues}>{fmtMoney(lot.basis)}</Hide></span>
         </div>
         {lot.soldAtVest > 0 && (
           <div className="mne-help lot-num">{fmtQty(lot.soldAtVest, isCrypto)} sold at vest</div>
@@ -140,7 +140,7 @@ function lotCount(n: number) {
 /* ------------------------------ summary block ----------------------------- */
 
 /** Stats strip + long/short split + "turns long term" line + collapsed lots. */
-export function StockSummary({ lots, ctx, detailLabel = 'lot detail' }: { lots: StockLot[]; ctx: StockLotCtx; detailLabel?: string }) {
+export function StockSummary({ lots, ctx, detailLabel = 'lot detail', hideStatsOnMobile = false }: { lots: StockLot[]; ctx: StockLotCtx; detailLabel?: string; hideStatsOnMobile?: boolean }) {
   const { isCrypto, hideValues, price } = ctx
   const s = sumLots(lots)
   const longLots = lots.filter(l => l.isLong)
@@ -168,7 +168,7 @@ export function StockSummary({ lots, ctx, detailLabel = 'lot detail' }: { lots: 
 
   return (
     <div className="lot-summary">
-      <div className="lot-stats">
+      <div className={`lot-stats${hideStatsOnMobile ? ' max-sm:!hidden' : ''}`}>
         <Stat label={isCrypto ? 'Units' : 'Shares'} value={fmtQty(s.shares, isCrypto)}
           sub={s.shares > 0 ? <>avg cost <Hide hidden={hideValues}>{fmtMoney(avgCost)}</Hide></> : undefined} subClassName="mne-muted" />
         <Stat label="Cost basis" value={<Hide hidden={hideValues}>{fmtMoney0(s.basis)}</Hide>} />
@@ -193,7 +193,7 @@ export function StockSummary({ lots, ctx, detailLabel = 'lot detail' }: { lots: 
         <div className="mne-breakdown">
           <div>
             <i style={{ background: 'var(--mne-chart-3)' }} />
-            <span className="lot-l2">Long term<span className="lot-sub">{lotCount(longLots.length)} · {qtyText(lv.shares, isCrypto)} · held over a year</span></span>
+            <span className="lot-l2">Long term<span className="lot-sub">{lotCount(longLots.length)} · {qtyText(lv.shares, isCrypto)}<span className="max-sm:hidden"> · held over a year</span></span></span>
             <span><Hide hidden={hideValues}>{fmtMoney0(weigh(lv))}</Hide></span>
             <span className="mne-muted">{longPct.toFixed(0)}%</span>
           </div>
@@ -201,7 +201,7 @@ export function StockSummary({ lots, ctx, detailLabel = 'lot detail' }: { lots: 
             <i style={{ background: 'var(--mne-amber)' }} />
             <span className="lot-l2">Short term<span className="lot-sub">
               {lotCount(shortLots.length)} · {qtyText(sv.shares, isCrypto)}
-              {sv.gain !== null && shortLots.length > 0 && <> · unrealized <Hide hidden={hideValues}><Delta value={sv.gain} format={fmtMoney} /></Hide></>}
+              {sv.gain !== null && shortLots.length > 0 && <span className="max-sm:hidden"> · unrealized <Hide hidden={hideValues}><Delta value={sv.gain} format={fmtMoney} /></Hide></span>}
             </span></span>
             <span><Hide hidden={hideValues}>{fmtMoney0(weigh(sv))}</Hide></span>
             <span className="mne-muted">{shortPct.toFixed(0)}%</span>

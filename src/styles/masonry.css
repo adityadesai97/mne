@@ -19,3 +19,6 @@
 @media (prefers-reduced-motion: reduce) {
   .mne-masonry.is-ready > .mne-masonry-item { transition: none; }
 }
+
+/* Fill mode: a stretched item has an explicit height, so its card grows to fill it. */
+.mne-masonry.is-fill > .mne-masonry-item > .mne-card { height: 100%; }
