@@ -6,16 +6,24 @@ interface Props {
   error: string
 }
 
-const SENSES = [
+const ENTRIES = [
   {
-    text: 'Everything you own, in one calm place: stocks, crypto, bonds, retirement and cash.',
-    example: 'I opened mne and the whole picture was there.',
+    pos: 'noun',
+    senses: [
+      {
+        text: 'Everything you own, in one calm place: stocks, crypto, bonds, retirement and cash.',
+        example: 'I opened mne and the whole picture was there.',
+      },
+      {
+        text: 'A way to ask your money questions and get straight answers.',
+        example: 'Ask mne what I’d owe if I sold my oldest lots.',
+      },
+    ],
   },
   {
-    text: 'A plain-English answer to why that total moved.',
-    example: 'Ask mne why it dropped on Tuesday.',
+    pos: 'verb',
+    senses: [{ text: 'To check on your holdings.', example: 'I’ll mne it after lunch.' }],
   },
-  { text: 'Taxes, lots and RSU vests, kept straight. Private by default.' },
 ]
 
 // The pronunciation is the joke: "mne" is said "money".
@@ -65,18 +73,22 @@ export default function Landing({ onSignIn, loading, error }: Props) {
             </button>
           </div>
 
-          <p className="landing-pos">noun</p>
-          <ol className="landing-senses">
-            {SENSES.map((s, i) => (
-              <li key={s.text}>
-                <b>{i + 1}.</b>
-                <div>
-                  <p>{s.text}</p>
-                  {s.example && <p className="landing-ex">“{s.example}”</p>}
-                </div>
-              </li>
-            ))}
-          </ol>
+          {ENTRIES.map(entry => (
+            <section key={entry.pos} className="landing-group">
+              <p className="landing-pos">{entry.pos}</p>
+              <ol className="landing-senses">
+                {entry.senses.map((sense, i) => (
+                  <li key={sense.text}>
+                    <b>{i + 1}.</b>
+                    <div>
+                      <p>{sense.text}</p>
+                      <p className="landing-ex">“{sense.example}”</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
 
           <p className="landing-ety">
             <b>Origin</b>
