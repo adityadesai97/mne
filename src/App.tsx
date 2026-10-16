@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { RouterProvider } from 'react-router-dom'
+import { MotionConfig } from 'framer-motion'
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { router } from './router'
@@ -53,7 +54,9 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <MotionConfig reducedMotion="user">
+        <RouterProvider router={router} />
+      </MotionConfig>
       <Analytics />
       <SpeedInsights />
     </ErrorBoundary>

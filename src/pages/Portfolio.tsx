@@ -335,7 +335,7 @@ export default function Portfolio() {
                   <motion.div
                     layoutId="chip-pill"
                     className="absolute inset-0 rounded-full bg-primary -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                    transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
                   />
                 )}
                 {type}

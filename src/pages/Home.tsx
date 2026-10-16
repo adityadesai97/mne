@@ -56,16 +56,27 @@ function formatDateShort(date: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
 }
 
+// Counts to the new value in 180ms from wherever it currently is (not from
+// zero), with no scale pop; jumps straight there for reduced-motion users.
 function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | null>, format = fmtCurrency) {
+  const fromRef = useRef(target)
   useEffect(() => {
     const node = ref.current
     if (!node) return
-    const controls = animate(0, target, {
-      duration: 1.4,
-      ease: [0.25, 0.1, 0.25, 1],
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce || fromRef.current === target) {
+      node.textContent = format(target)
+      fromRef.current = target
+      return
+    }
+    const controls = animate(fromRef.current, target, {
+      duration: 0.18,
+      ease: [0.4, 0, 0.2, 1],
       onUpdate: (v) => { node.textContent = format(v) },
+      onComplete: () => { fromRef.current = target },
     })
-    return () => controls.stop()
+    return () => { controls.stop() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
 }
 
@@ -485,18 +496,11 @@ export default function Home() {
         {/* NET WORTH HERO */}
         <motion.div
           {...revealUp(0)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 relative overflow-hidden"
         >
-          {/* Ambient glow — neutral brand color until there's a day-over-day
-              change to react to, then tints toward gain/loss color. */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div
-              className={`absolute -top-8 left-1/4 w-72 h-36 rounded-full blur-3xl transition-colors duration-700 ${
-                hasMood ? (moodIsPositive ? 'bg-gain/[0.16] animate-pulse' : 'bg-loss/[0.16] animate-pulse') : 'bg-brand-subtle'
-              }`}
-            />
-          </div>
+          {/* Ambient wash: two faint accent and amber glows that drift slowly
+              behind the figure (design system "rich ambient"); content sits above. */}
+          <div aria-hidden="true" className="ambient-wash" />
 
           <div className="mb-3 relative">
             <CardEyebrow icon={Wallet}>Net Worth</CardEyebrow>
@@ -509,6 +513,7 @@ export default function Home() {
             >
               {fmtCurrency(totalValue)}
             </p>
+            {isRefreshingPrices && <div className="progress-shimmer mt-2 w-40" role="status" aria-label="Updating prices" />}
           </div>
 
           {hasMood && Math.abs(todayChange) >= 1 ? (
@@ -539,6 +544,7 @@ export default function Home() {
             >
               <RefreshCw size={11} className={isRefreshingPrices ? 'animate-spin' : ''} />
             </button>
+            {isRefreshingPrices && <span className="text-xs text-muted-foreground">Updating…</span>}
             <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
               {HOME_CHART_RANGES.map((r) => (
                 <button
@@ -604,7 +610,6 @@ export default function Home() {
         {/* ALLOCATION */}
         <motion.div
           {...revealUp(0.05)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-2 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
@@ -648,7 +653,6 @@ export default function Home() {
             Allocation directly above it. */}
         <motion.div
           {...revealUp(0.1)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="bg-card shadow-card rounded-lg p-5 md:col-span-2"
         >
           <div className="mb-3">
@@ -673,7 +677,6 @@ export default function Home() {
         {dailyMovers.length > 0 && (
         <motion.div
           {...revealUp(0.13)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-4 bg-card shadow-card rounded-lg p-5"
         >
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -742,7 +745,6 @@ export default function Home() {
             percent), matching how P&L presents its figures. */}
         <motion.div
           {...revealUp(0.16)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
@@ -767,7 +769,6 @@ export default function Home() {
             numbers (dollar value, then share of portfolio), no ring. */}
         <motion.div
           {...revealUp(0.19)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">

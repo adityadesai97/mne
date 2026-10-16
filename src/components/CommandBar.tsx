@@ -324,7 +324,7 @@ function ThinkingBubble({ streamingText }: { streamingText: string }) {
         <Sparkles size={11} className="text-primary" aria-hidden="true" />
       </div>
       <div className="bg-muted/40 rounded-lg rounded-tl-md px-3.5 py-3 max-w-[80%]">
-        <p className="text-sm text-foreground whitespace-pre-wrap break-words">{streamingText}</p>
+        <p className="text-sm text-foreground whitespace-pre-wrap break-words stream-caret">{streamingText}</p>
       </div>
     </div>
   )

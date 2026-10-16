@@ -228,3 +228,52 @@ input[type="number"] { -moz-appearance: textfield; }
   -webkit-background-clip: text;
   animation: fluid-shimmer-text 1.5s ease-in-out infinite;
 }
+
+
+/* ---- Motion (design system: Restrained intensity, Rich ambient) ---- */
+
+/* Slow accent + amber washes behind the hero figure, 10% opacity, 28s drift. */
+.ambient-wash {
+  position: absolute;
+  inset: -40px;
+  pointer-events: none;
+  opacity: 0.1;
+  filter: blur(30px);
+  background:
+    radial-gradient(60% 80% at 20% 20%, hsl(var(--primary)), transparent 70%),
+    radial-gradient(50% 70% at 85% 90%, hsl(var(--amber)), transparent 70%);
+  animation: mne-wash 28s ease-in-out infinite alternate;
+}
+@keyframes mne-wash {
+  to { transform: translate(24px, -14px) scale(1.06); }
+}
+
+/* Shimmer bar shown under the figure while prices refresh. */
+.progress-shimmer {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, hsl(var(--muted)) 30%, hsl(var(--border)) 50%, hsl(var(--muted)) 70%);
+  background-size: 200% 100%;
+  animation: mne-shimmer-bar 1.8s linear infinite;
+}
+@keyframes mne-shimmer-bar {
+  to { background-position: -200% 0; }
+}
+
+/* Terracotta caret at the end of a streaming reply. */
+.stream-caret::after {
+  content: "▍";
+  color: hsl(var(--primary));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Drop movement and ambient animation; state changes stay as quick fades. */
+  .ambient-wash, .progress-shimmer { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 150ms !important;
+  }
+  .animate-spin { animation-duration: 900ms !important; animation-iteration-count: infinite !important; }
+}

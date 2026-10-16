@@ -18,10 +18,12 @@
  */
 const supportsInView = typeof window !== 'undefined' && 'IntersectionObserver' in window
 
-export function revealUp(delay = 0) {
+// Design system motion: 180ms, the standard curve, no stagger. The delay
+// argument is kept so existing call sites compile; it is intentionally ignored.
+export function revealUp(_delay = 0) {
   const base = {
-    initial: { opacity: 0, y: 14 },
-    transition: { delay, duration: 0.35, ease: [0.25, 0.1, 0.25, 1] as const },
+    initial: { opacity: 0, y: 8 },
+    transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] as const },
   }
   return supportsInView
     ? { ...base, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '0px 0px -60px 0px' } }

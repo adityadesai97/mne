@@ -139,7 +139,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
         className="mx-4 mb-2"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: Math.min(index, 10) * 0.02, ease: [0.25, 0.1, 0.25, 1] as const }}
+        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] as const }}
         whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
       >
         <Link to={`/portfolio/${asset.id}`} className="block">
@@ -211,9 +211,8 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
       className="aspect-[3/4] sm:aspect-square"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay: Math.min(index, 10) * 0.03, ease: [0.25, 0.1, 0.25, 1] as const }}
-      whileHover={{ y: -3, transition: { duration: 0.15, ease: [0.25, 0.1, 0.25, 1] as const } }}
-      whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
+      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] as const }}
+      whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
     >
       <Link to={`/portfolio/${asset.id}`} className="block h-full">
         <div

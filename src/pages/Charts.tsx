@@ -52,7 +52,6 @@ const ZEBRA_COLORS = ['transparent', 'rgba(244,236,226,0.03)']
 // radius, padding, and hover lift — so Charts reads as the same page
 // system instead of its own component library.
 const CARD_CLASS = 'bg-card shadow-card rounded-lg p-5'
-const CARD_HOVER = { y: -2, transition: { duration: 0.15, delay: 0 } }
 
 const tooltipBase = {
   backgroundColor: TOOLTIP_BG,
@@ -678,7 +677,6 @@ export default function Charts() {
         {/* PORTFOLIO ALLOCATION */}
         <motion.div
           {...revealUp(0)}
-          whileHover={CARD_HOVER}
           className={`md:col-span-3 ${CARD_CLASS}`}
         >
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -704,7 +702,6 @@ export default function Charts() {
         {/* BY ACCOUNT */}
         <motion.div
           {...revealUp(0.03)}
-          whileHover={CARD_HOVER}
           className={`md:col-span-3 ${CARD_CLASS}`}
         >
           <div className="mb-3">
@@ -716,7 +713,6 @@ export default function Charts() {
         {/* STOCK DISTRIBUTION BY THEME */}
         <motion.div
           {...revealUp(0.06)}
-          whileHover={CARD_HOVER}
           className={`md:col-span-3 ${CARD_CLASS}`}
         >
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -747,7 +743,6 @@ export default function Charts() {
         {(activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) && (
           <motion.div
             {...revealUp(0.09)}
-            whileHover={CARD_HOVER}
             className={`md:col-span-3 ${CARD_CLASS}`}
           >
             <div className="flex items-start justify-between gap-3 mb-3">
@@ -774,7 +769,6 @@ export default function Charts() {
         {pnlData.length > 0 && (
           <motion.div
             {...revealUp(0.12)}
-            whileHover={CARD_HOVER}
             className={`md:col-span-6 ${CARD_CLASS}`}
           >
             <div className="mb-3">
@@ -797,7 +791,6 @@ export default function Charts() {
         {cvvData.length > 0 && (
           <motion.div
             {...revealUp(0.15)}
-            whileHover={CARD_HOVER}
             className={`md:col-span-6 ${CARD_CLASS}`}
           >
             <div className="mb-3">
@@ -818,7 +811,6 @@ export default function Charts() {
         {rsuData.length > 0 && (
           <motion.div
             {...revealUp(0.18)}
-            whileHover={CARD_HOVER}
             className={`md:col-span-6 ${CARD_CLASS}`}
           >
             <div className="mb-3">

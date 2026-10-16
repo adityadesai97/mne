@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Liquid } from 'liquid-gooey'
 import { LayoutDashboard, BarChart2, PieChart, Star, Settings } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 
@@ -46,33 +45,20 @@ export default function Sidebar() {
         <img src="/logo.png" alt="mne" className="w-full h-full object-cover logo-adaptive" />
       </div>
 
-      {/*
-        Same liquid Move indicator as the mobile BottomNav, sliding vertically
-        instead of horizontally. The fill must stay opaque — the goo filter's
-        alpha-contrast step crushes translucent fills to invisible (see the
-        comment in BottomNav.tsx) — so this replaces the previous gradient
-        `bg-brand` pill with a flat `--primary` fill; the icon still inverts
-        to `--primary-foreground` on top of it, same as before.
-      */}
-      <Liquid
-        blur={3}
-        fill="hsl(var(--primary))"
-        shadow="0 2px 8px hsl(var(--primary) / 0.35)"
-        className="flex flex-col gap-1 flex-1 w-full px-2.5"
-      >
+      {/* Active pill slides between items on the standard 180ms curve (no spring). */}
+      <div className="relative flex flex-col gap-1 flex-1 w-full px-2.5">
         {indicator && (
-          <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
               aria-hidden="true"
-              className="absolute top-0 left-0 rounded-md pointer-events-none"
+              className="absolute top-0 left-0 rounded-md bg-muted pointer-events-none"
               style={{
                 width: indicator.w,
                 height: indicator.h,
                 transform: `translate(${indicator.x}px, ${indicator.y}px)`,
-                transition: 'transform 260ms cubic-bezier(0.3, 1.05, 0.4, 1)',
+                transition: 'transform var(--dur-standard) var(--ease-standard)',
               }}
             />
-          </Liquid.Item>
+
         )}
         {visibleNav.map(({ to, icon: Icon, label }, i) => (
           <NavLink
@@ -82,17 +68,17 @@ export default function Sidebar() {
             end={to === '/'}
             title={label}
             className={({ isActive }) =>
-              `flex items-center justify-center w-full aspect-square rounded-md transition-colors duration-150 ${
-                isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
+              `relative flex items-center justify-center w-full aspect-square rounded-md transition-colors duration-150 ${
+                isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
               }`
             }
           >
-            <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="flex items-center justify-center">
-              <Icon size={18} />
+            <motion.span whileTap={{ scale: 0.96 }} className="flex items-center justify-center">
+              <Icon size={20} strokeWidth={1.5} />
             </motion.span>
           </NavLink>
         ))}
-      </Liquid>
+      </div>
     </nav>
   )
 }
