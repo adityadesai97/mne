@@ -169,7 +169,7 @@ export default function Charts() {
 
 {/* UNREALIZED P&L BY POSITION */}
           {pnlData.length > 0 && (
-            <MasonryItem span="all"><section className="mne-card">
+            <MasonryItem span={2}><section className="mne-card">
               <div className="mne-chart-head">
                 <Eyebrow icon={TrendingUp}>Unrealized P&amp;L</Eyebrow>
                 <span className={hiddenValueClass(hideValues)}>{signed(totalPnl)}</span>
@@ -228,7 +228,7 @@ export default function Charts() {
 
 {/* COST BASIS VS CURRENT VALUE */}
           {cvvData.length > 0 && (
-            <MasonryItem span="all"><section className="mne-card">
+            <MasonryItem span={2}><section className="mne-card">
               <Eyebrow icon={BarChart3}>Cost basis vs value</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <CostValueBars rows={cvvData} />
@@ -238,7 +238,7 @@ export default function Charts() {
 
 {/* RSU VESTING PROGRESS */}
           {rsuData.length > 0 && (
-            <MasonryItem span="all"><section className="mne-card">
+            <MasonryItem span={2}><section className="mne-card">
               <Eyebrow icon={CalendarClock}>RSU vesting progress</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <RsuVestChart rows={rsuData} />

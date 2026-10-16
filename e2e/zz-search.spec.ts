@@ -33,6 +33,7 @@ for (const [scheme, vp] of [['dark', { width: 1200, height: 900 }], ['light', { 
     await page.screenshot({ path: `/tmp/claude-0/shots/search-${scheme}-${vp.width}.png` })
     await page.keyboard.press('Enter')
     await expect(input).toHaveValue('APLE')
+    await expect(input).toHaveValue('')
     await page.getByLabel('Crypto', { exact: true }).check()
     await input.fill('btc')
     await expect(page.getByRole('option')).toHaveCount(2)

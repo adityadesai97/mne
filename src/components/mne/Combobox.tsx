@@ -28,12 +28,14 @@ export function SymbolCombobox({ id, value, onChange, onPick, crypto, placeholde
   const [open, setOpen] = useState(false)
   const [searchedFor, setSearchedFor] = useState('')
   const reqId = useRef(0)
-  const skipNext = useRef(false)
+  const pickedRef = useRef<string | null>(null)
   const query = value.trim()
 
   useEffect(() => {
     const myReq = ++reqId.current
-    if (skipNext.current) { skipNext.current = false; setStatus('idle'); return }
+    // Don't re-search for the text a pick just filled in.
+    if (pickedRef.current !== null && pickedRef.current === query) { setStatus('idle'); return }
+    pickedRef.current = null
     if (!query) { setItems([]); setStatus('idle'); setMessage(null); setActive(-1); return }
     if (!crypto && !config.hasFinnhubKey) {
       setItems([]); setStatus('error'); setMessage('Add a Finnhub key in Settings to see suggestions. You can still type a symbol and press Add.'); return
@@ -61,7 +63,7 @@ export function SymbolCombobox({ id, value, onChange, onPick, crypto, placeholde
   const pick = (i: number, submit: boolean) => {
     const s = items[i]
     if (!s) return
-    skipNext.current = s.symbol !== value
+    pickedRef.current = s.symbol.trim()
     setOpen(false); setActive(-1); setItems([])
     onPick(s, submit)
   }

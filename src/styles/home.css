@@ -1,5 +1,4 @@
 /* Home page: compact bento, chart range overlay and chart draw-in motion. */
-.mne-bento.is-home { align-items: start; }
 
 .mne-chart-wrap { position: relative; padding-top: 34px; }
 .mne-chart-range { position: absolute; top: 0; right: 0; z-index: 3; }
