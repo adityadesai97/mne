@@ -51,7 +51,9 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 .mne-dd-menu .pf-dd-k { display: none; }
 @media (max-width: 640px) {
   .pf-toolbar .pf-search { flex-basis: 100%; }
-  .pf-toolbar .mne-dd { flex: 1 1 0; min-width: 0; }
+  .pf-toolbar .mne-dd { flex: 1 1 auto; min-width: 0; }
+  .pf-toolbar .mne-dd-trigger { padding: 0 10px 0 12px; gap: 4px; }
+  .pf-toolbar .pf-dd-k { margin-right: 4px; }
 }
 
 /* Asset logo: small neutral rounded tile; image or type icon. */
@@ -70,6 +72,10 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 
 /* Portfolio list rows / asset header layout. */
 .pf-rowhead { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.pf-rowname { min-width: 0; flex: 1; }
+.pf-rowtext { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; min-width: 0; flex: 1; }
+.pf-rowname { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-rowname .sub { overflow: hidden; text-overflow: ellipsis; }
+.pf-table-row td:first-child { width: 100%; max-width: 0; }
+@media (max-width: 640px) { .pf-rowname { flex-basis: 100%; } }
 .pf-detail-head { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .pf-detail-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

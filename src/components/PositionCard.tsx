@@ -53,11 +53,13 @@ export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: n
         <td>
           <div className="pf-rowhead">
             <AssetLogo asset={asset} />
-            <Link to={href} onClick={e => e.stopPropagation()} className="pf-rowname">
-              {asset.name}
-              <span className="sub">{caption(asset)}</span>
-            </Link>
-            <AssetTags asset={asset} />
+            <div className="pf-rowtext">
+              <Link to={href} onClick={e => e.stopPropagation()} className="pf-rowname">
+                {asset.name}
+                <span className="sub">{caption(asset)}</span>
+              </Link>
+              <AssetTags asset={asset} />
+            </div>
           </div>
         </td>
         <td className="r pf-hide-sm">{qtyLabel ? qtyLabel.split(' ')[0] : '—'}</td>
