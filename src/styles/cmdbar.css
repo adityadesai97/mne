@@ -97,3 +97,24 @@
 /* Sheet head is the drag handle: stop the browser scrolling/zooming from it. */
 .cmdk-head[data-draggable] { touch-action: none; cursor: grab; }
 .cmdk-head[data-draggable]:active { cursor: grabbing; }
+
+/* Conversation history. Docked: a view that replaces the thread inside the panel (header stays, with Back).
+   Phone sheet: a dropdown card hanging under the header. Same list either way. */
+.cmdk-thread[hidden], .cmdk-foot[hidden] { display: none; }
+.cmdk-ibtn.is-on { background: var(--mne-surface-300); color: var(--mne-ink); }
+.cmdk-history { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.cmdk-history.is-view { flex: 1; padding: 4px 16px 14px; border-top: 1px solid var(--mne-line); padding-top: 12px; }
+.cmdk-history-bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+.cmdk-history-title { margin: 0; font: 500 18px/24px var(--mne-font-serif); letter-spacing: -.01em; color: var(--mne-ink); }
+.cmdk-history-new { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; }
+.cmdk-history-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; }
+.cmdk-history-group { display: flex; flex-direction: column; gap: 4px; }
+.cmdk-history-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmdk-history-item { display: flex; align-items: center; gap: 4px; border-radius: var(--mne-radius-md); padding-right: 4px; transition: background var(--mne-dur, 180ms) linear; }
+.cmdk-history-item:hover, .cmdk-history-item.is-current { background: var(--mne-surface-300); }
+.cmdk-history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; border: 0; background: transparent; cursor: pointer; padding: 8px 10px; border-radius: var(--mne-radius-md); color: var(--mne-ink); font: 500 14px/20px var(--mne-font-sans); }
+.cmdk-history-open:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.cmdk-history-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-history-date { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.cmdk-drop-anchor { position: relative; flex: none; height: 0; z-index: 5; }
+.cmdk-history.is-drop { position: absolute; left: 12px; right: 12px; top: 0; max-height: min(36vh, 300px); background: var(--mne-surface-200); border: 1px solid var(--mne-line); border-radius: var(--mne-radius-md); padding: 12px; box-shadow: var(--shadow-lg, 0 16px 40px rgba(0, 0, 0, .3)); }

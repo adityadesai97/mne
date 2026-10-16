@@ -120,6 +120,46 @@ test.describe('signed in', () => {
     await expect(panel).toBeVisible()
   })
 
+  test('History in the docked panel resumes and deletes saved conversations', async ({ page }) => {
+    const now = new Date().toISOString()
+    const db = await signedInApp(page, {
+      command_conversations: [
+        { id: 'c1', title: 'Weekly movers', created_at: now, updated_at: now, origin: 'command_bar', messages: [{ role: 'user', content: 'Weekly movers' }, { role: 'assistant', content: 'NVDA led the week.' }] },
+        { id: 'c2', title: 'NVDA tax lots', created_at: '2020-01-02T12:00:00Z', updated_at: '2020-01-02T12:00:00Z', origin: 'command_bar', messages: [] },
+      ],
+    })
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Ask or search' }).click()
+    const panel = page.getByRole('complementary', { name: 'Ask mne' })
+    await panel.getByRole('button', { name: 'Conversation history' }).click()
+    await expect(panel.getByRole('button', { name: 'Open conversation: NVDA tax lots' })).toBeVisible()
+
+    await panel.getByRole('button', { name: 'Delete conversation: NVDA tax lots' }).click()
+    await expect(panel.getByRole('button', { name: 'Open conversation: NVDA tax lots' })).toHaveCount(0)
+    expect(db.calls.some(c => c.method === 'DELETE' && c.path.endsWith('/command_conversations'))).toBe(true)
+
+    // The fake database doesn't apply deletes; mirror it so the single-row fetch below sees what the server would.
+    db.tables.command_conversations = db.tables.command_conversations.filter(r => r.id !== 'c2')
+    await panel.getByRole('button', { name: 'Open conversation: Weekly movers' }).click()
+    await expect(panel.getByText('NVDA led the week.')).toBeVisible()
+    await expect(panel.getByRole('region', { name: 'Conversation history' })).toHaveCount(0)
+  })
+
+  test('History on the phone sheet is a dropdown under the header', async ({ page }) => {
+    const now = new Date().toISOString()
+    await signedInApp(page, {
+      command_conversations: [{ id: 'c1', title: 'Weekly movers', created_at: now, updated_at: now, origin: 'command_bar', messages: [{ role: 'user', content: 'Weekly movers' }, { role: 'assistant', content: 'NVDA led the week.' }] }],
+    })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Ask mne' }).click()
+    const sheet = page.getByRole('dialog', { name: 'Ask mne' })
+    await sheet.getByRole('button', { name: 'Conversation history' }).click()
+    await sheet.getByRole('button', { name: 'Open conversation: Weekly movers' }).click()
+    await expect(sheet.getByText('NVDA led the week.')).toBeVisible()
+  })
+
   test('"Ask about this" chips open the bar with a context question', async ({ page }) => {
     await signedInApp(page)
     await page.setViewportSize({ width: 1440, height: 900 })

@@ -171,3 +171,30 @@ export async function deleteConversation(id: string): Promise<void> {
     .eq('id', id)
   if (error) throw error
 }
+
+export interface ConversationGroup {
+  label: 'Today' | 'Yesterday' | 'Earlier this week' | 'Earlier'
+  items: ConversationSummary[]
+}
+
+function dayStart(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+/** Buckets conversations (already newest-first) by the local calendar day they were last updated,
+ *  for the command bar's history list. Empty groups are omitted. */
+export function groupConversationsByDay(items: ConversationSummary[], now: Date = new Date()): ConversationGroup[] {
+  const today = dayStart(now)
+  const DAY = 86_400_000
+  const buckets: ConversationGroup[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Earlier this week', items: [] },
+    { label: 'Earlier', items: [] },
+  ]
+  for (const c of items) {
+    const age = Math.round((today - dayStart(new Date(c.updated_at))) / DAY)
+    buckets[age <= 0 ? 0 : age === 1 ? 1 : age < 7 ? 2 : 3].items.push(c)
+  }
+  return buckets.filter(b => b.items.length > 0)
+}

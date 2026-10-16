@@ -3,10 +3,20 @@ import userEvent from '@testing-library/user-event'
 import { CommandBar } from '../components/CommandBar'
 import { runCommand } from '../lib/claude'
 import { submitCommandFeedback } from '../lib/db/feedback'
+import { listConversations, getConversation, deleteConversation, groupConversationsByDay } from '../lib/db/conversations'
 
 // Mock claude module to avoid actual API calls
 vi.mock('../lib/claude', () => ({
   runCommand: vi.fn(),
+}))
+
+vi.mock('../lib/db/conversations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/db/conversations')>()),
+  listConversations: vi.fn(),
+  getConversation: vi.fn(),
+  deleteConversation: vi.fn(),
+  saveConversation: vi.fn().mockResolvedValue('saved-id'),
+  incrementConversationUsage: vi.fn(),
 }))
 
 vi.mock('../lib/db/feedback', () => ({
@@ -235,4 +245,68 @@ test('a prefilled question (chip / Pulse card) is sent as soon as the panel open
   expect(await screen.findByText('It rose.')).toBeInTheDocument()
   expect(screen.getByText('Explain my allocation')).toBeInTheDocument()
   expect(onPrefillHandled).toHaveBeenCalled()
+})
+
+const NOW = new Date().toISOString()
+const SAVED = [
+  { id: 'c1', title: 'Weekly movers', created_at: NOW, updated_at: NOW },
+  { id: 'c2', title: 'NVDA tax lots', created_at: '2020-01-02T12:00:00Z', updated_at: '2020-01-02T12:00:00Z' },
+]
+
+test('History lists saved conversations, resumes one, and deletes another', async () => {
+  vi.mocked(listConversations).mockResolvedValue(SAVED)
+  vi.mocked(getConversation).mockResolvedValue({
+    ...SAVED[0],
+    origin: 'command_bar',
+    messages: [{ role: 'user', content: 'Weekly movers' }, { role: 'assistant', content: 'NVDA led the week.' }],
+  })
+  vi.mocked(deleteConversation).mockResolvedValue(undefined)
+  const user = userEvent.setup()
+  render(<CommandBar open={true} onClose={() => {}} />)
+
+  await user.click(screen.getByRole('button', { name: 'Conversation history' }))
+  expect(await screen.findByRole('button', { name: 'Open conversation: Weekly movers' })).toBeInTheDocument()
+  expect(screen.getByText('Today')).toBeInTheDocument()
+  expect(screen.getByText('Earlier')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Delete conversation: NVDA tax lots' }))
+  expect(deleteConversation).toHaveBeenCalledWith('c2')
+  expect(screen.queryByRole('button', { name: 'Open conversation: NVDA tax lots' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Open conversation: Weekly movers' }))
+  expect(getConversation).toHaveBeenCalledWith('c1')
+  expect(await screen.findByText('NVDA led the week.')).toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Conversation history' })).not.toBeInTheDocument()
+})
+
+test('docked History replaces the thread, and New conversation clears it', async () => {
+  vi.mocked(listConversations).mockResolvedValue([])
+  vi.mocked(runCommand).mockResolvedValue({ type: 'text', message: 'Hello there.' })
+  setViewportWidth(1280)
+  const user = userEvent.setup()
+  render(<CommandBar open={true} onClose={() => {}} />)
+  await user.type(screen.getByPlaceholderText(/ask anything/i), 'hi')
+  await user.keyboard('{Enter}')
+  expect(await screen.findByText('Hello there.')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Conversation history' }))
+  expect(await screen.findByText('No saved conversations yet.')).toBeInTheDocument()
+  expect(screen.getByText('Hello there.')).not.toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Back to conversation' }))
+  expect(screen.getByText('Hello there.')).toBeVisible()
+
+  await user.click(screen.getByRole('button', { name: 'Conversation history' }))
+  await user.click(screen.getByRole('button', { name: /New conversation/ }))
+  expect(screen.queryByText('Hello there.')).not.toBeInTheDocument()
+  expect(screen.getByPlaceholderText(/ask anything/i)).toBeInTheDocument()
+})
+
+test('groupConversationsByDay buckets by local day and drops empty groups', () => {
+  const now = new Date(2026, 9, 16, 12)
+  const at = (d: Date) => ({ id: String(d.getTime()), title: 't', created_at: d.toISOString(), updated_at: d.toISOString() })
+  const groups = groupConversationsByDay([
+    at(new Date(2026, 9, 16, 1)), at(new Date(2026, 9, 15, 23)), at(new Date(2026, 9, 12)), at(new Date(2026, 8, 1)),
+  ], now)
+  expect(groups.map(g => [g.label, g.items.length])).toEqual([['Today', 1], ['Yesterday', 1], ['Earlier this week', 1], ['Earlier', 1]])
+  expect(groupConversationsByDay([], now)).toEqual([])
 })
