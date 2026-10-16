@@ -12,7 +12,6 @@ import { autoAssignThemesForTicker, autoAssignThemesForTickerIfEnabled } from '@
 import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Delta, PageHead } from '@/components/mne'
-import { computeThemeDistribution } from '@/lib/charts'
 import { Info, Plus, Sparkles, Star, Trash2 } from 'lucide-react'
 import { Tooltip } from '@/components/mne/Tooltip'
 import '@/styles/watchlist.css'
@@ -36,8 +35,6 @@ function formatRelativeTime(isoString: string | null): string | null {
 export default function Watchlist() {
   const [tickers, setTickers] = useState<any[]>([])
   const [loaded, setLoaded] = useState(false)
-  const [assets, setAssets] = useState<any[]>([])
-  const [themes, setThemes] = useState<any[]>([])
   const [symbol, setSymbol] = useState('')
   const [isCrypto, setIsCrypto] = useState(false)
   // The coin picked from the suggestions, so the exact coin (not just a
@@ -65,9 +62,7 @@ export default function Watchlist() {
   }, [])
 
   const loadTickers = async () => {
-    const [allTickers, allAssets, allThemes] = await Promise.all([getAllTickers(), getAllAssets(), getAllThemes().catch(() => [])])
-    setAssets(allAssets ?? [])
-    setThemes(allThemes ?? [])
+    const [allTickers, allAssets] = await Promise.all([getAllTickers(), getAllAssets()])
     const stockCountsByTicker = new Map<string, number>()
     for (const asset of allAssets ?? []) {
       if (!isTickerAsset(asset) || !asset.ticker_id) continue
@@ -208,18 +203,6 @@ export default function Watchlist() {
     }
   }
 
-  const themeRows = (() => {
-    const totals = new Map<string, number>()
-    for (const row of computeThemeDistribution(assets)) totals.set(row.name, row.value)
-    const sum = Array.from(totals.values()).reduce((a, b) => a + b, 0)
-    return themes.map((th: any) => {
-      const tg = Array.isArray(th.theme_targets) ? th.theme_targets.find((x: any) => x.is_active !== false) : th.theme_targets
-      const target = tg?.target_percentage
-      const share = sum > 0 && totals.has(th.name) ? ((totals.get(th.name) ?? 0) / sum) * 100 : null
-      return { id: th.id as string, name: th.name as string, target: target != null ? Number(target) : null, share }
-    })
-  })()
-
   return (
     <>
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
@@ -280,7 +263,6 @@ export default function Watchlist() {
               {Array.from({ length: 4 }).map((_, i) => <div key={i} className="mne-skel" style={{ height: 44 }} />)}
             </div>
           </section>
-          <section className="mne-card s2"><h3 className="mne-card-title">Themes</h3><div className="mne-skel" style={{ height: 44 }} /></section>
         </div>
       )}
 
@@ -294,7 +276,7 @@ export default function Watchlist() {
 
       {loaded && tickers.length > 0 && (
         <div className="mne-bento wl-bento">
-          <section className="mne-card s4">
+          <section className="mne-card s6">
             <h3 className="mne-card-title">Tickers</h3>
             <div style={{ overflowX: 'auto' }}>
             <table className="mne-table">
@@ -348,7 +330,7 @@ export default function Watchlist() {
                       </tr>
                       {isOpen && (
                         <tr>
-                          <td colSpan={4}onClick={e => e.stopPropagation()}>
+                          <td colSpan={4} onClick={e => e.stopPropagation()}>
                             <ThemeManager ticker={t} onUpdated={loadTickers} />
                           </td>
                         </tr>
@@ -359,25 +341,6 @@ export default function Watchlist() {
               </tbody>
             </table>
             </div>
-          </section>
-
-          <section className="mne-card s2">
-            <h3 className="mne-card-title">Themes</h3>
-            {themeRows.length === 0 ? (
-              <p className="mne-muted" style={{ margin: 0 }}>No themes yet. Expand a ticker to add one.</p>
-            ) : (
-              <div className="mne-list">
-                {themeRows.map(th => (
-                  <div key={th.id} className="mne-row">
-                    <div>
-                      <div className="t">{th.name}</div>
-                      {th.target != null && <div className="d">Target {th.target}%</div>}
-                    </div>
-                    {th.share != null && <span className="mne-chip">{th.share.toFixed(0)}%</span>}
-                  </div>
-                ))}
-              </div>
-            )}
           </section>
         </div>
       )}
