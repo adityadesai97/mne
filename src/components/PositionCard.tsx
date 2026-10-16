@@ -177,7 +177,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         </>
                       ) : (
                         <>
-                          <p className={`font-semibold font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                          <p className={`font-medium font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                           <p
                             className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}
                             title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
@@ -187,7 +187,7 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
                         </>
                       )
                     ) : (
-                      <p className={`font-semibold font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                      <p className={`font-medium font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                     )}
                   </div>
                   <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
@@ -239,12 +239,12 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
             {isStock ? (
               noPriceData ? (
                 <>
-                  <p className="font-semibold text-xl font-display leading-tight text-white/70">—</p>
+                  <p className="font-medium text-xl font-display leading-tight text-white/70">—</p>
                   <p className="text-xs text-white/70 mt-0.5">Price pending</p>
                 </>
               ) : (
                 <>
-                  <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                  <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <span className="text-xs text-white/70 tabular-nums">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
                     {/* Direction is carried by the arrow icon + sign, not by a
@@ -263,11 +263,11 @@ export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any
               )
             ) : isTradable ? (
               <>
-                <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+                <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
                 <span className="text-xs text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
               </>
             ) : (
-              <p className={`font-semibold text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
+              <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
             )}
           </div>
         </div>

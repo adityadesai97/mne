@@ -457,7 +457,7 @@ export default function AssetDetail() {
                 <p className="text-muted-foreground text-xs uppercase tracking-widest mb-2 font-medium">
                   {asset.location?.name} · {asset.asset_type}{isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}
                 </p>
-                <h2 className="font-display text-2xl font-bold tracking-tight">{asset.name}</h2>
+                <h2 className="font-display text-2xl font-medium tracking-tight">{asset.name}</h2>
                 {isStock && asset.ticker && !noPriceData && (
                   <p className="text-sm mt-1 flex items-center gap-1.5">
                     <span className="text-muted-foreground">{asset.ticker.symbol}</span>
@@ -493,7 +493,7 @@ export default function AssetDetail() {
                     </>
                   ) : (
                     <>
-                      <p className="text-3xl font-bold tabular-nums font-display">
+                      <p className="text-3xl font-medium tabular-nums font-display">
                         <span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>
                         {isStock && (
                           <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>

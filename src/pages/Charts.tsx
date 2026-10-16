@@ -644,7 +644,7 @@ export default function Charts() {
           <div className="relative mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-brand-subtle">
             <Sparkles size={18} className="text-primary" aria-hidden="true" />
           </div>
-          <p className="relative font-display text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+          <p className="relative font-display text-2xl md:text-3xl font-medium tracking-tight text-foreground">
             Add an asset first.
           </p>
           <p className="relative mt-2 text-sm text-muted-foreground">
@@ -665,7 +665,7 @@ export default function Charts() {
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
           <BarChart3 size={16} className="text-primary" aria-hidden="true" />
         </div>
-        <p className="font-display text-lg md:text-xl font-bold text-foreground tracking-tight">Charts</p>
+        <p className="font-display text-lg md:text-xl font-medium text-foreground tracking-tight">Charts</p>
       </motion.div>
 
       {/* Bento grid — same 6-column system as Home, so cards that don't need
@@ -683,14 +683,14 @@ export default function Charts() {
         >
           <div className="flex items-start justify-between gap-3 mb-3">
             <CardEyebrow icon={PieChart}>Portfolio Allocation</CardEyebrow>
-            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5 flex-shrink-0">
+            <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5 flex-shrink-0">
               {ALL_SUBTYPES.map((s) => (
                 <button
                   type="button"
                   key={s}
                   onClick={() => toggleSubtype(s)}
-                  className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
-                    activeSubtypes.has(s) ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                    activeSubtypes.has(s) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {s}
