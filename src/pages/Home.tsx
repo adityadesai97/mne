@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Lightbulb, Wallet, PieChart, Activity, Crown, Sparkles } from 'lucide-react'
+import { TrendingUp, TrendingDown, Lightbulb, Wallet, PieChart, Activity, Crown } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { dropDipOutliers } from '@/lib/snapshotBackfill'
@@ -337,7 +338,7 @@ export default function Home() {
         <PageHead title={heroGreeting} />
         <section className="mne-card is-hero">
           <div className="mne-empty">
-            <span className="ico"><Sparkles aria-hidden="true" /></span>
+            <span className="ico"><AiMark size={20} aria-hidden="true" /></span>
             <h3>Add your first asset to get started.</h3>
             <p>Portfolio and Charts unlock after your first asset is added. Use the command button to record a position.</p>
           </div>
