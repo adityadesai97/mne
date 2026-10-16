@@ -2,7 +2,8 @@
 // the rest folded behind a "N more insights" disclosure that expands into
 // compact rows. Collapsed rows are `inert`, so they can't be tabbed to or read.
 import { useId, useState } from 'react'
-import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { Chip } from '@/components/mne'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import type { PulseCardModel } from './model'
@@ -44,7 +45,7 @@ export function PulseHeadlineD({ cards, onOpen, hidden }: {
   return (
     <section className="mne-card pulse-d" aria-label="Portfolio Pulse">
       <div className="pulse-head">
-        <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
+        <CardEyebrow icon={AiMark}>Portfolio Pulse</CardEyebrow>
       </div>
 
       <div className={`pulse-d-head${top.seen ? ' is-seen' : ''}`} data-testid="pulse-top">
