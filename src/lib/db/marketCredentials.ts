@@ -4,7 +4,7 @@ import { config } from '@/store/config'
 // Finnhub and CoinGecko keys are write-only from the browser, exactly like the
 // Claude key (see llmCredentials.ts): saved to market_credential_secrets (no
 // select policy), flagged on market_credentials, used only by edge functions.
-// Plain update-then-insert, never an upsert, for the same reason.
+// Writes go through the save_market_keys SQL function for the same reason.
 
 export async function getMarketKeyStatus(): Promise<{ finnhubSet: boolean; coingeckoSet: boolean }> {
   const { data, error } = await getSupabaseClient()
@@ -20,38 +20,13 @@ export async function saveMarketKeys(keys: { finnhubApiKey?: string; coingeckoAp
   const finnhub = keys.finnhubApiKey?.trim() ?? ''
   const coingecko = keys.coingeckoApiKey?.trim() ?? ''
   if (!finnhub && !coingecko) return
-  const { data: { user } } = await getSupabaseClient().auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-  const now = new Date().toISOString()
-
-  const { error: credError } = await getSupabaseClient()
-    .from('market_credentials')
-    .upsert({ user_id: user.id, updated_at: now }, { onConflict: 'user_id' })
-  if (credError) throw credError
-
-  const secrets: Record<string, string> = {}
-  if (finnhub) secrets.finnhub_api_key = finnhub
-  if (coingecko) secrets.coingecko_api_key = coingecko
-  const { error: updateError, count } = await getSupabaseClient()
-    .from('market_credential_secrets')
-    .update({ ...secrets, updated_at: now }, { count: 'exact' })
-    .eq('user_id', user.id)
-  if (updateError) throw updateError
-  if (!count) {
-    const { error: insertError } = await getSupabaseClient()
-      .from('market_credential_secrets')
-      .insert({ user_id: user.id, ...secrets, updated_at: now })
-    if (insertError) throw insertError
-  }
-
-  const flags: Record<string, boolean> = {}
-  if (finnhub) flags.finnhub_set = true
-  if (coingecko) flags.coingecko_set = true
-  const { error: flagError } = await getSupabaseClient()
-    .from('market_credentials')
-    .update(flags)
-    .eq('user_id', user.id)
-  if (flagError) throw flagError
+  // Server-side function, same reason as saveLlmKey: update-then-insert cannot
+  // work against a table with no select policy. Blank keys are left untouched.
+  const { error } = await getSupabaseClient().rpc('save_market_keys', {
+    p_finnhub: finnhub || null,
+    p_coingecko: coingecko || null,
+  })
+  if (error) throw error
 
   if (finnhub) { config.save({ finnhubKeySet: true }) }
   if (coingecko) { config.save({ coingeckoKeySet: true }) }
