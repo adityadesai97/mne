@@ -74,3 +74,18 @@ test('packFill falls back to plain packing in one column', async () => {
   const { placements } = packFill([{ height: 10 }, { height: 20 }], 1, 5)
   expect(placements.map(p => p.top)).toEqual([0, 15])
 })
+
+test('equally good hole fillers keep DOM order despite sub-pixel height noise', async () => {
+  const { packMasonry } = await import('@/components/mne/Masonry')
+  // Net worth (2 cols), a short card under it, a wide card, then three same-height cards that all fit the hole beside the short card.
+  for (const noise of [[0, 0.01, -0.01], [0.01, -0.01, 0], [-0.01, 0, 0.01]]) {
+    const items = [
+      { height: 400, span: 2 }, { height: 134 }, { height: 600, span: 'all' as const },
+      { height: 138 + noise[0] }, { height: 138 + noise[1] }, { height: 138 + noise[2] },
+    ]
+    const { placements } = packMasonry(items, 2, 24)
+    expect(placements[3].top).toBeLessThan(placements[2].top) // first candidate fills the hole
+    expect(placements[4].top).toBeGreaterThan(placements[2].top)
+    expect(placements[5].top).toBeGreaterThan(placements[2].top)
+  }
+})
