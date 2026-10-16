@@ -270,7 +270,7 @@ export default function Portfolio() {
   if (assetsLoaded && assets.length === 0) {
     return (
       <div className="pt-6 pb-4 px-4">
-        <h1 className="text-xl font-bold">Portfolio</h1>
+        <h1 className="font-display text-3xl font-medium tracking-tight">Portfolio</h1>
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -280,7 +280,7 @@ export default function Portfolio() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
             <PackageOpen size={20} className="text-primary" />
           </div>
-          <p className="font-display text-2xl font-bold tracking-tight text-foreground">Add an asset first.</p>
+          <p className="font-display text-2xl font-medium tracking-tight text-foreground">Add an asset first.</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Portfolio data appears after your first asset is added.
           </p>
@@ -295,7 +295,7 @@ export default function Portfolio() {
     <div className="pt-6 pb-4">
       <div className="flex justify-between items-center px-4 mb-3">
         <div>
-          <h1 className="text-xl font-bold">Portfolio</h1>
+          <h1 className="font-display text-3xl font-medium tracking-tight">Portfolio</h1>
           {formatRelativeTime(pricesRefreshedAt) && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Prices {formatRelativeTime(pricesRefreshedAt)}
@@ -335,7 +335,7 @@ export default function Portfolio() {
                   <motion.div
                     layoutId="chip-pill"
                     className="absolute inset-0 rounded-full bg-primary -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                    transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
                   />
                 )}
                 {type}

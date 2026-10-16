@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Liquid } from 'liquid-gooey'
 import { Home, BarChart2, PieChart, Star, Settings } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 
@@ -59,40 +58,21 @@ export default function BottomNav() {
       // animation.
       style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', transform: 'translateZ(0)' }}
     >
-      {/*
-        The fill MUST be opaque: the goo filter blurs the silhouette and then
-        pushes its alpha through a steep contrast curve to re-sharpen the
-        edge (new_alpha = contrast * old_alpha + intercept, ~18x by default)
-        — a translucent fill (e.g. the previous 10%-opacity tint) never
-        clears that curve's threshold and gets crushed to fully transparent
-        everywhere, which is why the pill didn't render at all. Content
-        sitting on the pill inverts to `--primary-foreground` to stay legible
-        on the solid color, same treatment as the desktop Sidebar's pill.
-        Goo blur is kept small relative to the tab row: a large sigma would
-        smooth the pill's rounded-sm ends into a shallower curve. There's only
-        ever one blob here (no neighbours to bridge into) — the liquid
-        effect is purely the Move trail as the indicator slides tab to tab.
-      */}
-      <Liquid
-        blur={4}
-        fill="hsl(var(--primary))"
-        shadow="0 2px 8px hsl(var(--primary) / 0.35)"
-        className="flex justify-around py-2"
-      >
+      {/* Active pill slides between tabs on the standard 180ms curve (no spring). */}
+      <div className="relative flex justify-around py-2">
         {indicator && (
-          <Liquid.Item effect="move" move={{ springiness: 0.6, trail: 0.4 }}>
             <div
               aria-hidden="true"
-              className="absolute left-0 rounded-lg pointer-events-none"
+              className="absolute left-0 rounded-full bg-muted pointer-events-none"
               style={{
                 top: indicator.y,
                 width: indicator.w,
                 height: indicator.h,
                 transform: `translateX(${indicator.x}px)`,
-                transition: 'transform 260ms cubic-bezier(0.3, 1.05, 0.4, 1), width 260ms cubic-bezier(0.3, 1.05, 0.4, 1)',
+                transition: 'transform var(--dur-standard) var(--ease-standard), width var(--dur-standard) var(--ease-standard)',
               }}
             />
-          </Liquid.Item>
+
         )}
         {visibleTabs.map(({ to, icon: Icon, label }, i) => (
           <NavLink
@@ -101,18 +81,18 @@ export default function BottomNav() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-1 px-4 py-1.5 text-xs transition-colors duration-150 ${
-                isActive ? 'text-primary-foreground' : 'text-muted-foreground active:text-foreground'
+              `relative flex flex-col items-center gap-1 px-4 py-1.5 text-xs transition-colors duration-150 ${
+                isActive ? 'text-primary' : 'text-muted-foreground active:text-foreground'
               }`
             }
           >
-            <motion.span whileTap={{ scale: 0.85 }} className="flex flex-col items-center gap-1">
-              <Icon size={20} aria-hidden="true" />
+            <motion.span whileTap={{ scale: 0.96 }} className="flex flex-col items-center gap-1">
+              <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
               <span>{label}</span>
             </motion.span>
           </NavLink>
         ))}
-      </Liquid>
+      </div>
     </nav>
   )
 }

@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
               <AlertTriangle size={20} className="text-destructive" />
             </div>
-            <h1 className="font-display text-xl font-bold text-foreground mb-2">Something went wrong</h1>
+            <h1 className="font-display text-xl font-medium text-foreground mb-2">Something went wrong</h1>
             <p className="text-sm text-muted-foreground mb-5">
               The app hit an unexpected error. Reloading usually fixes it.
             </p>

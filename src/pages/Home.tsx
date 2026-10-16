@@ -35,10 +35,10 @@ function getGreeting(): { text: string; Icon: typeof Sun } {
   return { text: 'Good night', Icon: Moon }
 }
 
-const AXIS_COLOR = 'hsl(215,14%,55%)'
-const TOOLTIP_BG = 'hsl(224,13%,9%)'
-const GRID_COLOR = 'hsl(224,13%,16%)'
-const LINE_COLOR = 'hsl(217,91%,60%)'
+const AXIS_COLOR = 'hsl(30,14%,62%)'
+const TOOLTIP_BG = 'hsl(27,18%,13%)'
+const GRID_COLOR = 'hsl(27,18%,20%)'
+const LINE_COLOR = 'hsl(18,60%,52%)'
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
@@ -56,16 +56,27 @@ function formatDateShort(date: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
 }
 
+// Counts to the new value in 180ms from wherever it currently is (not from
+// zero), with no scale pop; jumps straight there for reduced-motion users.
 function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | null>, format = fmtCurrency) {
+  const fromRef = useRef(target)
   useEffect(() => {
     const node = ref.current
     if (!node) return
-    const controls = animate(0, target, {
-      duration: 1.4,
-      ease: [0.25, 0.1, 0.25, 1],
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce || fromRef.current === target) {
+      node.textContent = format(target)
+      fromRef.current = target
+      return
+    }
+    const controls = animate(fromRef.current, target, {
+      duration: 0.18,
+      ease: [0.4, 0, 0.2, 1],
       onUpdate: (v) => { node.textContent = format(v) },
+      onComplete: () => { fromRef.current = target },
     })
-    return () => controls.stop()
+    return () => { controls.stop() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
 }
 
@@ -213,9 +224,9 @@ export default function Home() {
       // for whatever day you're hovering, so that still has to go dark.
       show: !hideValues,
       backgroundColor: TOOLTIP_BG,
-      borderColor: 'rgba(255,255,255,0.08)',
+      borderColor: 'rgba(244,236,226,0.1)',
       borderWidth: 1,
-      textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
+      textStyle: { color: 'hsl(32,35%,93%)', fontSize: 12 },
       trigger: 'axis',
       // Scrub feel: a vertical crosshair follows the cursor/touch drag along
       // the line, so you can trace net worth on any specific day rather than
@@ -272,6 +283,7 @@ export default function Home() {
         smooth: netWorthCount > 2,
         symbol: netWorthCount <= 2 ? 'circle' : 'none',
         symbolSize: 6,
+        itemStyle: { color: LINE_COLOR },
         clip: true,
         lineStyle: { width: 2.25, color: LINE_COLOR },
         areaStyle: {
@@ -281,7 +293,7 @@ export default function Home() {
         },
         emphasis: {
           scale: 1.4,
-          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(224,13%,9%)', borderWidth: 2 },
+          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(27,18%,13%)', borderWidth: 2 },
         },
         data: netWorthValues,
       },
@@ -446,7 +458,7 @@ export default function Home() {
           <p className="relative text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">
             {firstName ? `${firstName}'s Workspace` : 'Workspace'}
           </p>
-          <h1 className="relative font-display text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
+          <h1 className="relative font-display text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
             Add your first asset to get started.
           </h1>
           <p className="relative mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
@@ -467,7 +479,7 @@ export default function Home() {
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
           <greeting.Icon size={16} className="text-primary" aria-hidden="true" />
         </div>
-        <p className="font-display text-lg md:text-xl font-bold text-foreground tracking-tight">
+        <p className="font-display text-lg md:text-xl font-medium text-foreground tracking-tight">
           {greeting.text}{firstName ? `, ${firstName}` : ''}
         </p>
       </motion.div>
@@ -484,18 +496,11 @@ export default function Home() {
         {/* NET WORTH HERO */}
         <motion.div
           {...revealUp(0)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 relative overflow-hidden"
         >
-          {/* Ambient glow — neutral brand color until there's a day-over-day
-              change to react to, then tints toward gain/loss color. */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div
-              className={`absolute -top-8 left-1/4 w-72 h-36 rounded-full blur-3xl transition-colors duration-700 ${
-                hasMood ? (moodIsPositive ? 'bg-gain/[0.16] animate-pulse' : 'bg-loss/[0.16] animate-pulse') : 'bg-brand-subtle'
-              }`}
-            />
-          </div>
+          {/* Ambient wash: two faint accent and amber glows that drift slowly
+              behind the figure (design system "rich ambient"); content sits above. */}
+          <div aria-hidden="true" className="ambient-wash" />
 
           <div className="mb-3 relative">
             <CardEyebrow icon={Wallet}>Net Worth</CardEyebrow>
@@ -504,10 +509,11 @@ export default function Home() {
           <div className="mb-1 relative">
             <p
               ref={heroRef}
-              className={`text-4xl md:text-5xl font-bold tabular-nums tracking-tight leading-none font-display ${hiddenValueClass(hideValues, '', 'lg')}`}
+              className={`text-4xl md:text-5xl font-medium tabular-nums tracking-tight leading-none font-display ${hiddenValueClass(hideValues, '', 'lg')}`}
             >
               {fmtCurrency(totalValue)}
             </p>
+            {isRefreshingPrices && <div className="progress-shimmer mt-2 w-40" role="status" aria-label="Updating prices" />}
           </div>
 
           {hasMood && Math.abs(todayChange) >= 1 ? (
@@ -538,14 +544,15 @@ export default function Home() {
             >
               <RefreshCw size={11} className={isRefreshingPrices ? 'animate-spin' : ''} />
             </button>
-            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5">
+            {isRefreshingPrices && <span className="text-xs text-muted-foreground">Updating…</span>}
+            <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
               {HOME_CHART_RANGES.map((r) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => handleRangeChange(r)}
-                  className={`text-xs px-1.5 py-0.5 rounded-md transition-colors ${
-                    homeChartRange === r ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  className={`text-xs px-1.5 py-0.5 rounded-full transition-colors ${
+                    homeChartRange === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {r}
@@ -603,7 +610,6 @@ export default function Home() {
         {/* ALLOCATION */}
         <motion.div
           {...revealUp(0.05)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-2 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
@@ -647,13 +653,12 @@ export default function Home() {
             Allocation directly above it. */}
         <motion.div
           {...revealUp(0.1)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="bg-card shadow-card rounded-lg p-5 md:col-span-2"
         >
           <div className="mb-3">
             <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
           </div>
-          <p className={`text-lg font-bold tabular-nums leading-tight font-display ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+          <p className={`text-lg font-medium tabular-nums leading-tight font-display ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
             {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
           </p>
           <p className={`text-xs tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
@@ -672,17 +677,16 @@ export default function Home() {
         {dailyMovers.length > 0 && (
         <motion.div
           {...revealUp(0.13)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-4 bg-card shadow-card rounded-lg p-5"
         >
           <div className="flex items-center justify-between gap-2 mb-3">
             <CardEyebrow icon={Activity}>Daily Movers</CardEyebrow>
-            <div className="flex items-center gap-0.5 bg-muted/40 rounded-lg p-0.5">
+            <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
               <button
                 type="button"
                 onClick={() => setMoverSort('percent')}
-                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
-                  moverSort === 'percent' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                  moverSort === 'percent' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 By %
@@ -690,8 +694,8 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setMoverSort('value')}
-                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
-                  moverSort === 'value' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                  moverSort === 'value' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 By Value
@@ -721,7 +725,7 @@ export default function Home() {
                       <p className="text-xs font-semibold truncate">{mover.symbol}</p>
                     </div>
                     <p className="text-xs text-muted-foreground truncate mb-1.5">{mover.name}</p>
-                    <p className={`text-sm font-bold tabular-nums font-display ${isGain ? 'text-gain' : 'text-loss'}`}>
+                    <p className={`text-sm font-medium tabular-nums font-display ${isGain ? 'text-gain' : 'text-loss'}`}>
                       {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
                     </p>
                     <p className={`text-xs tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
@@ -741,7 +745,6 @@ export default function Home() {
             percent), matching how P&L presents its figures. */}
         <motion.div
           {...revealUp(0.16)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
@@ -750,7 +753,7 @@ export default function Home() {
           {bestAsset ? (
             <Link to={`/portfolio/${bestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
               <p className="text-sm font-semibold truncate">{bestAsset.name}</p>
-              <p className={`text-lg font-bold tabular-nums font-display mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
+              <p className={`text-lg font-medium tabular-nums font-display mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
                 {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
               </p>
               <p className={`text-xs tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
@@ -766,7 +769,6 @@ export default function Home() {
             numbers (dollar value, then share of portfolio), no ring. */}
         <motion.div
           {...revealUp(0.19)}
-          whileHover={{ y: -2, transition: { duration: 0.15, delay: 0 } }}
           className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
         >
           <div className="mb-3">
@@ -775,7 +777,7 @@ export default function Home() {
           {largestAsset ? (
             <Link to={`/portfolio/${largestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
               <p className="text-sm font-semibold truncate">{largestAsset.name}</p>
-              <p className={`text-lg font-bold tabular-nums font-display mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
+              <p className={`text-lg font-medium tabular-nums font-display mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
               <p className="text-xs tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
             </Link>
           ) : (

@@ -75,11 +75,12 @@ function Toggle({ enabled, onEnable, onDisable }: { enabled: boolean; onEnable: 
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={enabled}
       onClick={enabled ? onDisable : onEnable}
-      className={`relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0 cursor-pointer ${enabled ? 'bg-primary' : 'bg-muted'}`}
-      aria-pressed={enabled}
+      className={`relative h-7 w-[46px] flex-shrink-0 cursor-pointer rounded-full border-[1.5px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${enabled ? 'border-primary bg-primary' : 'border-border-strong bg-muted'}`}
     >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+      <span className={`absolute left-[3px] top-[3px] h-[19px] w-[19px] rounded-full transition-transform duration-200 ${enabled ? 'translate-x-[18px] bg-primary-foreground' : 'translate-x-0 bg-muted-foreground'}`} />
     </button>
   )
 }
@@ -91,13 +92,13 @@ function ThemePicker({ value, onChange }: { value: 'light' | 'dark' | 'system'; 
     { v: 'system', label: 'System' },
   ]
   return (
-    <div className="flex gap-1 bg-muted/60 rounded-lg p-1">
+    <div className="flex gap-1 bg-muted rounded-full p-1">
       {options.map(opt => (
         <button
           key={opt.v}
           type="button"
           onClick={() => onChange(opt.v)}
-          className={`flex-1 text-xs py-1 rounded-md transition-colors ${value === opt.v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          className={`flex-1 text-xs py-1 rounded-full transition-colors ${value === opt.v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
         >
           {opt.label}
         </button>
@@ -510,7 +511,7 @@ export default function Settings() {
 
   return (
     <div className="pt-6 pb-8 px-4 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold mb-5">Settings</h1>
+      <h1 className="font-display text-3xl font-medium tracking-tight mb-5">Settings</h1>
 
       {/* Appearance */}
       <SectionHeader><Sun size={10} className="inline mr-1.5 mb-0.5" />Appearance</SectionHeader>
@@ -1044,7 +1045,7 @@ export default function Settings() {
                   type="checkbox"
                   checked={newAllowedEmailIsAdmin}
                   onChange={e => setNewAllowedEmailIsAdmin(e.target.checked)}
-                  className="accent-primary"
+                  
                 />
                 Admin
               </label>

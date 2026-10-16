@@ -21,11 +21,20 @@ function isFlagEnabled(value?: string) {
 
 function Logo() {
   return (
-    <div className="flex flex-col items-center gap-3 mb-8">
-      <div className="w-12 h-12 flex items-center justify-center">
-        <img src="/logo.png" alt="mne" className="w-full h-full object-cover logo-adaptive" />
-      </div>
-      <span className="font-display text-lg font-semibold tracking-tight text-foreground">mne</span>
+    <div className="flex items-center gap-2.5">
+      <img src="/logo.png" alt="" className="logo-adaptive h-8 w-auto object-contain" />
+      <span className="font-display text-3xl font-medium leading-none tracking-tight text-foreground">mne</span>
+    </div>
+  )
+}
+
+/** Step meter: filled for completed and current steps, announced as "Step N of 4". */
+function StepMeter({ current }: { current: number }) {
+  return (
+    <div className="flex items-center gap-2" role="img" aria-label={`Step ${current} of 4`}>
+      {[1, 2, 3, 4].map(n => (
+        <i key={n} className={`h-1.5 flex-1 rounded-full ${n <= current ? 'bg-primary' : 'bg-muted'}`} />
+      ))}
     </div>
   )
 }
@@ -48,7 +57,7 @@ function Field({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <label htmlFor={id} className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <label htmlFor={id} className="text-sm font-medium text-foreground">
           {label}
         </label>
         {hint && (
@@ -56,7 +65,7 @@ function Field({
             href={hint.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
+            className="flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2"
           >
             {hint.text}
             <ExternalLink size={10} />
@@ -69,7 +78,7 @@ function Field({
         placeholder={placeholder}
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60 transition-shadow"
+        className="w-full rounded-sm border border-border-strong bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground transition-colors hover:border-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       />
     </div>
   )
@@ -80,7 +89,7 @@ function PrimaryBtn({ children, onClick, disabled }: { children: React.ReactNode
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full bg-primary text-primary-foreground rounded-lg py-2.5 text-sm font-medium hover:opacity-90 active:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full rounded-full bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </button>
@@ -233,13 +242,13 @@ export default function Onboarding({ onComplete }: Props) {
     }
   }
 
-  const wrap = (children: React.ReactNode, opts?: { liftLogo?: boolean }) => (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-      <div className="w-full max-w-sm">
-        <div className={opts?.liftLogo ? '-translate-y-12 sm:-translate-y-16' : ''}>
-          <Logo />
-        </div>
-        {children}
+  const stepNumber = step === 'auth' ? 1 : step === 'apikeys' ? 2 : step === 'plaid' ? (plaidSubStep === 'credentials' ? 3 : 4) : 0
+  const wrap = (children: React.ReactNode) => (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="grid w-full max-w-[520px] gap-5">
+        <Logo />
+        {stepNumber > 0 && <StepMeter current={stepNumber} />}
+        <section className="rounded-lg bg-card p-6 shadow-card">{children}</section>
       </div>
     </div>
   )
@@ -247,12 +256,12 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'env') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-display text-xl font-semibold text-foreground">Supabase not configured</h1>
+        <h1 className="font-display text-2xl font-medium leading-tight tracking-tight text-foreground">Supabase not configured</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Set Supabase credentials via environment variables and restart the app.
         </p>
       </div>
-      <div className="rounded-lg border border-border bg-muted/20 p-3 font-mono text-xs text-muted-foreground space-y-1">
+      <div className="rounded-md bg-muted p-3 font-mono text-xs text-muted-foreground space-y-1">
         <p>VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co</p>
         <p>VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY</p>
       </div>
@@ -272,13 +281,13 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'auth') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-display text-xl font-semibold text-foreground">Welcome</h1>
+        <h1 className="font-display text-2xl font-medium leading-tight tracking-tight text-foreground">Welcome</h1>
         <p className="text-sm text-muted-foreground mt-1">Continue with Google to sign in or create your account.</p>
       </div>
       <button
         onClick={handleGoogleSignIn}
         disabled={loading}
-        className="w-full flex items-center justify-center gap-3 bg-card border border-border rounded-lg px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 active:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" className="flex-shrink-0" xmlns="http://www.w3.org/2000/svg">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -288,14 +297,14 @@ export default function Onboarding({ onComplete }: Props) {
         </svg>
         {loading ? 'Redirecting…' : 'Continue with Google'}
       </button>
-      {error && <p className="text-destructive text-xs mt-2">{error}</p>}
+      {error && <p className="mt-2 text-sm font-medium text-loss">▼ {error}</p>}
     </div>
-  , { liftLogo: true })
+  )
 
-  return wrap(
+  if (step === 'apikeys') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-display text-xl font-semibold text-foreground">API keys</h1>
+        <h1 className="font-display text-2xl font-medium leading-tight tracking-tight text-foreground">API keys</h1>
         <p className="text-sm text-muted-foreground mt-1">Needed for AI commands and live prices.</p>
       </div>
       <Field
@@ -314,7 +323,7 @@ export default function Onboarding({ onComplete }: Props) {
         onChange={setFinnhubKey}
         hint={{ text: 'Get key', href: 'https://finnhub.io/dashboard' }}
       />
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-sm font-medium text-loss">▼ {error}</p>}
       <PrimaryBtn onClick={handleSaveApiKeys} disabled={loading}>
         {loading ? 'Saving…' : 'Continue'}
       </PrimaryBtn>
@@ -324,7 +333,7 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'plaid' && plaidSubStep === 'credentials') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-display text-xl font-semibold text-foreground">Connect accounts (optional)</h1>
+        <h1 className="font-display text-2xl font-medium leading-tight tracking-tight text-foreground">Connect accounts (optional)</h1>
         <p className="text-sm text-muted-foreground mt-1">
           mne can pull your stock, 401k, cash, and bond/T-bill positions from Plaid instead of you entering them
           by hand. This needs your own free Plaid developer account — a short signup, not a copy-paste key like
@@ -346,14 +355,14 @@ export default function Onboarding({ onComplete }: Props) {
         value={plaidSecret}
         onChange={setPlaidSecret}
       />
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-sm font-medium text-loss">▼ {error}</p>}
       <PrimaryBtn onClick={handleSavePlaidCredentials} disabled={loading}>
         {loading ? 'Saving…' : 'Save & continue'}
       </PrimaryBtn>
       <button
         onClick={finishPlaidStep}
         disabled={loading}
-        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+        className="w-full rounded-full py-2 text-center text-sm font-medium text-primary transition-colors hover:bg-muted"
       >
         Skip for now
       </button>
@@ -363,20 +372,20 @@ export default function Onboarding({ onComplete }: Props) {
   if (step === 'plaid' && plaidSubStep === 'connect') return wrap(
     <div className="space-y-4">
       <div className="mb-6">
-        <h1 className="font-display text-xl font-semibold text-foreground">Connect an account</h1>
+        <h1 className="font-display text-2xl font-medium leading-tight tracking-tight text-foreground">Connect an account</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Credentials saved. Connect your first brokerage or bank account now, or do it later from Settings —
           you can add up to 10 free connections.
         </p>
       </div>
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-sm font-medium text-loss">▼ {error}</p>}
       <PrimaryBtn onClick={handleConnectPlaidAccount} disabled={loading}>
         {loading ? 'Opening…' : 'Connect an account'}
       </PrimaryBtn>
       <button
         onClick={finishPlaidStep}
         disabled={loading}
-        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+        className="w-full rounded-full py-2 text-center text-sm font-medium text-primary transition-colors hover:bg-muted"
       >
         Skip for now
       </button>

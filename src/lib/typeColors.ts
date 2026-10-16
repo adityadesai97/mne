@@ -2,13 +2,13 @@
 // allocation legend; Portfolio's position tiles use the same colors so a
 // "Stock" swatch means the same thing everywhere in the app.
 export const TYPE_COLORS: Record<string, string> = {
-  Stock: '#3B82F6',
-  Crypto: '#F97316',
-  Cash: '#10B981',
-  '401k': '#F59E0B',
-  'Fixed Income': '#8B5CF6',
-  'Real Estate': '#EC4899',
-  Other: '#6B7280',
+  Stock: '#c9693f',
+  Crypto: '#e3a53a',
+  Cash: '#2f7f8f',
+  '401k': '#9a6392',
+  'Fixed Income': '#8a9a48',
+  'Real Estate': '#a8655c',
+  Other: '#8a7a6c',
 }
 
 /** Deterministic fallback color for an asset_type not in TYPE_COLORS, matching

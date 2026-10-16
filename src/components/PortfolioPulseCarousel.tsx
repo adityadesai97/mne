@@ -27,7 +27,7 @@ import { isTickerAsset } from '@/lib/portfolio'
 import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
 
-const AUTOPLAY_MS = 6500
+const AUTOPLAY_MS = 3200
 // How long a manual swipe/scroll suppresses autoplay before it resumes.
 const RESUME_AUTOPLAY_MS = 5000
 // Covers the longest fixed timeframe (yearly, 365d) plus the longest

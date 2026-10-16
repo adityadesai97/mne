@@ -9,8 +9,8 @@ function useAnimatedNumber(target: number, format: (n: number) => string, ref: R
     const node = ref.current
     if (!node) return
     const controls = animate(0, target, {
-      duration: 1.2,
-      ease: [0.25, 0.1, 0.25, 1],
+      duration: 0.18,
+      ease: [0.4, 0, 0.2, 1],
       onUpdate: (v) => { node.textContent = format(v) },
     })
     return () => controls.stop()
@@ -31,10 +31,10 @@ export function NetWorthCard({ value, gainLoss, gainLossPercent }: Props) {
   return (
     <div className="relative px-6 pt-12 pb-6">
       <div className="absolute inset-0 flex items-start justify-center pt-8 pointer-events-none">
-        <div className="w-64 h-32 bg-brand-subtle rounded-full blur-3xl" />
+        <div className="ambient-wash" />
       </div>
       <p className="text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">Net Worth</p>
-      <p ref={valueRef} className="text-5xl font-bold text-foreground tabular-nums font-display">
+      <p ref={valueRef} className="text-5xl font-medium text-foreground tabular-nums font-display">
         {formatCurrency(value)}
       </p>
       <div className="flex items-center gap-2 mt-2">

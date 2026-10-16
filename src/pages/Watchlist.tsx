@@ -191,7 +191,7 @@ export default function Watchlist() {
     <div className="pt-6 pb-4">
       <div className="flex items-center justify-between px-4 mb-4">
         <div>
-          <h1 className="text-xl font-bold">Watchlist</h1>
+          <h1 className="font-display text-3xl font-medium tracking-tight">Watchlist</h1>
           {formatRelativeTime(pricesRefreshedAt) && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Prices {formatRelativeTime(pricesRefreshedAt)}

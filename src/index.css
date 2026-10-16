@@ -3,61 +3,84 @@
 @tailwind utilities;
 
 @layer base {
+  /* mne design system: warm terracotta on warm paper. Dark is the default,
+     html.light overrides. Values are the tokens in the Design System artifact
+     (surface-100/200/300 -> background/card/muted, ink -> foreground,
+     ink-muted -> muted-foreground, line -> border, accent -> primary). */
   :root {
-    /* Extracted from the cobalt M logo: hue 220°, pure saturated blue */
-    --background: 222 22% 4%;
-    --foreground: 210 20% 94%;
-    --card: 222 16% 7%;
-    --card-foreground: 210 20% 94%;
-    --popover: 222 16% 7%;
-    --popover-foreground: 210 20% 94%;
-    --primary: 220 100% 56%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 14% 11%;
-    --secondary-foreground: 210 20% 94%;
-    --muted: 222 14% 11%;
-    /* >=4.5:1 on background, card and muted surfaces (was 44%, ~3.3:1 on muted) */
-    --muted-foreground: 222 8% 54%;
-    --accent: 220 100% 56%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 222 16% 12%;
-    --input: 222 14% 11%;
-    --ring: 220 100% 56%;
-    --radius: 0.875rem;
-    --gain: 142 71% 45%;
-    --loss: 0 84% 60%;
-    --display-font: 'Manrope', sans-serif;
-    /* fluid-functionalism hover/active surface tints (ported values) */
-    --hover: rgba(255, 255, 255, 0.06);
-    --active: rgba(255, 255, 255, 0.1);
+    --background: 27 20% 9%;
+    --foreground: 33 45% 92%;
+    --card: 27 17% 12%;
+    --card-foreground: 33 45% 92%;
+    --popover: 27 17% 12%;
+    --popover-foreground: 33 45% 92%;
+    --primary: 19 67% 63%;
+    --primary-foreground: 27 20% 9%;
+    --secondary: 28 16% 16%;
+    --secondary-foreground: 33 45% 92%;
+    --muted: 28 16% 16%;
+    --muted-foreground: 30 16% 67%;
+    --accent: 19 67% 63%;
+    --accent-foreground: 27 20% 9%;
+    --destructive: 345 77% 74%;
+    --destructive-foreground: 27 20% 9%;
+    --border: 28 16% 21%;
+    --border-strong: 30 12% 50%;
+    --input: 28 16% 16%;
+    --ring: 19 67% 63%;
+    --amber: 40 84% 63%;
+    --amber-foreground: 27 20% 9%;
+    --gain: 162 46% 57%;
+    --loss: 345 77% 74%;
+    --chart-1: 18 71% 63%;
+    --chart-2: 40 85% 63%;
+    --chart-3: 191 51% 63%;
+    --chart-4: 308 25% 67%;
+    --chart-5: 69 40% 61%;
+    --hover: rgba(244, 236, 226, 0.06);
+    --active: rgba(244, 236, 226, 0.1);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --radius: 1.5rem;
+    --display-font: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body-font: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --dur-standard: 180ms;
+    --dur-layout: 430ms;
   }
 
   html.light {
-    --background: 210 20% 97%;
-    --foreground: 222 22% 10%;
+    --background: 33 53% 97%;
+    --foreground: 26 24% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 222 22% 10%;
+    --card-foreground: 26 24% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 22% 10%;
-    --primary: 220 100% 50%;
+    --popover-foreground: 26 24% 13%;
+    --primary: 16 59% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 16% 93%;
-    --secondary-foreground: 222 22% 10%;
-    --muted: 210 16% 93%;
-    --muted-foreground: 222 10% 42%;
-    --accent: 220 100% 50%;
+    --secondary: 33 42% 91%;
+    --secondary-foreground: 26 24% 13%;
+    --muted: 33 42% 91%;
+    --muted-foreground: 26 13% 37%;
+    --accent: 16 59% 45%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 88%;
-    --input: 210 16% 93%;
-    --ring: 220 100% 50%;
-    --gain: 142 60% 30%;
-    --loss: 0 72% 47%;
-    --hover: rgba(0, 0, 0, 0.04);
-    --active: rgba(0, 0, 0, 0.07);
+    --destructive: 344 57% 39%;
+    --destructive-foreground: 33 53% 97%;
+    --border: 33 28% 83%;
+    --border-strong: 28 12% 48%;
+    --input: 33 42% 91%;
+    --ring: 16 59% 45%;
+    --amber: 38 75% 56%;
+    --amber-foreground: 26 24% 13%;
+    --gain: 166 56% 28%;
+    --loss: 344 57% 39%;
+    --chart-1: 18 59% 44%;
+    --chart-2: 40 75% 56%;
+    --chart-3: 191 50% 37%;
+    --chart-4: 308 25% 38%;
+    --chart-5: 69 36% 34%;
+    --hover: rgba(42, 33, 26, 0.04);
+    --active: rgba(42, 33, 26, 0.07);
+    --shadow-card: 0 1px 2px rgba(42, 33, 26, 0.08);
   }
 }
 
@@ -65,9 +88,65 @@
   border-color: hsl(var(--border));
 }
 
+/* Native checkbox, radio and select follow the design system controls:
+   20px, strong border, accent fill with a check when on. Utility classes on
+   an element (sizes, borders) still win over these base rules. */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  border: 1.5px solid hsl(var(--border-strong));
+  background-color: hsl(var(--card));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 180ms var(--ease-standard), border-color 180ms var(--ease-standard);
+}
+input[type="radio"] { border-radius: 9999px; }
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 0.3125rem;
+  height: 0.625rem;
+  border-right: 2px solid hsl(var(--primary-foreground));
+  border-bottom: 2px solid hsl(var(--primary-foreground));
+  transform: translateY(-1px) rotate(45deg);
+}
+input[type="radio"]:checked::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary-foreground));
+}
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%238f8071' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-family: var(--body-font);
   font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
 }
 
@@ -94,27 +173,21 @@ input, select, textarea {
   font-size: max(16px, 1em);
 }
 
-/* Brand spectrum — extracted from the cobalt M logo */
-:root {
-  --grad: linear-gradient(135deg, #002FCC 0%, #0050F5 38%, #2878FF 72%, #5099FF 100%);
-  --grad-subtle: linear-gradient(135deg, rgba(0,47,204,0.18) 0%, rgba(0,80,245,0.12) 50%, rgba(80,153,255,0.07) 100%);
-  --grad-glow: 0 0 24px rgba(0,80,245,0.18), 0 0 48px rgba(40,120,255,0.09);
-}
-
+/* Brand surfaces. The design system uses one flat accent (terracotta), so
+   these classes keep their names but no longer draw a gradient or glow. */
 .bg-brand {
-  background: var(--grad);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 .bg-brand-subtle {
-  background: var(--grad-subtle);
+  background: hsl(var(--primary) / 0.12);
 }
 .shadow-brand {
-  box-shadow: var(--grad-glow);
+  box-shadow: none;
 }
 .border-brand {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
-    var(--grad) border-box;
+  border: 1px solid hsl(var(--primary) / 0.6);
+  background: hsl(var(--card));
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -154,4 +227,53 @@ input[type="number"] { -moz-appearance: textfield; }
   background-clip: text;
   -webkit-background-clip: text;
   animation: fluid-shimmer-text 1.5s ease-in-out infinite;
+}
+
+
+/* ---- Motion (design system: Restrained intensity, Rich ambient) ---- */
+
+/* Slow accent + amber washes behind the hero figure, 10% opacity, 28s drift. */
+.ambient-wash {
+  position: absolute;
+  inset: -40px;
+  pointer-events: none;
+  opacity: 0.1;
+  filter: blur(30px);
+  background:
+    radial-gradient(60% 80% at 20% 20%, hsl(var(--primary)), transparent 70%),
+    radial-gradient(50% 70% at 85% 90%, hsl(var(--amber)), transparent 70%);
+  animation: mne-wash 28s ease-in-out infinite alternate;
+}
+@keyframes mne-wash {
+  to { transform: translate(24px, -14px) scale(1.06); }
+}
+
+/* Shimmer bar shown under the figure while prices refresh. */
+.progress-shimmer {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, hsl(var(--muted)) 30%, hsl(var(--border)) 50%, hsl(var(--muted)) 70%);
+  background-size: 200% 100%;
+  animation: mne-shimmer-bar 1.8s linear infinite;
+}
+@keyframes mne-shimmer-bar {
+  to { background-position: -200% 0; }
+}
+
+/* Terracotta caret at the end of a streaming reply. */
+.stream-caret::after {
+  content: "▍";
+  color: hsl(var(--primary));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Drop movement and ambient animation; state changes stay as quick fades. */
+  .ambient-wash, .progress-shimmer { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 150ms !important;
+  }
+  .animate-spin { animation-duration: 900ms !important; animation-iteration-count: infinite !important; }
 }
