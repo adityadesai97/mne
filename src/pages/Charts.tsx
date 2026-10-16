@@ -28,25 +28,25 @@ import {
 type Subtype = 'Market' | 'ESPP' | 'RSU'
 const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
 
-const PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6']
-const GAIN_COLOR = 'hsl(158, 64%, 52%)'
-const LOSS_COLOR = 'hsl(0, 84%, 60%)'
-const MUTED_COLOR = 'hsl(224, 13%, 25%)'
-const GRID_COLOR = 'hsl(224,13%,16%)'
-const AXIS_COLOR = 'hsl(215,14%,55%)'
-const TEXT_COLOR = 'hsl(215,20%,96%)'
-const TOOLTIP_BG = 'hsl(224,13%,9%)'
+const PALETTE = ['#c9693f', '#e3a53a', '#2f7f8f', '#9a6392', '#8a9a48', '#a8655c']
+const GAIN_COLOR = 'hsl(165, 45%, 42%)'
+const LOSS_COLOR = 'hsl(344, 52%, 55%)'
+const MUTED_COLOR = 'hsl(27, 15%, 30%)'
+const GRID_COLOR = 'hsl(27,18%,20%)'
+const AXIS_COLOR = 'hsl(30,14%,62%)'
+const TEXT_COLOR = 'hsl(32,35%,93%)'
+const TOOLTIP_BG = 'hsl(27,18%,13%)'
 // The donut's center-hole value sits directly on the chart's own
 // (transparent) background — i.e. the card behind it — unlike TEXT_COLOR
 // above, which is always paired with the always-dark TOOLTIP_BG and so
 // stays legible in both themes without changing. This one has to flip:
 // near-white TEXT_COLOR on a light-mode card was invisible. Matches
 // index.css's --foreground light value.
-const TEXT_COLOR_LIGHT = 'hsl(222,22%,10%)'
+const TEXT_COLOR_LIGHT = 'hsl(27,26%,13%)'
 // Faint alternating band behind each row of a horizontal bar list, so a
 // long list of positions (P&L, Cost vs Value, RSU vesting) stays easy to
 // scan row-to-row instead of reading as one undifferentiated block.
-const ZEBRA_COLORS = ['transparent', 'rgba(255,255,255,0.025)']
+const ZEBRA_COLORS = ['transparent', 'rgba(244,236,226,0.03)']
 
 // Card shell shared with Home's bento grid — same background, corner
 // radius, padding, and hover lift — so Charts reads as the same page
@@ -56,7 +56,7 @@ const CARD_HOVER = { y: -2, transition: { duration: 0.15, delay: 0 } }
 
 const tooltipBase = {
   backgroundColor: TOOLTIP_BG,
-  borderColor: 'rgba(255,255,255,0.08)',
+  borderColor: 'rgba(244,236,226,0.1)',
   borderWidth: 1,
   textStyle: { color: TEXT_COLOR, fontSize: 12 },
 }
@@ -446,7 +446,7 @@ export default function Charts() {
           emphasis: {
             itemStyle: {
               shadowBlur: 14,
-              shadowColor: point.value >= 0 ? 'rgba(46,204,113,0.55)' : 'rgba(231,76,60,0.55)',
+              shadowColor: point.value >= 0 ? 'rgba(47,159,134,0.5)' : 'rgba(196,76,108,0.5)',
             },
           },
         })),

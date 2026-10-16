@@ -18,8 +18,8 @@ export default defineConfig({
         name: 'mne',
         short_name: 'mne',
         description: 'Personal finance tracker',
-        theme_color: '#0D0D0D',
-        background_color: '#0D0D0D',
+        theme_color: '#1b1612',
+        background_color: '#1b1612',
         display: 'standalone',
         icons: [
           { src: '/icon-192-v2.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

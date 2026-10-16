@@ -35,10 +35,10 @@ function getGreeting(): { text: string; Icon: typeof Sun } {
   return { text: 'Good night', Icon: Moon }
 }
 
-const AXIS_COLOR = 'hsl(215,14%,55%)'
-const TOOLTIP_BG = 'hsl(224,13%,9%)'
-const GRID_COLOR = 'hsl(224,13%,16%)'
-const LINE_COLOR = 'hsl(217,91%,60%)'
+const AXIS_COLOR = 'hsl(30,14%,62%)'
+const TOOLTIP_BG = 'hsl(27,18%,13%)'
+const GRID_COLOR = 'hsl(27,18%,20%)'
+const LINE_COLOR = 'hsl(18,60%,52%)'
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
@@ -213,9 +213,9 @@ export default function Home() {
       // for whatever day you're hovering, so that still has to go dark.
       show: !hideValues,
       backgroundColor: TOOLTIP_BG,
-      borderColor: 'rgba(255,255,255,0.08)',
+      borderColor: 'rgba(244,236,226,0.1)',
       borderWidth: 1,
-      textStyle: { color: 'hsl(215,20%,96%)', fontSize: 12 },
+      textStyle: { color: 'hsl(32,35%,93%)', fontSize: 12 },
       trigger: 'axis',
       // Scrub feel: a vertical crosshair follows the cursor/touch drag along
       // the line, so you can trace net worth on any specific day rather than
@@ -272,6 +272,7 @@ export default function Home() {
         smooth: netWorthCount > 2,
         symbol: netWorthCount <= 2 ? 'circle' : 'none',
         symbolSize: 6,
+        itemStyle: { color: LINE_COLOR },
         clip: true,
         lineStyle: { width: 2.25, color: LINE_COLOR },
         areaStyle: {
@@ -281,7 +282,7 @@ export default function Home() {
         },
         emphasis: {
           scale: 1.4,
-          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(224,13%,9%)', borderWidth: 2 },
+          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(27,18%,13%)', borderWidth: 2 },
         },
         data: netWorthValues,
       },
