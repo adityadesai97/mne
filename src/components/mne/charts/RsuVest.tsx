@@ -44,7 +44,7 @@ export function RsuVestRail({ row }: { row: RsuTimelineRow }) {
         {row.events.length === 0 && cliff !== null && <span className={`tick is-cliff${row.todayMs >= (row.cliffMs ?? 0) ? ' is-done' : ''}`} style={{ left: `${cliff}%` }} />}
         {row.events.length === 0 && <span className={`tick${row.todayMs >= row.endMs ? ' is-done' : ''}`} style={{ left: `${finalAt}%` }} />}
         {cliff !== null && <span className="lab" style={labStyle(cliff)}>Cliff · {monthYear(row.cliffMs!)}</span>}
-        {<span className="lab" style={labStyle(finalAt)}>Final · {monthYear(row.endMs)}</span>}
+        <span className="lab" style={labStyle(finalAt)}>Final · {monthYear(row.endMs)}</span>
         <span className="lab is-today" style={labStyle(today)}>{row.ended ? 'Ended' : 'Today'}</span>
       </div>
     </div>

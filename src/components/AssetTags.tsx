@@ -13,7 +13,7 @@ function stockPlanTypes(asset: any): string[] {
   return Array.from(out)
 }
 
-export function assetTags(asset: any): Tag[] {
+function assetTags(asset: any): Tag[] {
   const tags: Tag[] = []
   const sync = getPlaidSyncInfo(asset)
   if (sync.synced) {
