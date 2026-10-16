@@ -286,7 +286,7 @@ export default function Watchlist() {
                           </button>
                         </td>
                         <td className="r mne-num">${currentPrice.toFixed(2)}</td>
-                        <td className="r">{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
+                        <td className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
                         <td>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {t.ticker_themes?.map((tt: any) => (

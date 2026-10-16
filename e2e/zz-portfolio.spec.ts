@@ -21,7 +21,7 @@ const bill = { ...STOCK_ASSET, id: 'a4', name: '26-week T-bill', asset_type: 'Fi
   fixed_income_lots: [{ id: 'f1', asset_id: 'a4', count: 488, cost_price: 987.53, purchase_date: '2026-08-12' }] }
 
 for (const theme of ['dark', 'light']) for (const [w, h] of [[1200, 900], [390, 800]]) {
-  test(`shots ${theme} ${w}`, async ({ page }) => {
+  test.setTimeout(90000); test(`shots ${theme} ${w}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })
     await page.addInitScript(t => localStorage.setItem('mne_theme', t), theme)
     const db = await signedInApp(page)

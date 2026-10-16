@@ -477,7 +477,7 @@ export default function Settings() {
           </p>
           {editingKeys ? (
             <div style={{ display: 'grid', gap: 16 }}>
-              <div className="mne-form-grid">
+              <div className="mne-form-grid" style={{ gridTemplateColumns: '1fr' }}>
                 <Field id="key-claude" label="Claude API key" help={<>{keyLink('https://console.anthropic.com/settings/keys')}</>}>
                   <input
                     id="key-claude"
@@ -550,12 +550,14 @@ export default function Settings() {
         {/* Appearance */}
         <section className="mne-card" aria-labelledby="settings-appearance">
           <h2 id="settings-appearance" className="mne-section-title">Appearance</h2>
+          <div style={{ marginTop: 12 }}>
           <SegmentedControl<'light' | 'dark' | 'system'>
             label="Theme"
             value={theme}
             options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }]}
             onChange={handleThemeChange}
           />
+          </div>
           <div className="mne-list" style={{ marginTop: 12 }}>
             <div className="mne-row">
               <div>
