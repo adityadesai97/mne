@@ -31,3 +31,7 @@ dist-ssr
 
 .expo/.playwright-mcp/
 .vercel
+
+# Playwright
+test-results
+playwright-report

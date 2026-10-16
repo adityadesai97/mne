@@ -2,6 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 import App from './App'
+import { installGlobalErrorReporting } from './lib/errorReporting'
+
+installGlobalErrorReporting()
 
 // When a newer deploy's service worker activates and takes control of this
 // tab (see src/sw.ts — skipWaiting/clientsClaim make that happen in the

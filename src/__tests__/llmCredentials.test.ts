@@ -120,34 +120,22 @@ test('a failed secret write never claims the key is saved', async () => {
   expect(tables.llm_credentials?.[0]?.secret_set).not.toBe(true)
 })
 
-test('migration moves a browser-held key to the server, then clears both old copies', async () => {
+test('migration moves a browser-held key to the server, then clears the local copy', async () => {
   localStorage.setItem('mne_claude_api_key', 'sk-ant-old')
-  tables.user_settings = [{ user_id: 'u1', claude_api_key: 'sk-ant-old' }]
   await migrateLegacyClaudeKey()
   expect(tables.llm_credential_secrets[0].api_key).toBe('sk-ant-old')
   expect(config.legacyClaudeApiKey).toBe('')
-  expect(tables.user_settings[0].claude_api_key).toBeNull()
   expect(config.llmKeySet).toBe(true)
-})
-
-test('migration also picks up a key that only exists in user_settings (new device)', async () => {
-  tables.user_settings = [{ user_id: 'u1', claude_api_key: 'sk-ant-db' }]
-  await migrateLegacyClaudeKey()
-  expect(tables.llm_credential_secrets[0].api_key).toBe('sk-ant-db')
-  expect(tables.user_settings[0].claude_api_key).toBeNull()
 })
 
 test('migration keeps the old copies when the server write fails, so nothing is lost', async () => {
   localStorage.setItem('mne_claude_api_key', 'sk-ant-old')
-  tables.user_settings = [{ user_id: 'u1', claude_api_key: 'sk-ant-old' }]
   failSecretWrites = true
   await expect(migrateLegacyClaudeKey()).rejects.toThrow()
   expect(config.legacyClaudeApiKey).toBe('sk-ant-old')
-  expect(tables.user_settings[0].claude_api_key).toBe('sk-ant-old')
 })
 
 test('migration does nothing when there is no legacy key', async () => {
-  tables.user_settings = [{ user_id: 'u1', claude_api_key: null }]
   await migrateLegacyClaudeKey()
   expect(calls.filter(c => c.startsWith('llm_credential'))).toHaveLength(0)
 })

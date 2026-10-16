@@ -14,12 +14,70 @@ export type Database = {
   }
   public: {
     Tables: {
+      allowed_emails: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          is_admin: boolean
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          is_admin?: boolean
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          is_admin?: boolean
+        }
+        Relationships: []
+      }
+      api_proxy_calls: {
+        Row: {
+          called_at: string
+          id: number
+          kind: string
+          user_id: string
+        }
+        Insert: {
+          called_at?: string
+          id?: never
+          kind: string
+          user_id: string
+        }
+        Update: {
+          called_at?: string
+          id?: never
+          kind?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      app_config: {
+        Row: {
+          key: string
+          value: string
+        }
+        Insert: {
+          key: string
+          value: string
+        }
+        Update: {
+          key?: string
+          value?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           asset_type: string
           face_value: number | null
           fixed_income_subtype: string | null
           id: string
+          initial_price: number | null
           interest_rate: number | null
           location_id: string
           maturity_date: string | null
@@ -35,6 +93,7 @@ export type Database = {
           face_value?: number | null
           fixed_income_subtype?: string | null
           id?: string
+          initial_price?: number | null
           interest_rate?: number | null
           location_id: string
           maturity_date?: string | null
@@ -50,6 +109,7 @@ export type Database = {
           face_value?: number | null
           fixed_income_subtype?: string | null
           id?: string
+          initial_price?: number | null
           interest_rate?: number | null
           location_id?: string
           maturity_date?: string | null
@@ -76,6 +136,129 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      client_errors: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          id: string
+          message: string
+          source: string
+          stack: string | null
+          url: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          message: string
+          source: string
+          stack?: string | null
+          url?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          id?: string
+          message?: string
+          source?: string
+          stack?: string | null
+          url?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      command_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          messages: Json
+          origin: string
+          title: string
+          total_input_tokens: number
+          total_output_tokens: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          messages?: Json
+          origin?: string
+          title: string
+          total_input_tokens?: number
+          total_output_tokens?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          messages?: Json
+          origin?: string
+          title?: string
+          total_input_tokens?: number
+          total_output_tokens?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      command_feedback: {
+        Row: {
+          addressed_at: string | null
+          agent_response: string
+          attachment_content: string | null
+          attachment_filename: string | null
+          attachment_mime_type: string | null
+          conversation_origin: string
+          created_at: string
+          feedback_text: string | null
+          fix_commit: string | null
+          id: string
+          input_tokens: number | null
+          output_tokens: number | null
+          user_id: string
+          user_query: string | null
+        }
+        Insert: {
+          addressed_at?: string | null
+          agent_response: string
+          attachment_content?: string | null
+          attachment_filename?: string | null
+          attachment_mime_type?: string | null
+          conversation_origin?: string
+          created_at?: string
+          feedback_text?: string | null
+          fix_commit?: string | null
+          id?: string
+          input_tokens?: number | null
+          output_tokens?: number | null
+          user_id: string
+          user_query?: string | null
+        }
+        Update: {
+          addressed_at?: string | null
+          agent_response?: string
+          attachment_content?: string | null
+          attachment_filename?: string | null
+          attachment_mime_type?: string | null
+          conversation_origin?: string
+          created_at?: string
+          feedback_text?: string | null
+          fix_commit?: string | null
+          id?: string
+          input_tokens?: number | null
+          output_tokens?: number | null
+          user_id?: string
+          user_query?: string | null
+        }
+        Relationships: []
       }
       fixed_income_lots: {
         Row: {
@@ -109,6 +292,94 @@ export type Database = {
           },
         ]
       }
+      llm_credential_secrets: {
+        Row: {
+          api_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_credential_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "llm_credentials"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      llm_credentials: {
+        Row: {
+          secret_set: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          secret_set?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          secret_set?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      llm_usage_log: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          feature: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          feature: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+          provider: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          feature?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+          provider?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_log_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "command_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locations: {
         Row: {
           account_type: string
@@ -126,6 +397,56 @@ export type Database = {
           account_type?: string
           id?: string
           name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      market_credential_secrets: {
+        Row: {
+          coingecko_api_key: string | null
+          finnhub_api_key: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          coingecko_api_key?: string | null
+          finnhub_api_key?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          coingecko_api_key?: string | null
+          finnhub_api_key?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_credential_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "market_credentials"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      market_credentials: {
+        Row: {
+          coingecko_set: boolean
+          finnhub_set: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          coingecko_set?: boolean
+          finnhub_set?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          coingecko_set?: boolean
+          finnhub_set?: boolean
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -148,6 +469,423 @@ export type Database = {
           id?: string
           user_id?: string
           value?: number
+        }
+        Relationships: []
+      }
+      plaid_credential_secrets: {
+        Row: {
+          secret: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          secret: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          secret?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_credential_secrets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "plaid_credentials"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      plaid_credentials: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          plaid_env: string
+          secret_set: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          plaid_env?: string
+          secret_set?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          plaid_env?: string
+          secret_set?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      plaid_item_secrets: {
+        Row: {
+          access_token: string
+          item_id: string
+        }
+        Insert: {
+          access_token: string
+          item_id: string
+        }
+        Update: {
+          access_token?: string
+          item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_item_secrets_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: true
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plaid_items: {
+        Row: {
+          created_at: string
+          id: string
+          institution_id: string | null
+          institution_name: string | null
+          item_id: string
+          last_error: string | null
+          last_synced_at: string | null
+          status: string
+          txn_synced_through: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          institution_id?: string | null
+          institution_name?: string | null
+          item_id: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          status?: string
+          txn_synced_through?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          institution_id?: string | null
+          institution_name?: string | null
+          item_id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          status?: string
+          txn_synced_through?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      plaid_lot_links: {
+        Row: {
+          created_at: string
+          external_account_id: string
+          external_security_id: string
+          id: string
+          plaid_item_id: string
+          plaid_lot_date: string
+          plaid_lot_price: number
+          transaction_id: string
+        }
+        Insert: {
+          created_at?: string
+          external_account_id: string
+          external_security_id: string
+          id?: string
+          plaid_item_id: string
+          plaid_lot_date: string
+          plaid_lot_price: number
+          transaction_id: string
+        }
+        Update: {
+          created_at?: string
+          external_account_id?: string
+          external_security_id?: string
+          id?: string
+          plaid_item_id?: string
+          plaid_lot_date?: string
+          plaid_lot_price?: number
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_lot_links_plaid_item_id_fkey"
+            columns: ["plaid_item_id"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_lot_links_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plaid_pending_positions: {
+        Row: {
+          created_at: string
+          detected_type: string
+          external_account_id: string
+          external_security_id: string | null
+          id: string
+          matched_asset_id: string | null
+          payload: Json
+          plaid_item_id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detected_type: string
+          external_account_id: string
+          external_security_id?: string | null
+          id?: string
+          matched_asset_id?: string | null
+          payload: Json
+          plaid_item_id: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detected_type?: string
+          external_account_id?: string
+          external_security_id?: string | null
+          id?: string
+          matched_asset_id?: string | null
+          payload?: Json
+          plaid_item_id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_pending_positions_matched_asset_id_fkey"
+            columns: ["matched_asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_pending_positions_plaid_item_id_fkey"
+            columns: ["plaid_item_id"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plaid_synced_positions: {
+        Row: {
+          asset_id: string | null
+          checked_at: string | null
+          created_at: string
+          drift_shares: number | null
+          external_account_id: string
+          external_security_id: string | null
+          fixed_income_lot_id: string | null
+          id: string
+          plaid_cost_price: number | null
+          plaid_item_id: string
+          plaid_quantity: number | null
+          transaction_id: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          checked_at?: string | null
+          created_at?: string
+          drift_shares?: number | null
+          external_account_id: string
+          external_security_id?: string | null
+          fixed_income_lot_id?: string | null
+          id?: string
+          plaid_cost_price?: number | null
+          plaid_item_id: string
+          plaid_quantity?: number | null
+          transaction_id?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          checked_at?: string | null
+          created_at?: string
+          drift_shares?: number | null
+          external_account_id?: string
+          external_security_id?: string | null
+          fixed_income_lot_id?: string | null
+          id?: string
+          plaid_cost_price?: number | null
+          plaid_item_id?: string
+          plaid_quantity?: number | null
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_synced_positions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_synced_positions_fixed_income_lot_id_fkey"
+            columns: ["fixed_income_lot_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_income_lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_synced_positions_plaid_item_id_fkey"
+            columns: ["plaid_item_id"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_synced_positions_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plaid_synced_transactions: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          id: string
+          investment_transaction_id: string
+          plaid_item_id: string
+          price: number | null
+          quantity: number | null
+          reason: string | null
+          status: string
+          txn_date: string | null
+          txn_type: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          id?: string
+          investment_transaction_id: string
+          plaid_item_id: string
+          price?: number | null
+          quantity?: number | null
+          reason?: string | null
+          status?: string
+          txn_date?: string | null
+          txn_type?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          id?: string
+          investment_transaction_id?: string
+          plaid_item_id?: string
+          price?: number | null
+          quantity?: number | null
+          reason?: string | null
+          status?: string
+          txn_date?: string | null
+          txn_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plaid_synced_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plaid_synced_transactions_plaid_item_id_fkey"
+            columns: ["plaid_item_id"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portfolio_explanations: {
+        Row: {
+          basis_net_worth: number | null
+          day_change_dollars: number | null
+          day_change_percent: number | null
+          generated_at: string
+          has_major_moves: boolean
+          id: string
+          input_tokens: number | null
+          is_broad_market_move: boolean
+          market_date: string
+          market_headlines: Json
+          movers: Json
+          output_tokens: number | null
+          scope: string
+          scope_key: string
+          summary: string
+          theme_moves: Json
+          timeframe: string
+          trigger: string
+          user_id: string
+          window_days: number
+        }
+        Insert: {
+          basis_net_worth?: number | null
+          day_change_dollars?: number | null
+          day_change_percent?: number | null
+          generated_at?: string
+          has_major_moves?: boolean
+          id?: string
+          input_tokens?: number | null
+          is_broad_market_move?: boolean
+          market_date?: string
+          market_headlines?: Json
+          movers?: Json
+          output_tokens?: number | null
+          scope?: string
+          scope_key?: string
+          summary: string
+          theme_moves?: Json
+          timeframe?: string
+          trigger: string
+          user_id: string
+          window_days?: number
+        }
+        Update: {
+          basis_net_worth?: number | null
+          day_change_dollars?: number | null
+          day_change_percent?: number | null
+          generated_at?: string
+          has_major_moves?: boolean
+          id?: string
+          input_tokens?: number | null
+          is_broad_market_move?: boolean
+          market_date?: string
+          market_headlines?: Json
+          movers?: Json
+          output_tokens?: number | null
+          scope?: string
+          scope_key?: string
+          summary?: string
+          theme_moves?: Json
+          timeframe?: string
+          trigger?: string
+          user_id?: string
+          window_days?: number
         }
         Relationships: []
       }
@@ -185,6 +923,7 @@ export type Database = {
           total_shares: number
           vest_end: string
           vest_start: string
+          vesting_frequency: string
         }
         Insert: {
           cliff_date?: string | null
@@ -195,6 +934,7 @@ export type Database = {
           total_shares: number
           vest_end: string
           vest_start: string
+          vesting_frequency?: string
         }
         Update: {
           cliff_date?: string | null
@@ -205,6 +945,7 @@ export type Database = {
           total_shares?: number
           vest_end?: string
           vest_start?: string
+          vesting_frequency?: string
         }
         Relationships: [
           {
@@ -292,6 +1033,38 @@ export type Database = {
         }
         Relationships: []
       }
+      ticker_price_history: {
+        Row: {
+          date: string
+          id: string
+          price: number
+          ticker_id: string
+          user_id: string
+        }
+        Insert: {
+          date: string
+          id?: string
+          price: number
+          ticker_id: string
+          user_id: string
+        }
+        Update: {
+          date?: string
+          id?: string
+          price?: number
+          ticker_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticker_price_history_ticker_id_fkey"
+            columns: ["ticker_id"]
+            isOneToOne: false
+            referencedRelation: "tickers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ticker_themes: {
         Row: {
           theme_id: string
@@ -324,28 +1097,37 @@ export type Database = {
       }
       tickers: {
         Row: {
+          coingecko_id: string | null
           current_price: number | null
           id: string
+          kind: string
           last_updated: string | null
           logo: string | null
+          previous_close: number | null
           symbol: string
           user_id: string
           watchlist_only: boolean | null
         }
         Insert: {
+          coingecko_id?: string | null
           current_price?: number | null
           id?: string
+          kind?: string
           last_updated?: string | null
           logo?: string | null
+          previous_close?: number | null
           symbol: string
           user_id: string
           watchlist_only?: boolean | null
         }
         Update: {
+          coingecko_id?: string | null
           current_price?: number | null
           id?: string
+          kind?: string
           last_updated?: string | null
           logo?: string | null
+          previous_close?: number | null
           symbol?: string
           user_id?: string
           watchlist_only?: boolean | null
@@ -359,6 +1141,8 @@ export type Database = {
           count: number
           id: string
           purchase_date: string
+          rsu_grant_id: string | null
+          sold_at_vest: number
           subtype_id: string
         }
         Insert: {
@@ -367,6 +1151,8 @@ export type Database = {
           count: number
           id?: string
           purchase_date: string
+          rsu_grant_id?: string | null
+          sold_at_vest?: number
           subtype_id: string
         }
         Update: {
@@ -375,9 +1161,18 @@ export type Database = {
           count?: number
           id?: string
           purchase_date?: string
+          rsu_grant_id?: string | null
+          sold_at_vest?: number
           subtype_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_rsu_grant_id_fkey"
+            columns: ["rsu_grant_id"]
+            isOneToOne: false
+            referencedRelation: "rsu_grants"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_subtype_id_fkey"
             columns: ["subtype_id"]
@@ -390,30 +1185,36 @@ export type Database = {
       user_settings: {
         Row: {
           auto_theme_assignment_enabled: boolean
-          claude_api_key: string | null
-          finnhub_api_key: string | null
+          capital_gains_alerts_enabled: boolean
+          gemini_api_key: string | null
           id: string
           price_alert_threshold: number | null
+          price_alerts_enabled: boolean
           rsu_alert_days_before: number | null
           user_id: string
+          vest_alerts_enabled: boolean
         }
         Insert: {
           auto_theme_assignment_enabled?: boolean
-          claude_api_key?: string | null
-          finnhub_api_key?: string | null
+          capital_gains_alerts_enabled?: boolean
+          gemini_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
+          price_alerts_enabled?: boolean
           rsu_alert_days_before?: number | null
           user_id: string
+          vest_alerts_enabled?: boolean
         }
         Update: {
           auto_theme_assignment_enabled?: boolean
-          claude_api_key?: string | null
-          finnhub_api_key?: string | null
+          capital_gains_alerts_enabled?: boolean
+          gemini_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
+          price_alerts_enabled?: boolean
           rsu_alert_days_before?: number | null
           user_id?: string
+          vest_alerts_enabled?: boolean
         }
         Relationships: []
       }
@@ -422,7 +1223,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_allowed_email_admin: { Args: never; Returns: boolean }
+      save_llm_key: { Args: { p_key: string }; Returns: undefined }
+      save_market_keys: {
+        Args: { p_coingecko?: string; p_finnhub?: string }
+        Returns: undefined
+      }
+      save_plaid_credentials: {
+        Args: { p_client_id: string; p_env: string; p_secret?: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
@@ -441,12 +1251,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -470,11 +1280,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -495,11 +1305,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -520,11 +1330,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -537,11 +1347,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

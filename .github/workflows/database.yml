@@ -1,0 +1,46 @@
+name: Database (real Supabase)
+
+# The fast in-process Postgres tests (src/__tests__/db) already run in CI on
+# every PR. This workflow additionally starts a full local Supabase stack, runs
+# the self-host bootstrap against it (twice, to prove it is idempotent). Type
+# drift is checked by src/__tests__/db/schema.test.ts and supabase-types-check.yml. It only runs when schema files change.
+
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/**
+      - supabase/sql/self_host_bootstrap.sql
+      - src/lib/database.types.ts
+  workflow_dispatch:
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Fresh databases are built by the bootstrap script (that is what setup.sh
+      # does). The dated migrations are incremental upgrades for the hosted
+      # project and cannot all replay on an empty database (for example
+      # 20260331 expects an admin_users table the baseline never created), so
+      # keep `supabase start` from applying them. The in-process tests in
+      # src/__tests__/db check the migration chain.
+      - name: Keep supabase start from replaying incremental migrations
+        run: mv supabase/migrations /tmp/mne-migrations
+
+      - name: Start local Supabase
+        run: supabase start -x edge-runtime,imgproxy,logflare,vector,studio,mailpit
+
+      - name: Bootstrap runs on a fresh database
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/sql/self_host_bootstrap.sql
+
+      - name: Bootstrap is idempotent
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/sql/self_host_bootstrap.sql

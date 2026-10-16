@@ -15,10 +15,10 @@ test('saving Plaid credentials goes through save_plaid_credentials', async () =>
   expect(rpc).toHaveBeenCalledWith('save_plaid_credentials', { p_client_id: 'cid', p_env: 'production', p_secret: 'secret' })
 })
 
-test('a blank secret leaves the saved one in place (sent as null)', async () => {
+test('a blank secret leaves the saved one in place (not sent)', async () => {
   rpc.mockResolvedValue({ error: null })
   await savePlaidCredentials('cid', 'sandbox', '')
-  expect(rpc).toHaveBeenCalledWith('save_plaid_credentials', { p_client_id: 'cid', p_env: 'sandbox', p_secret: null })
+  expect(rpc).toHaveBeenCalledWith('save_plaid_credentials', { p_client_id: 'cid', p_env: 'sandbox', p_secret: undefined })
 })
 
 test('a database error is thrown so the UI can show it', async () => {

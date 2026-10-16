@@ -23,8 +23,8 @@ export async function saveMarketKeys(keys: { finnhubApiKey?: string; coingeckoAp
   // Server-side function, same reason as saveLlmKey: update-then-insert cannot
   // work against a table with no select policy. Blank keys are left untouched.
   const { error } = await getSupabaseClient().rpc('save_market_keys', {
-    p_finnhub: finnhub || null,
-    p_coingecko: coingecko || null,
+    p_finnhub: finnhub || undefined,
+    p_coingecko: coingecko || undefined,
   })
   if (error) throw error
 
@@ -35,22 +35,14 @@ export async function saveMarketKeys(keys: { finnhubApiKey?: string; coingeckoAp
 
 /**
  * One-time move of Finnhub/CoinGecko keys that predate the proxy (kept in
- * localStorage and in user_settings, both readable from the browser) to the
- * server, then clears both old copies. Safe to call on every startup. On
- * failure the old copies stay, so nothing is lost.
+ * localStorage, readable from the browser) to the server, then clears the local
+ * copies. Safe to call on every startup. On failure the old copies stay, so
+ * nothing is lost. (The old user_settings key columns have been dropped, so
+ * there is no database copy to read any more.)
  */
 export async function migrateLegacyMarketKeys(): Promise<void> {
-  const { data: { user } } = await getSupabaseClient().auth.getUser()
-  if (!user) return
-  const { data: row } = await getSupabaseClient()
-    .from('user_settings')
-    .select('finnhub_api_key, coingecko_api_key')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  const dbFinnhub = (row as { finnhub_api_key?: string | null } | null)?.finnhub_api_key ?? ''
-  const dbCoingecko = (row as { coingecko_api_key?: string | null } | null)?.coingecko_api_key ?? ''
-  const finnhub = config.legacyFinnhubApiKey || dbFinnhub
-  const coingecko = config.legacyCoingeckoApiKey || dbCoingecko
+  const finnhub = config.legacyFinnhubApiKey
+  const coingecko = config.legacyCoingeckoApiKey
   if (!finnhub && !coingecko) return
 
   const status = await getMarketKeyStatus().catch(() => ({ finnhubSet: false, coingeckoSet: false }))
@@ -63,7 +55,4 @@ export async function migrateLegacyMarketKeys(): Promise<void> {
   if (status.finnhubSet) config.save({ finnhubKeySet: true })
   if (status.coingeckoSet) config.save({ coingeckoKeySet: true })
   config.clearLegacyMarketKeys()
-  if (dbFinnhub || dbCoingecko) {
-    await getSupabaseClient().from('user_settings').update({ finnhub_api_key: null, coingecko_api_key: null }).eq('user_id', user.id)
-  }
 }

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase'
+import type { TablesInsert } from '../database.types'
 import { getLlmKeySet } from './llmCredentials'
 import { getMarketKeyStatus } from './marketCredentials'
 
@@ -15,26 +16,18 @@ export async function loadApiKeys(): Promise<{
 } | null> {
   const { data: { user } } = await getSupabaseClient().auth.getUser()
   if (!user) return null
-  const { data, error } = await getSupabaseClient()
-    .from('user_settings')
-    .select('*')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (error && error.code !== 'PGRST116') throw error
-  // Keys now live write-only on the server (flags only are readable). A key
-  // saved before the proxies existed still sits in user_settings until the
-  // migrate* helpers move it, so those columns count as "has a key" here.
+  // Keys live write-only on the server; only the "saved" flags are readable.
   const [llmSet, market] = await Promise.all([
     getLlmKeySet().catch(() => false),
     getMarketKeyStatus().catch(() => ({ finnhubSet: false, coingeckoSet: false })),
   ])
-  const llmKeySet = llmSet || !!data?.claude_api_key
-  const finnhubKeySet = market.finnhubSet || !!data?.finnhub_api_key
+  const llmKeySet = llmSet
+  const finnhubKeySet = market.finnhubSet
   if (!llmKeySet || !finnhubKeySet) return null
   return {
     llmKeySet,
     finnhubKeySet,
-    coingeckoKeySet: market.coingeckoSet || !!data?.coingecko_api_key,
+    coingeckoKeySet: market.coingeckoSet,
   }
 }
 
@@ -47,7 +40,7 @@ export async function getUserSettings() {
   return data
 }
 
-export async function upsertUserSettings(settings: Record<string, unknown>) {
+export async function upsertUserSettings(settings: TablesInsert<'user_settings'>) {
   const { data, error } = await getSupabaseClient()
     .from('user_settings')
     .upsert(settings)
@@ -77,7 +70,7 @@ export async function saveSettings(settings: Record<string, unknown>) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const { error } = await getSupabaseClient()
       .from('user_settings')
-      .upsert(payload, { onConflict: 'user_id' })
+      .upsert(payload as TablesInsert<'user_settings'>, { onConflict: 'user_id' })
     if (!error) return
     const missingColumn = extractMissingColumn(error)
     if (missingColumn && missingColumn !== 'user_id' && missingColumn in payload) {

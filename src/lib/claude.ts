@@ -3084,6 +3084,7 @@ export async function executeTool(toolName: string, input: any, userId: string):
           lotIds.push(existingMatch.id)
           continue
         }
+        if (!lot.purchase_date) throw new Error('A purchase date is required for each lot.')
         const { data: lotData, error: lotError } = await supabase.from('fixed_income_lots').insert({
           asset_id: assetId,
           count: lot.count,
@@ -3309,7 +3310,8 @@ export async function executeTool(toolName: string, input: any, userId: string):
         transactionIds.push(existingMatch.id)
         continue
       }
-      const capital_gains_status = new Date(lot.purchase_date!) < oneYearAgo ? 'Long Term' : 'Short Term'
+      if (!lot.purchase_date) throw new Error('A purchase date is required for each lot.')
+      const capital_gains_status = new Date(lot.purchase_date) < oneYearAgo ? 'Long Term' : 'Short Term'
       const { data: txData, error } = await supabase.from('transactions').insert({
         subtype_id: subtypeId,
         count: lot.count,

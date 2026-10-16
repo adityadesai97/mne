@@ -24,11 +24,13 @@ export async function subscribeToPush() {
 
   // Delete old subscriptions for this user first so we never accumulate stale entries
   await supabase.from('push_subscriptions').delete().eq('user_id', user.id)
+  const { endpoint, keys } = json
+  if (!endpoint || !keys?.p256dh || !keys?.auth) throw new Error('The browser returned an incomplete push subscription.')
   const { error } = await supabase.from('push_subscriptions').insert({
     user_id: user.id,
-    endpoint: json.endpoint,
-    p256dh: (json.keys as any).p256dh,
-    auth: (json.keys as any).auth,
+    endpoint,
+    p256dh: keys.p256dh,
+    auth: keys.auth,
   })
   if (error) throw new Error(`Failed to save subscription: ${error.message}`)
 }

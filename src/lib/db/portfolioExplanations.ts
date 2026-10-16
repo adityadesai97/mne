@@ -1,3 +1,4 @@
+import type { TablesInsert } from '../database.types'
 import { getSupabaseClient } from '../supabase'
 
 export interface PortfolioExplanationHeadline {
@@ -101,7 +102,7 @@ export async function getPortfolioExplanation(
     .eq('timeframe', timeframe)
     .maybeSingle()
   if (error) throw error
-  return data as PortfolioExplanationRow | null
+  return data as unknown as PortfolioExplanationRow | null
 }
 
 /** Replaces the signed-in user's explanation row for this insight slot
@@ -113,9 +114,9 @@ export async function upsertPortfolioExplanation(input: PortfolioExplanationInpu
   if (!user) throw new Error('Not authenticated')
   const { data, error } = await getSupabaseClient()
     .from('portfolio_explanations')
-    .upsert({ ...input, user_id: user.id, generated_at: new Date().toISOString() }, { onConflict: 'user_id,scope,scope_key,timeframe' })
+    .upsert({ ...input, user_id: user.id, generated_at: new Date().toISOString() } as unknown as TablesInsert<'portfolio_explanations'>, { onConflict: 'user_id,scope,scope_key,timeframe' })
     .select()
     .single()
   if (error) throw error
-  return data as PortfolioExplanationRow
+  return data as unknown as PortfolioExplanationRow
 }

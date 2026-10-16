@@ -1,0 +1,11 @@
+# Local Supabase stack (npx supabase start). Used by .github/workflows/database.yml
+# and for trying a migration locally before it reaches the hosted project.
+project_id = "mne"
+
+[api]
+port = 54321
+schemas = ["public"]
+
+[db]
+port = 54322
+major_version = 15

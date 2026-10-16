@@ -34,31 +34,19 @@ export async function saveLlmKey(apiKey: string): Promise<void> {
 
 /**
  * One-time move of a Claude key that predates the proxy: it used to live in
- * localStorage and in user_settings.claude_api_key (readable from the
- * browser). Saves it server-side, then clears both copies. Safe to call on
- * every startup; does nothing once there is no legacy copy left. On failure
- * (for example the migration is not applied yet) the legacy copies stay, so
- * nothing is lost.
+ * localStorage (readable from the browser). Saves it server-side, then clears
+ * the local copy. Safe to call on every startup; does nothing once there is no
+ * legacy copy left. On failure (for example the migration is not applied yet)
+ * the legacy copy stays, so nothing is lost. (The old user_settings.claude_api_key
+ * column has been dropped, so there is no database copy to read any more.)
  */
 export async function migrateLegacyClaudeKey(): Promise<void> {
-  const { data: { user } } = await getSupabaseClient().auth.getUser()
-  if (!user) return
-  const { data: row } = await getSupabaseClient()
-    .from('user_settings')
-    .select('claude_api_key')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  const dbKey = (row as { claude_api_key?: string | null } | null)?.claude_api_key ?? ''
-  const legacy = config.legacyClaudeApiKey || dbKey
+  const legacy = config.legacyClaudeApiKey
   if (!legacy) return
-
   if (!config.llmKeySet && !(await getLlmKeySet())) {
     await saveLlmKey(legacy)
   } else {
     config.save({ llmKeySet: true })
     config.clearLegacyClaudeApiKey()
-  }
-  if (dbKey) {
-    await getSupabaseClient().from('user_settings').update({ claude_api_key: null }).eq('user_id', user.id)
   }
 }
