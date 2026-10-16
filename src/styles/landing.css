@@ -25,7 +25,9 @@
 .landing-say:hover { border-color: hsl(var(--primary)); }
 
 .landing-pos { margin: 20px 0 0; font-family: var(--display-font); font-style: italic; color: hsl(var(--muted-foreground)); }
-.landing-senses { list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 20px; }
+.landing-group { margin-top: 24px; }
+.landing-group > .landing-pos { margin-top: 0; }
+.landing-senses { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 20px; }
 .landing-senses li { display: grid; grid-template-columns: 2.25rem 1fr; line-height: 1.55; }
 .landing-senses b { font-family: var(--display-font); font-weight: 500; color: hsl(var(--primary)); }
 .landing-senses p { margin: 0; }
