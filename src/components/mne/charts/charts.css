@@ -1,12 +1,6 @@
 /* Additions to the design's chart classes for the live (variable-length) Charts page. */
 .mne-bars.is-wide .mne-bar-row { grid-template-columns: minmax(80px, 140px) 1fr minmax(96px, auto); }
 .mne-bars.is-wide .mne-bar-row .v { white-space: nowrap; }
-.mne-rsu-list { display: flex; flex-direction: column; }
-.mne-rsu-grant { padding: 16px 0 4px; }
-.mne-rsu-grant + .mne-rsu-grant { border-top: 1px solid var(--mne-line); margin-top: 12px; }
-.mne-rsu-grant:first-child { padding-top: 12px; }
-.mne-rsu-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.mne-rsu-next { text-align: right; }
 .mne-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mne-chart-head .mne-eyebrow { min-width: 0; }
 .mne-chart-blur { filter: blur(12px); user-select: none; pointer-events: none; transform: translateZ(0); }
@@ -23,13 +17,38 @@
 .mne-legend-bars i.is-thick { width: 20px; height: 10px; }
 .mne-legend-bars i.is-thin { width: 20px; height: 4px; }
 
-/* RSU rails: 12px captions, grant name in body-strong. */
-.mne-rsu-head .mne-stat .l { font: 600 15px/20px var(--mne-font-sans); color: var(--mne-ink); }
-.mne-rsu-head .mne-rsu-next .l { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
-.mne-rsu-head .mne-stat .v { font: 500 20px/28px var(--mne-font-serif); }
-.mne-rsu-pct { font: 400 13px/18px var(--mne-font-sans); }
-.mne-vest { height: 64px; margin-top: 12px; }
-.mne-vest .lab { top: 38px; font: 400 12px/16px var(--mne-font-sans); }
-/* "Today" sits on its own caption row so it never collides with the Cliff / Final labels. */
-.mne-vest.has-today-row { height: 80px; }
-.mne-vest .lab.is-today { top: 58px; color: var(--mne-ink); font-weight: 500; }
+/* RSU vesting: one grant = figure + next vest above, a share-measured bar below. */
+.mne-rsu-list { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.mne-rsu-grant { padding: 20px 0; }
+.mne-rsu-grant:first-child { padding-top: 12px; }
+.mne-rsu-grant:last-child { padding-bottom: 0; }
+.mne-rsu-grant + .mne-rsu-grant { border-top: 1px solid var(--mne-line); }
+.mne-rsu-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px 16px; flex-wrap: wrap; }
+.mne-rsu-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.mne-rsu-name b { font: 600 15px/22px var(--mne-font-sans); }
+.mne-rsu-grant .cap { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.mne-rsu-big { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mne-rsu-big .v { font: 500 36px/40px var(--mne-font-serif); letter-spacing: -0.01em; }
+.mne-rsu-big .of { font: 400 15px/22px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.mne-rsu-next { text-align: right; }
+.mne-rsu-next .v { font: 500 20px/28px var(--mne-font-serif); }
+.mne-rsu-next .v .mne-up, .mne-rsu-next .v .mne-down { font-family: var(--mne-font-sans); font-size: 15px; }
+/* Narrow screens: next vest drops under the figure, left-aligned, instead of wrapping beside it. */
+@media (max-width: 560px) {
+  .mne-rsu-top { align-items: flex-start; flex-direction: column; }
+  .mne-rsu-next { text-align: left; }
+  .mne-rsu-big .v { font-size: 30px; line-height: 36px; }
+}
+
+.mne-rsu-wrap { position: relative; margin-top: 14px; padding-top: 26px; }
+.mne-rsu-today { position: absolute; top: 0; z-index: 3; white-space: nowrap; background: var(--mne-ink); color: var(--mne-surface-100); font: 500 12px/16px var(--mne-font-sans); padding: 1px 8px; border-radius: 99px; }
+.mne-rsu-line { position: absolute; top: 18px; height: 24px; width: 2px; margin-left: -1px; background: var(--mne-ink); border-radius: 2px; z-index: 2; pointer-events: none; }
+.mne-rsu-bar { position: relative; height: 14px; border-radius: 99px; background: var(--mne-surface-300); overflow: hidden; }
+.mne-rsu-bar i { position: absolute; top: 0; bottom: 0; display: block; }
+.mne-rsu-bar i:focus-visible { outline: 2px solid var(--mne-ink); outline-offset: -2px; }
+.mne-rsu-bar .v { left: 0; background: var(--mne-accent); transition: width var(--mne-dur) var(--mne-ease); }
+.mne-rsu-bar .n { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--mne-accent) 55%, transparent) 0 3px, transparent 3px 6px); border-left: 2px solid var(--mne-accent); transition: left var(--mne-dur) var(--mne-ease), width var(--mne-dur) var(--mne-ease); }
+.mne-rsu-bar .f { background: repeating-linear-gradient(135deg, var(--mne-line-strong) 0 2px, transparent 2px 6px); opacity: 0.7; }
+.mne-rsu-lab { position: relative; height: 22px; margin-top: 6px; }
+.mne-rsu-lab span { position: absolute; white-space: nowrap; font: 500 12px/16px var(--mne-font-sans); color: var(--mne-ink); }
+.mne-rsu-caps { display: flex; justify-content: space-between; gap: 12px; margin-top: 2px; }

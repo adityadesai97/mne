@@ -241,7 +241,7 @@ export default function Charts() {
             <MasonryItem span={2}><section className="mne-card">
               <Eyebrow icon={CalendarClock}>RSU vesting progress</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
-                <RsuVestChart rows={rsuData} />
+                <RsuVestChart rows={rsuData} hideValues={hideValues} />
               </div>
             </section></MasonryItem>
           )}

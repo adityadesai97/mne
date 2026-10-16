@@ -1,0 +1,143 @@
+/* Portfolio Pulse (Home). Two layouts share these pieces:
+   - Carousel: `.pulse-a`, one large card at a time with a progress-ring timer
+   - Headline: `.pulse-d`, the top insight large + a disclosure of compact rows
+   Built from the design system's --mne-* tokens only. */
+
+.pulse-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pulse-newcount { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); font-variant-numeric: tabular-nums; }
+
+.pulse-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pulse-seen { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mne-accent); flex: none; }
+
+/* Big figure: a signed delta or a countdown, with a small caption under it. */
+.pulse-figure { display: inline-flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.pulse-figure small { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.pulse-figure.is-big { font: 500 24px/28px var(--mne-font-serif); }
+.pulse-figure.is-big small { font: 400 12px/16px var(--mne-font-sans); }
+
+/* Decorative thumbnails (all aria-hidden; the text carries the meaning). */
+.pulse-vis { width: 150px; height: 48px; display: flex; align-items: flex-end; }
+.pulse-spark { display: block; width: 100%; height: 100%; overflow: visible; }
+.pulse-spark .ln { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pulse-spark .base { stroke: var(--mne-line-strong); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.pulse-spark.up .ln { stroke: var(--mne-gain); }
+.pulse-spark.down .ln { stroke: var(--mne-loss); }
+.pulse-spark.up .ar { fill: var(--mne-gain); opacity: .12; }
+.pulse-spark.down .ar { fill: var(--mne-loss); opacity: .12; }
+.pulse-prog, .pulse-segs { height: auto; flex-direction: column; align-items: stretch; gap: 6px; }
+.pulse-prog .rail { position: relative; height: 8px; border-radius: 99px; background: var(--mne-line); }
+.pulse-prog .rail i { display: block; height: 100%; border-radius: 99px; background: var(--mne-accent); }
+.pulse-prog .rail .tgt { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--mne-ink); }
+.pulse-prog small, .pulse-segs small { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.pulse-segs .segs { display: flex; gap: 3px; }
+.pulse-segs .segs i { flex: 1; height: 8px; border-radius: 99px; background: var(--mne-line); }
+.pulse-segs .segs i.d { background: var(--mne-accent); }
+.pulse-segs .segs i.n { background: var(--mne-amber); }
+
+/* ───────── Carousel ───────── */
+.pulse-a-card {
+  position: relative; margin-top: 12px; padding: 20px 20px 16px;
+  background: var(--mne-surface-300); border-radius: var(--mne-radius-md);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: end; min-height: 178px;
+  transition: background var(--mne-dur) linear;
+}
+.pulse-a-card:hover { background: var(--mne-line); }
+.pulse-a-card:has(.pulse-a-hit:focus-visible) { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pulse-a-card.is-enter { animation: pulse-in var(--mne-dur) var(--mne-ease); }
+@keyframes pulse-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+.pulse-a-main { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; }
+/* The headline button is the single click target: it stretches over the whole card. */
+.pulse-a-hit { all: unset; display: block; cursor: pointer; font: 500 24px/32px var(--mne-font-serif); letter-spacing: -.01em; text-wrap: pretty; overflow-wrap: anywhere; }
+.pulse-a-hit::after { content: ""; position: absolute; inset: 0; border-radius: var(--mne-radius-md); }
+.pulse-a-card.is-seen .pulse-a-hit { color: var(--mne-ink-muted); }
+.pulse-a-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 12px; width: 150px; align-self: stretch; }
+
+.pulse-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.pulse-ctl { display: flex; align-items: center; gap: 8px; }
+.pulse-icon-btn { border: 0; background: var(--mne-surface-300); color: var(--mne-ink); width: 32px; height: 32px; border-radius: 50%; display: inline-grid; place-items: center; cursor: pointer; transition: background var(--mne-dur) linear; }
+.pulse-icon-btn:hover { background: var(--mne-line); }
+.pulse-count { font: 500 14px/20px var(--mne-font-sans); color: var(--mne-ink-muted); font-variant-numeric: tabular-nums; min-width: 48px; text-align: right; }
+.pulse-pips { display: flex; gap: 6px; align-items: center; }
+.pulse-pips button { border: 0; padding: 0; width: 20px; height: 6px; border-radius: 99px; background: var(--mne-line-strong); cursor: pointer; opacity: .5; transition: width var(--mne-dur) var(--mne-ease), opacity var(--mne-dur) linear; }
+.pulse-pips button.is-unseen { opacity: 1; }
+.pulse-pips button[aria-current="true"] { background: var(--mne-accent); opacity: 1; width: 32px; }
+
+/* The ring is the autoplay timer (animationend advances) and the pause/play button. */
+.pulse-ring { position: relative; width: 32px; height: 32px; border: 0; background: none; padding: 0; cursor: pointer; border-radius: 50%; color: var(--mne-ink); }
+.pulse-ring svg { width: 32px; height: 32px; transform: rotate(-90deg); display: block; }
+.pulse-ring circle { fill: none; stroke-width: 2.5; }
+.pulse-ring .tr { stroke: var(--mne-line); }
+.pulse-ring .pr { stroke: var(--mne-accent); stroke-linecap: round; stroke-dasharray: 81.7; stroke-dashoffset: 81.7; }
+.pulse-ring.is-run .pr { animation: pulse-ring 3200ms linear forwards; }
+.pulse-ring.is-hold .pr { animation-play-state: paused; }
+.pulse-ring.is-static .pr { stroke-dashoffset: 0; opacity: .35; }
+@keyframes pulse-ring { to { stroke-dashoffset: 0; } }
+.pulse-ring .glyph { position: absolute; inset: 0; display: grid; place-items: center; }
+.pulse-ring .glyph svg { width: 12px; height: 12px; transform: none; }
+
+/* ───────── Headline ───────── */
+.pulse-d-head { display: flex; flex-direction: column; gap: 14px; position: relative; margin-top: 12px; padding: 6px 0 4px; }
+.pulse-d-hit { all: unset; cursor: pointer; display: block; font: 500 30px/36px var(--mne-font-serif); letter-spacing: -.015em; text-wrap: balance; max-width: 26ch; overflow-wrap: anywhere; }
+/* Hover wash behind the whole block; the button's ::after is also the focus ring. */
+.pulse-d-hit::after { content: ""; position: absolute; inset: -8px -8px -4px; border-radius: var(--mne-radius-md); z-index: -1; transition: background var(--mne-dur) linear; }
+.pulse-d-head:hover .pulse-d-hit::after { background: var(--mne-surface-300); }
+.pulse-d-hit:focus-visible { outline: none; }
+.pulse-d-hit:focus-visible::after { outline: 2px solid var(--mne-focus); }
+.pulse-d-head.is-seen .pulse-d-hit { color: var(--mne-ink-muted); }
+.pulse-d-head { isolation: isolate; }
+.pulse-d-row2 { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.pulse-d-row2 .pulse-figure { align-items: flex-start; }
+.pulse-d-row2 .pulse-vis { width: 160px; }
+
+.pulse-disc { all: unset; box-sizing: border-box; width: 100%; margin-top: 16px; border-top: 1px solid var(--mne-line); padding: 14px 4px 4px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-radius: 0 0 var(--mne-radius-md) var(--mne-radius-md); }
+.pulse-disc:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pulse-disc .stack { display: flex; }
+.pulse-disc .stack span { width: 28px; height: 28px; border-radius: 50%; background: var(--mne-surface-300); border: 2px solid var(--mne-surface-200); display: grid; place-items: center; margin-left: -8px; }
+.pulse-disc .stack span:first-child { margin-left: 0; }
+.pulse-disc .t { font: 500 14px/20px var(--mne-font-sans); flex: 1; }
+.pulse-disc .t small { font: 400 14px/20px var(--mne-font-sans); color: var(--mne-ink-muted); margin-left: 8px; }
+.pulse-disc .chev { color: var(--mne-ink-muted); transition: transform var(--mne-dur-layout) var(--mne-ease); }
+.pulse-disc[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+/* Height transition via grid rows (0fr -> 1fr); the inner wrapper clips. */
+.pulse-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--mne-dur-layout) var(--mne-ease); }
+.pulse-more.is-open { grid-template-rows: 1fr; }
+.pulse-more > div { overflow: hidden; min-height: 0; }
+.pulse-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.pulse-list li + li { border-top: 1px solid var(--mne-line); }
+
+.pulse-row { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto 20px; gap: 12px; align-items: center; padding: 12px 8px 12px 4px; border-radius: var(--mne-radius-md); cursor: pointer; transition: background var(--mne-dur) linear; }
+.pulse-row:hover { background: var(--mne-surface-300); }
+.pulse-row:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: -2px; }
+.pulse-row-ico { width: 40px; height: 40px; border-radius: 50%; background: var(--mne-surface-300); display: grid; place-items: center; color: var(--mne-ink); }
+.pulse-row:hover .pulse-row-ico { background: var(--mne-line); }
+.pulse-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pulse-row-text { font: 500 15px/21px var(--mne-font-sans); text-wrap: pretty; overflow-wrap: anywhere; }
+.pulse-row.is-seen .pulse-row-text { font-weight: 400; color: var(--mne-ink-muted); }
+.pulse-row .pulse-figure.is-end { font: 500 14px/20px var(--mne-font-sans); white-space: nowrap; }
+.pulse-row .pulse-figure.is-inline { display: none; }
+.pulse-chev { color: var(--mne-ink-muted); transition: transform var(--mne-dur) var(--mne-ease); }
+.pulse-row:hover .pulse-chev { transform: translateX(2px); color: var(--mne-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-a-card.is-enter { animation: none; }
+  .pulse-ring.is-run .pr { animation: none; }
+  .pulse-more, .pulse-disc .chev, .pulse-chev, .pulse-pips button { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .pulse-a-card { grid-template-columns: minmax(0, 1fr); padding: 16px 16px 14px; min-height: 0; }
+  .pulse-a-side { width: 100%; flex-direction: row; align-items: flex-end; }
+  .pulse-a-side .pulse-vis { width: 130px; }
+  .pulse-a-hit { font-size: 20px; line-height: 28px; }
+  .pulse-pips { display: none; }
+  .pulse-foot { flex-wrap: wrap; }
+  .pulse-d-hit { font-size: 24px; line-height: 30px; }
+  .pulse-d-row2 .pulse-vis { width: 110px; }
+  .pulse-d-row2 .pulse-figure.is-big { font-size: 20px; line-height: 28px; }
+  .pulse-row { grid-template-columns: 36px minmax(0, 1fr) 20px; gap: 10px; padding-right: 4px; }
+  .pulse-row-ico { width: 36px; height: 36px; }
+  .pulse-row .pulse-figure.is-end { display: none; }
+  .pulse-row .pulse-figure.is-inline { display: inline-flex; flex-direction: row; align-items: baseline; gap: 6px; font: 500 14px/20px var(--mne-font-sans); }
+}

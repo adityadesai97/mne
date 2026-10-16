@@ -15,6 +15,7 @@ const KEYS = {
   theme: 'mne_theme',
   assetView: 'mne_asset_view',
   lotView: 'mne_lot_view',
+  pulseView: 'mne_pulse_view',
   hideValues: 'mne_hide_values',
   plaidOnboardingSeen: 'mne_plaid_onboarding_seen',
 }
@@ -90,6 +91,11 @@ export const config = {
     try { return localStorage.getItem(KEYS.lotView) === 'timeline' ? 'timeline' : 'default' } catch { return 'default' }
   },
   setLotView(v: 'default' | 'timeline') { try { localStorage.setItem(KEYS.lotView, v) } catch { /* private mode */ } },
+  /** Portfolio Pulse layout on Home: 'carousel' (one card at a time) or 'headline' (top insight + disclosure). */
+  get pulseView(): 'carousel' | 'headline' {
+    try { return localStorage.getItem(KEYS.pulseView) === 'headline' ? 'headline' : 'carousel' } catch { return 'carousel' }
+  },
+  setPulseView(v: 'carousel' | 'headline') { try { localStorage.setItem(KEYS.pulseView, v) } catch { /* private mode */ } },
   get hideValues(): boolean {
     return localStorage.getItem(KEYS.hideValues) === 'true'
   },
