@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- exports the pure packing helpers next to the components so tests can import them */
 import {
   Children, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState,
   type ReactElement, type ReactNode,
@@ -123,7 +124,6 @@ export function packMasonry(items: PackItem[], columns: number, gap = 0): { plac
 
 interface MasonryItemProps { span?: MasonrySpan; children?: ReactNode }
 /** Marks a Masonry child's column span. Renders its children unchanged. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function MasonryItem({ children }: MasonryItemProps) { return <>{children}</> }
 
 interface MasonryProps {
