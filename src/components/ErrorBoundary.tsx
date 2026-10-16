@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { reportError } from '@/lib/errorReporting'
 
 interface Props {
   children: ReactNode
@@ -24,6 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Uncaught render error:', error, info.componentStack)
+    void reportError('react-render', error)
   }
 
   render() {

@@ -54,7 +54,7 @@ export async function savePlaidCredentials(clientId: string, plaidEnv: string, s
   const { error } = await getSupabaseClient().rpc('save_plaid_credentials', {
     p_client_id: clientId,
     p_env: plaidEnv,
-    p_secret: secret || null,
+    p_secret: secret || undefined,
   })
   if (error) throw error
 }
@@ -78,7 +78,8 @@ export async function listPlaidItems(): Promise<PlaidItem[]> {
     .select('id, institution_id, institution_name, status, created_at, last_synced_at, last_error')
     .order('created_at', { ascending: true })
   if (error) throw error
-  return data ?? []
+  // The database stores status as plain text; the CHECK constraint keeps it to this union.
+  return (data ?? []) as PlaidItem[]
 }
 
 export interface PendingPlaidPosition {
@@ -108,7 +109,7 @@ export async function listPendingPositions(): Promise<PendingPlaidPosition[]> {
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as unknown as PendingPlaidPosition[]
 }
 
 export interface ConfirmedPlaidLink {
@@ -425,12 +426,13 @@ export async function savePlaidLotLinks(
   row: Pick<PendingPlaidPosition, 'plaid_item_id' | 'external_account_id' | 'external_security_id'>,
   pairings: PlaidLotPairing[],
 ): Promise<void> {
-  if (pairings.length === 0 || !row.external_security_id) return
+  const securityId = row.external_security_id
+  if (pairings.length === 0 || !securityId) return
   const { error } = await getSupabaseClient().from('plaid_lot_links').insert(
     pairings.map((p) => ({
       plaid_item_id: row.plaid_item_id,
       external_account_id: row.external_account_id,
-      external_security_id: row.external_security_id,
+      external_security_id: securityId,
       transaction_id: p.transactionId,
       plaid_lot_date: p.plaidDate,
       plaid_lot_price: p.plaidPrice,

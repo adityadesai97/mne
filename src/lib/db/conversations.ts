@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase'
+import type { Json } from '../database.types'
 import type { PortfolioExplanationHeadline, PortfolioExplanationMover, PortfolioExplanationThemeMove } from './portfolioExplanations'
 
 /** Structured data behind a portfolio-explanation reply — carried
@@ -94,7 +95,7 @@ export async function getConversation(id: string): Promise<Conversation | null> 
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  return { ...data, messages: Array.isArray(data.messages) ? data.messages : [], origin: (data as any).origin ?? 'command_bar' }
+  return { ...data, messages: Array.isArray(data.messages) ? (data.messages as unknown as ConversationMessage[]) : [], origin: (data as any).origin ?? 'command_bar' }
 }
 
 /** Creates or updates a conversation's saved message list. Pass `id` to
@@ -116,7 +117,7 @@ export async function saveConversation(input: {
   if (input.id) {
     const { error } = await getSupabaseClient()
       .from('command_conversations')
-      .update({ messages: input.messages, updated_at: new Date().toISOString() })
+      .update({ messages: input.messages as unknown as Json, updated_at: new Date().toISOString() })
       .eq('id', input.id)
       .eq('user_id', user.id)
     if (error) throw error
@@ -129,7 +130,7 @@ export async function saveConversation(input: {
     .insert({
       user_id: user.id,
       title: deriveConversationTitle(firstUserMessage),
-      messages: input.messages,
+      messages: input.messages as unknown as Json,
       origin: input.origin ?? 'command_bar',
     })
     .select('id')

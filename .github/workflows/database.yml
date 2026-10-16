@@ -1,0 +1,48 @@
+name: Database (real Supabase)
+
+# The fast in-process Postgres tests (src/__tests__/db) already run in CI on
+# every PR. This workflow additionally starts a full local Supabase stack, runs
+# the self-host bootstrap and every migration against it, and checks the
+# generated types have not drifted. It only runs when schema files change.
+
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/**
+      - supabase/sql/self_host_bootstrap.sql
+      - src/lib/database.types.ts
+  workflow_dispatch:
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start -x edge-runtime,imgproxy,logflare,vector,studio,mailpit
+
+      - name: Bootstrap runs on a fresh database
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/sql/self_host_bootstrap.sql
+
+      - name: Bootstrap is idempotent
+        run: |
+          DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/sql/self_host_bootstrap.sql
+
+      - name: Generated types match the schema
+        run: |
+          supabase gen types typescript --local --schema public > /tmp/db.types.ts
+          node -e "
+            const norm=s=>[...s.matchAll(/^\s{6}(\w+): \{\n\s+Row:/gm)].map(m=>m[1]).sort().join(',');
+            const fs=require('fs');
+            const a=norm(fs.readFileSync('/tmp/db.types.ts','utf8')), b=norm(fs.readFileSync('src/lib/database.types.ts','utf8'));
+            const missing=a.split(',').filter(t=>!b.split(',').includes(t));
+            if(missing.length){console.error('database.types.ts is missing tables:',missing.join(', '));process.exit(1)}
+          "

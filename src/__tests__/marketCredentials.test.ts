@@ -122,36 +122,32 @@ test('a failed secret write never claims the key is saved', async () => {
   expect(config.finnhubKeySet).toBe(false)
 })
 
-test('migration moves browser-held keys to the server and clears both old copies', async () => {
+test('migration moves browser-held keys to the server and clears the local copies', async () => {
   localStorage.setItem('mne_finnhub_api_key', 'fh-old')
-  tables.user_settings = [{ user_id: 'u1', finnhub_api_key: 'fh-old', coingecko_api_key: 'CG-old' }]
+  localStorage.setItem('mne_coingecko_api_key', 'CG-old')
   await migrateLegacyMarketKeys()
   expect(tables.market_credential_secrets[0]).toMatchObject({ finnhub_api_key: 'fh-old', coingecko_api_key: 'CG-old' })
   expect(config.legacyFinnhubApiKey).toBe('')
-  expect(tables.user_settings[0].finnhub_api_key).toBeNull()
-  expect(tables.user_settings[0].coingecko_api_key).toBeNull()
+  expect(config.legacyCoingeckoApiKey).toBe('')
 })
 
 test('migration never overwrites a key already saved on the server', async () => {
+  localStorage.setItem('mne_finnhub_api_key', 'fh-old')
   tables.market_credentials = [{ user_id: 'u1', finnhub_set: true, coingecko_set: false }]
   tables.market_credential_secrets = [{ user_id: 'u1', finnhub_api_key: 'fh-new' }]
-  tables.user_settings = [{ user_id: 'u1', finnhub_api_key: 'fh-old', coingecko_api_key: null }]
   await migrateLegacyMarketKeys()
   expect(tables.market_credential_secrets[0].finnhub_api_key).toBe('fh-new')
-  expect(tables.user_settings[0].finnhub_api_key).toBeNull()
+  expect(config.legacyFinnhubApiKey).toBe('')
 })
 
 test('migration keeps the old copies when the server write fails', async () => {
   localStorage.setItem('mne_finnhub_api_key', 'fh-old')
-  tables.user_settings = [{ user_id: 'u1', finnhub_api_key: 'fh-old', coingecko_api_key: null }]
   failSecretWrites = true
   await expect(migrateLegacyMarketKeys()).rejects.toThrow()
   expect(config.legacyFinnhubApiKey).toBe('fh-old')
-  expect(tables.user_settings[0].finnhub_api_key).toBe('fh-old')
 })
 
 test('migration does nothing without legacy keys', async () => {
-  tables.user_settings = [{ user_id: 'u1', finnhub_api_key: null, coingecko_api_key: null }]
   await migrateLegacyMarketKeys()
   expect(calls.filter(c => c.startsWith('market_credential'))).toHaveLength(0)
 })

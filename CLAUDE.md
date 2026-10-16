@@ -12,6 +12,8 @@ npm run lint      # ESLint
 npm test          # Vitest (watch mode)
 npx vitest --run                  # single run, all tests
 npx vitest --run charts.test      # single file
+npm run e2e                       # Playwright end-to-end tests (e2e/), against a fake Supabase
+npm run types                     # regenerate src/lib/database.types.ts (needs SUPABASE_PROJECT_ID + supabase CLI login)
 ```
 
 ## Architecture
@@ -235,6 +237,13 @@ Six Deno functions (plus the Plaid ones below) in `supabase/functions/`:
 ### PWA & Service Worker
 
 `vite-plugin-pwa` uses the `injectManifest` strategy, sourcing `src/sw.ts`. The service worker handles `push` events (shows notification) and `notificationclick` (opens `/`). `src/sw.ts` is excluded from the app's TypeScript compilation (`tsconfig.app.json`) because it runs in `ServiceWorkerGlobalScope`, not the browser window.
+
+### Safety nets (types, tests, CI, error tracking)
+
+- **Typed database**: `src/lib/database.types.ts` is the generated Supabase schema and `getSupabaseClient()` is `createClient<Database>`, so a wrong table/column name fails `tsc` (and the build), not a user's session. After any migration, regenerate it (`npm run types`, or the Supabase MCP `generate_typescript_types`) and commit it. `src/__tests__/db/schema.test.ts` fails if the types name a table/column the bootstrap doesn't create (known hosted-only drift: `app_config`, `user_settings.gemini_api_key`).
+- **Database tests without Docker**: `src/__tests__/db/` runs the real `self_host_bootstrap.sql` and every migration in order on PGlite (in-process Postgres), plus row-level-security and `save_*` function tests (`rls.test.ts`: users only see their own rows, secret tables are unreadable, replacing a key twice works, anon can't call the save functions). Add a test there for any new table with sensitive data. `.github/workflows/database.yml` additionally runs a full `supabase start` when schema files change; `supabase/config.toml` is for that.
+- **End-to-end tests**: `e2e/*.spec.ts` (Playwright) run the real app in Chromium against a fake Supabase (`e2e/fakeSupabase.ts` answers `/auth`, `/rest`, `/functions` locally and records writes in `db.calls`). Nothing leaves the machine. Locally set `PW_CHROMIUM_PATH` to an installed Chromium if Playwright's own browser isn't downloaded. Extend `core.spec.ts` when adding a page or a flow that writes data. They run in CI as the `e2e` job.
+- **Error tracking**: `src/lib/errorReporting.ts` (installed in `main.tsx`, also called by `ErrorBoundary`) inserts uncaught errors/unhandled rejections into `public.client_errors` (migration `20261017000000`): message, stack, path, browser; dollar amounts scrubbed; deduped, max 20 per page load. Insert-only for signed-in users (no select policy), so to check for bugs query it with the service role / Supabase MCP, e.g. `select created_at, source, message, url from client_errors order by created_at desc limit 50;`. If the table isn't applied yet the reporter silently does nothing.
 
 ### Testing
 

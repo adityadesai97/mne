@@ -1,3 +1,4 @@
+import type { TablesInsert } from '../database.types'
 import { getSupabaseClient } from '../supabase'
 
 // plaid_synced_positions is nested in three places since it can point at an
@@ -23,7 +24,7 @@ export async function getAllAssets() {
   return data
 }
 
-export async function upsertAsset(asset: Record<string, unknown>) {
+export async function upsertAsset(asset: TablesInsert<'assets'>) {
   const { data, error } = await getSupabaseClient()
     .from('assets')
     .upsert(asset)

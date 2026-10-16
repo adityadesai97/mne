@@ -1,3 +1,4 @@
+import type { TablesInsert } from '../database.types'
 import { getSupabaseClient } from '../supabase'
 import { recordTickerPriceSnapshots } from './tickerPriceHistory'
 import { CoinGeckoError, fetchCryptoQuotes } from '../coingecko'
@@ -34,7 +35,7 @@ export async function deleteTicker(id: string) {
   if (error) throw error
 }
 
-export async function upsertTicker(ticker: Record<string, unknown>) {
+export async function upsertTicker(ticker: TablesInsert<'tickers'>) {
   const { data, error } = await getSupabaseClient()
     .from('tickers')
     .upsert(ticker)

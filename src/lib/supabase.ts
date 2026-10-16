@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from './database.types'
 
 // Supabase credentials must be provided via env vars.
 const ENV_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -43,7 +44,7 @@ const authAwareFetch: typeof fetch = async (input, init) => {
 }
 
 const client = ENV_URL && ENV_KEY
-  ? createClient(ENV_URL, ENV_KEY, { global: { fetch: authAwareFetch } })
+  ? createClient<Database>(ENV_URL, ENV_KEY, { global: { fetch: authAwareFetch } })
   : null
 
 export function isSupabaseReady(): boolean {

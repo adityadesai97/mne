@@ -1,5 +1,6 @@
 // src/lib/importExport.ts
 import * as XLSX from 'xlsx'
+import type { TablesInsert } from './database.types'
 import { getAllAssets } from './db/assets'
 import { getAllTickers } from './db/tickers'
 import { getAllThemes } from './db/themes'
@@ -1694,7 +1695,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       }
       if (!symbol) return null
 
-      const payload: Record<string, unknown> = {
+      const payload: TablesInsert<'tickers'> = {
         user_id: userId,
         symbol,
         current_price: params.currentPrice ?? null,
@@ -1779,7 +1780,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
       const matchedAssetId = existingAssetIdByKey.get(naturalKey)
       if (matchedAssetId) matchedExistingAssets += 1
 
-      const assetPayload: Record<string, unknown> = {
+      const assetPayload: TablesInsert<'assets'> = {
         user_id: userId,
         name: asset.name,
         asset_type: asset.assetType,
@@ -1812,7 +1813,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
 
       for (const lot of asset.fixedIncomeLots) {
         throwIfImportAborted(signal)
-        const lotPayload: Record<string, unknown> = {
+        const lotPayload: TablesInsert<'fixed_income_lots'> = {
           asset_id: assetRow.id,
           count: lot.count,
           cost_price: lot.costPrice,
@@ -1831,7 +1832,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
 
       for (const subtype of asset.stockSubtypes) {
         throwIfImportAborted(signal)
-        const subtypePayload: Record<string, unknown> = {
+        const subtypePayload: TablesInsert<'stock_subtypes'> = {
           asset_id: assetRow.id,
           subtype: subtype.subtype,
         }
@@ -1850,7 +1851,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
 
         for (const tx of subtype.transactions) {
           throwIfImportAborted(signal)
-          const txPayload: Record<string, unknown> = {
+          const txPayload: TablesInsert<'transactions'> = {
             subtype_id: subtypeRow.id,
             count: tx.count,
             cost_price: tx.costPrice,
@@ -1871,7 +1872,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
 
         for (const grant of subtype.rsuGrants) {
           throwIfImportAborted(signal)
-          const grantPayload: Record<string, unknown> = {
+          const grantPayload: TablesInsert<'rsu_grants'> = {
             subtype_id: subtypeRow.id,
             grant_date: grant.grantDate,
             total_shares: grant.totalShares,
@@ -1957,7 +1958,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
 
     for (const conversation of data.conversations) {
       throwIfImportAborted(signal)
-      const payload: Record<string, unknown> = {
+      const payload: TablesInsert<'command_conversations'> = {
         user_id: userId,
         title: conversation.title,
         messages: conversation.messages,

@@ -277,15 +277,18 @@ create table if not exists public.plaid_credentials (
 -- plaid_credential_secrets has no select policy by design, so the client
 -- can't check directly whether a secret exists -- this tracks it instead.
 alter table public.plaid_credentials add column if not exists secret_set boolean not null default false;
-update public.plaid_credentials
-set secret_set = true
-where user_id in (select user_id from public.plaid_credential_secrets) and secret_set = false;
 
 create table if not exists public.plaid_credential_secrets (
   user_id uuid primary key references public.plaid_credentials(user_id) on delete cascade,
   secret text not null,
   updated_at timestamptz not null default now()
 );
+
+-- Backfill for projects that saved a secret before the flag existed. Must come
+-- after the secrets table is created, or a fresh database fails here.
+update public.plaid_credentials
+set secret_set = true
+where user_id in (select user_id from public.plaid_credential_secrets) and secret_set = false;
 
 create table if not exists public.plaid_items (
   id uuid primary key default gen_random_uuid(),
@@ -1146,3 +1149,26 @@ end $$;
 
 revoke all on function public.save_plaid_credentials(text, text, text) from public, anon;
 grant execute on function public.save_plaid_credentials(text, text, text) to authenticated;
+
+-- Error tracking: the browser reports uncaught errors here so bugs are found
+-- before a user reports them. Insert-only for signed-in users (no select
+-- policy: nobody reads these from the browser; query them with the service
+-- role / SQL editor / Supabase MCP). Messages and stacks only, never data.
+create table if not exists public.client_errors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  source text not null,
+  message text not null,
+  stack text,
+  url text,
+  app_version text,
+  user_agent text
+);
+create index if not exists client_errors_created_at_idx on public.client_errors (created_at desc);
+
+alter table public.client_errors enable row level security;
+drop policy if exists client_errors_insert_own on public.client_errors;
+create policy client_errors_insert_own on public.client_errors
+  for insert to authenticated
+  with check (auth.uid() = user_id);
