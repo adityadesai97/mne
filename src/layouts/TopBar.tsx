@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
-import { Search, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import '@/styles/shell.css'
 
 const IS_MAC = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || '')
@@ -23,7 +24,7 @@ export default function TopBar({ onAsk, open, controlsId }: { onAsk: () => void;
           aria-controls={controlsId}
           aria-keyshortcuts="Control+K Meta+K"
         >
-          <Search size={16} strokeWidth={1.5} aria-hidden="true" />
+          <AiMark size={18} aria-hidden="true" />
           <span>Ask or search…</span>
           <kbd className="mne-kbd" aria-hidden="true">{SHORTCUT_LABEL}</kbd>
         </button>

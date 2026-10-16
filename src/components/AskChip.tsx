@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { openCommandBarWithPrompt } from '@/lib/commandBarBridge'
 import '@/styles/shell.css'
 
@@ -13,7 +13,7 @@ export function AskChip({ prompt, label = 'Ask about this', className = '' }: { 
       aria-label={`${label}: ${prompt}`}
       title={prompt}
     >
-      <Sparkles size={14} strokeWidth={1.5} aria-hidden="true" />
+      <AiMark size={14} aria-hidden="true" />
       {label}
     </button>
   )

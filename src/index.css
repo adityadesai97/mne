@@ -193,8 +193,6 @@ input, select, textarea {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Logo variant — in light mode render a black (inverted) logo */
-html.light .logo-adaptive { filter: brightness(0); }
 
 /* Hide number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
@@ -314,3 +312,8 @@ input[type="number"] { -moz-appearance: textfield; }
   --mne-font-sans: var(--body-font);
   --mne-font-serif: var(--display-font);
 }
+
+/* Never let the page scroll sideways on a phone: a layout viewport wider than the screen also
+   pushes fixed bars (the bottom nav) out from under the browser chrome. */
+html { overflow-x: hidden; max-width: 100%; }
+body { overflow-x: clip; max-width: 100%; overscroll-behavior-x: none; }

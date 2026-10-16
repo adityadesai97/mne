@@ -13,8 +13,6 @@ import { subscribeToPush, unsubscribeFromPush, getPushEnabled } from '@/lib/push
 import { getSupabaseClient } from '@/lib/supabase'
 import { applyTheme } from '@/lib/theme'
 import { useHideValues } from '@/hooks/useHideValues'
-import { listConversations, deleteConversation, type ConversationSummary } from '@/lib/db/conversations'
-import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
 import { formatDateMDY } from '@/lib/dates'
 import { ExternalLink, Loader2, Trash2 } from 'lucide-react'
 import {
@@ -89,10 +87,6 @@ export default function Settings() {
   const [importLoading, setImportLoading] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [exportingScope, setExportingScope] = useState<ExportScope | null>(null)
-  const [showConversationHistory, setShowConversationHistory] = useState(false)
-  const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [conversationsLoading, setConversationsLoading] = useState(false)
-  const [conversationsError, setConversationsError] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importAbortRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
@@ -353,37 +347,6 @@ export default function Settings() {
     setAllowedEmails(prev => prev.filter(e => e.id !== id))
   }
 
-  async function loadConversations() {
-    setConversationsLoading(true)
-    setConversationsError('')
-    try {
-      setConversations(await listConversations())
-    } catch (e: any) {
-      setConversationsError(e.message ?? 'Failed to load conversations')
-    } finally {
-      setConversationsLoading(false)
-    }
-  }
-
-  function openConversationHistory() {
-    setShowConversationHistory(true)
-    void loadConversations()
-  }
-
-  function handleContinueConversation(id: string) {
-    resumeConversationInCommandBar(id)
-    setShowConversationHistory(false)
-  }
-
-  async function handleDeleteConversation(id: string) {
-    try {
-      await deleteConversation(id)
-      setConversations(prev => prev.filter(c => c.id !== id))
-    } catch (e: any) {
-      setConversationsError(e.message ?? 'Failed to delete conversation')
-    }
-  }
-
   async function handleSignOut() {
     await getSupabaseClient().auth.signOut()
     config.markSignedOut()
@@ -616,57 +579,11 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Conversation history</div>
-                <div className="d hidden sm:block">View and continue past command bar conversations</div>
+                <div className="d">Open Ask mne and tap the History button to continue or delete past conversations</div>
               </div>
-              <button type="button" className="mne-btn is-ghost is-sm" onClick={openConversationHistory}>Open</button>
             </div>
           </div>
         </section>
-
-        <Dialog
-          open={showConversationHistory}
-          onOpenChange={(open) => { if (!open) setShowConversationHistory(false) }}
-        >
-          <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle>Conversation History</DialogTitle>
-            </DialogHeader>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {conversationsLoading && <p className="mne-muted">Loading…</p>}
-              {conversationsError && <span className="mne-help is-error" role="alert">▼ {conversationsError}</span>}
-              {!conversationsLoading && !conversationsError && conversations.length === 0 && (
-                <p className="mne-muted">No conversations yet.</p>
-              )}
-              <div className="mne-list">
-                {conversations.map(c => (
-                  <div key={c.id} className="mne-row">
-                    <button
-                      type="button"
-                      onClick={() => handleContinueConversation(c.id)}
-                      style={{ all: 'unset', cursor: 'pointer', flex: 1, minWidth: 0 }}
-                    >
-                      <div className="t" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
-                      <div className="d">
-                        {formatDateMDY(c.updated_at)}
-                        {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
-                          <span className="mne-num"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
-                        )}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="mne-btn is-quiet is-sm"
-                      onClick={() => void handleDeleteConversation(c.id)}
-                      aria-label="Delete conversation"
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Notifications */}
         <section className="mne-card" aria-labelledby="settings-notifications">

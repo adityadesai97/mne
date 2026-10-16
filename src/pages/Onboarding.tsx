@@ -22,7 +22,6 @@ function isFlagEnabled(value?: string) {
 function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <img src="/logo.png" alt="" className="logo-adaptive h-8 w-auto object-contain" />
       <span className="font-display text-3xl font-medium leading-none tracking-tight text-foreground">mne</span>
     </div>
   )

@@ -159,7 +159,7 @@ export default function AppLayout() {
       try {
         const assets = await getAllAssets()
         const netWorth = computeTotalNetWorth(assets)
-        await recordDailySnapshot(netWorth)
+        await recordDailySnapshot(netWorth, assets)
         await backfillHistoricalSnapshots(assets)
         const count = await promoteStaleShortTermLots()
         if (count > 0) {

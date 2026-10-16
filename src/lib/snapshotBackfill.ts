@@ -60,11 +60,69 @@ export function estimateNetWorthOn(
   anchor: { date: string; value: number } | undefined,
   assets: any[],
   priceHistory: Map<string, TickerPricePoint[]>,
+  nextReal?: { date: string; value: number },
 ): number | null {
   if (!anchor || anchor.date >= date) return null
   const atTarget = tickerAssetsValueOn(assets, priceHistory, date)
   const atAnchor = tickerAssetsValueOn(assets, priceHistory, anchor.date)
   if (atTarget == null || atAnchor == null) return null
   const value = anchor.value + (atTarget - atAnchor)
-  return value > 0 ? Math.round(value * 100) / 100 : null
+  if (!(value > 0)) return null
+  const rounded = Math.round(value * 100) / 100
+  // Plausibility guard: a day-level estimate must sit near the real snapshots
+  // on either side. Net worth doesn't move by more than ~35% between nearby
+  // real readings through market moves alone; a result that far off means a
+  // bad anchor, a bad/mis-scaled historical price, or holdings that the
+  // current lots don't describe. Better a gap than a spike to near zero.
+  if (!isPlausibleBackfill(rounded, anchor.value)) return null
+  if (nextReal && !isPlausibleBackfill(rounded, nextReal.value)) return null
+  return rounded
+}
+
+/** Max relative distance (as a fraction of the reference) an estimated
+ *  snapshot may sit from a neighbouring real snapshot. */
+export const MAX_BACKFILL_DEVIATION = 0.35
+
+export function isPlausibleBackfill(value: number, reference: number): boolean {
+  if (!(reference > 0)) return false
+  return Math.abs(value - reference) / reference <= MAX_BACKFILL_DEVIATION
+}
+
+/** A snapshot is a "dip outlier" when it is below 60% of BOTH neighbours
+ *  while those neighbours agree with each other (within 25%) — a lone point
+ *  that fell off a cliff and came straight back, which no real portfolio does
+ *  (it's a partial load, a zero, or a bad backfill estimate). */
+export function findDipOutliers(points: { date: string; value: number }[]): Set<string> {
+  const out = new Set<string>()
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1].value
+    const next = points[i + 1].value
+    const lo = Math.min(prev, next)
+    const hi = Math.max(prev, next)
+    if (lo > 0 && (hi - lo) / lo <= 0.25 && points[i].value < 0.6 * lo) out.add(points[i].date)
+  }
+  return out
+}
+
+/** DISPLAY GUARD ONLY: drops lone dip outliers from a series before charting.
+ *  Stored rows are untouched; the real fix is not writing them (see
+ *  backfillHistoricalSnapshots / recordDailySnapshot). */
+export function dropDipOutliers<T extends { date: string; value: number }>(points: T[]): T[] {
+  const bad = findDipOutliers(points)
+  return bad.size === 0 ? points : points.filter(p => !bad.has(p.date))
+}
+
+/** False when any ticker holding can't be valued (no current price), so a
+ *  net worth computed from these assets would silently count it as $0. */
+export function isNetWorthComplete(assets: any[]): boolean {
+  for (const asset of assets) {
+    if (!isTickerAsset(asset)) continue
+    const shares = (asset.stock_subtypes ?? [])
+      .flatMap((st: any) => st.transactions ?? [])
+      .reduce((sum: number, t: any) => sum + netCount(t), 0)
+    if (shares <= 0) continue
+    const price = asset.ticker?.current_price
+    if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return false
+  }
+  return true
 }

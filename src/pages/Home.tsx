@@ -5,6 +5,7 @@ import { motion, AnimatePresence, animate } from 'framer-motion'
 import { TrendingUp, TrendingDown, Lightbulb, Wallet, PieChart, Activity, Crown, Sparkles } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
+import { dropDipOutliers } from '@/lib/snapshotBackfill'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
@@ -170,6 +171,9 @@ export default function Home() {
     const valid = snapshots
       .filter((point) => point?.date && Number.isFinite(Number(point.value)))
       .map((point) => ({ date: point.date, value: Number(point.value) }))
+    // Display guard: hide lone dips already stored (see dropDipOutliers).
+    const series = dropDipOutliers(valid)
+    valid.splice(0, valid.length, ...series)
 
     if (valid.length === 0) {
       const today = new Date().toISOString().slice(0, 10)
@@ -395,7 +399,7 @@ export default function Home() {
               trend alone doesn't read as a dollar figure); NetWorthChart turns
               the scrub tooltip, which prints exact values, off. */}
           <div className="mne-chart-wrap" style={{ marginTop: 6 }}>
-            <div className="mne-chart-range">
+            <div className="mne-chart-range max-sm:hidden">
               <SegmentedControl
                 label="Chart range"
                 value={homeChartRange}

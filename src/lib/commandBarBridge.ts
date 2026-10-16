@@ -1,8 +1,8 @@
-// Lightweight pub/sub (same shape as appAlerts.ts) letting pages outside the
-// command bar's own tree — e.g. the conversation history list in Settings —
-// ask AppLayout to open the command bar resumed on a specific saved
-// conversation. AppLayout owns `cmdOpen`/CommandBar; there's no prop path
-// from Settings down to it, so this event bus stands in for one.
+// Lightweight pub/sub (same shape as appAlerts.ts) letting code outside the
+// command bar's own tree ask AppLayout to open the command bar resumed on a
+// specific saved conversation. AppLayout owns `cmdOpen`/CommandBar; there's no
+// prop path to it from elsewhere, so this event bus stands in for one. (The
+// history list itself now lives inside the command bar and loads directly.)
 
 type ResumeConversationListener = (conversationId: string) => void
 

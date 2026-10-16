@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef, useId, Fragment, useCallback } from 'react'
 import '@/styles/cmdbar.css'
 import { createPortal } from 'react-dom'
-import { X, Paperclip, MessageSquare, Sparkles, SquarePen, ArrowUp } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
+import { X, Paperclip, MessageSquare, SquarePen, ArrowUp, History, ChevronLeft, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
 import { parseFileAttachment, parseFeedbackAttachment, type FileAttachment } from '@/lib/fileParser'
 import { submitCommandFeedback, type CommandFeedbackAttachment } from '@/lib/db/feedback'
-import { saveConversation, getConversation, incrementConversationUsage, type ConversationMessage, type ConversationOrigin, type ConversationMessageExplanationDetail } from '@/lib/db/conversations'
+import { saveConversation, getConversation, incrementConversationUsage, listConversations, deleteConversation, groupConversationsByDay, type ConversationSummary, type ConversationMessage, type ConversationOrigin, type ConversationMessageExplanationDetail } from '@/lib/db/conversations'
 import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
 import { LLM_MODEL } from '@/lib/llm'
+import { formatDateMDY } from '@/lib/dates'
 import { useDockedViewport, DOCK_WIDTH_PX } from '@/hooks/useDockedViewport'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
@@ -370,7 +372,7 @@ function serializeDisplayMessages(messages: DisplayMessage[]): ConversationMessa
 interface Props {
   open: boolean
   onClose: () => void
-  /** Set by the conversation history list (Settings) to reopen the panel
+  /** Set by a bridge request (resumeConversationInCommandBar) to reopen the panel
    *  resumed on a previously saved conversation. */
   resumeConversationId?: string | null
   /** Called once the resume request above has been consumed (loaded or
@@ -418,6 +420,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
   // Where a pending write confirmation's Confirm/Cancel bar is pinned (just above the composer).
   const [pinSlot, setPinSlot] = useState<HTMLElement | null>(null)
+  // Saved-conversation history: an in-panel view when docked, a dropdown under the header on the phone sheet.
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<ConversationSummary[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -475,6 +482,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     msgIdRef.current = 0
     conversationIdRef.current = null
     conversationOriginRef.current = 'command_bar'
+    setHistoryOpen(false)
   }, [resetStream])
 
   useEffect(() => {
@@ -557,22 +565,34 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefillQuery, onPrefillHandled])
 
-  // Resuming a saved conversation from Settings' history list: load its
-  // messages as the thread and keep saving further replies to that same row.
+  // Loads a saved conversation as the thread and keeps saving further replies to that same row.
+  // Used both by the history list below and by resume requests from outside (the bridge).
+  const loadSavedConversation = useCallback(async (id: string, isCancelled: () => boolean = () => false) => {
+    const conversation = await getConversation(id)
+    if (isCancelled() || !conversation) return false
+    epochRef.current += 1 // a reply still in flight for the previous thread is dropped
+    setLoading(false)
+    resetStream()
+    setQuery('')
+    setAttachment(null)
+    msgIdRef.current = 0
+    conversationIdRef.current = conversation.id
+    conversationOriginRef.current = conversation.origin ?? 'command_bar'
+    setDisplayMessages(conversation.messages.map((m) => (
+      m.role === 'user'
+        ? { id: nextId(), role: 'user' as const, content: m.content }
+        : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content, ...(m.explanationDetail ? { explanationDetail: m.explanationDetail } : {}) }
+    )))
+    setHistoryOpen(false)
+    return true
+  }, [resetStream])
+
   useEffect(() => {
     if (!open || !resumeConversationId) return
     let cancelled = false
     ;(async () => {
       try {
-        const conversation = await getConversation(resumeConversationId)
-        if (cancelled || !conversation) return
-        conversationIdRef.current = conversation.id
-        conversationOriginRef.current = conversation.origin ?? 'command_bar'
-        setDisplayMessages(conversation.messages.map((m) => (
-          m.role === 'user'
-            ? { id: nextId(), role: 'user' as const, content: m.content }
-            : { id: nextId(), role: 'assistant' as const, kind: 'text' as const, content: m.content, ...(m.explanationDetail ? { explanationDetail: m.explanationDetail } : {}) }
-        )))
+        await loadSavedConversation(resumeConversationId, () => cancelled)
       } catch (e) {
         console.error('Failed to load conversation', e)
       } finally {
@@ -580,7 +600,53 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       }
     })()
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, resumeConversationId])
+
+  async function refreshHistory() {
+    setHistoryLoading(true)
+    setHistoryError('')
+    try {
+      setHistory(await listConversations())
+    } catch (e: any) {
+      setHistoryError(e?.message ?? 'Failed to load conversations')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  function toggleHistory() {
+    if (historyOpen) { setHistoryOpen(false); return }
+    setHistoryOpen(true)
+    void refreshHistory()
+  }
+
+  async function handleOpenSaved(id: string) {
+    try {
+      await loadSavedConversation(id)
+    } catch (e: any) {
+      setHistoryError(e?.message ?? 'Failed to load conversation')
+    }
+  }
+
+  async function handleDeleteSaved(id: string) {
+    try {
+      await deleteConversation(id)
+      setHistory(prev => prev.filter(c => c.id !== id))
+      // Deleting the conversation on screen starts a fresh one instead of resurrecting the row on the next reply.
+      if (conversationIdRef.current === id) resetConversation()
+    } catch (e: any) {
+      setHistoryError(e?.message ?? 'Failed to delete conversation')
+    }
+  }
+
+  // Close the history dropdown on Escape before the panel itself closes.
+  useEffect(() => {
+    if (!historyOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setHistoryOpen(false) } }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [historyOpen])
 
   const persistConversation = useCallback(async (messages: DisplayMessage[], usage?: AgentTrace['usage']) => {
     const serialized = serializeDisplayMessages(messages)
@@ -778,6 +844,43 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   const hasMessages = displayMessages.length > 0
   const lastIndex = displayMessages.length - 1
 
+  const historyList = (
+    <div id={`${panelId}-history`} className={`cmdk-history${docked ? ' is-view' : ' is-drop'}`} role="region" aria-label="Conversation history">
+      {docked && (
+        <div className="cmdk-history-bar">
+          <button type="button" className="cmdk-ibtn" onClick={() => setHistoryOpen(false)} aria-label="Back to conversation" title="Back"><ChevronLeft /></button>
+          <h3 className="cmdk-history-title">History</h3>
+        </div>
+      )}
+      <button type="button" className="mne-btn is-sm cmdk-history-new" onClick={() => { resetConversation(); window.setTimeout(focusInput, 0) }}>
+        <SquarePen size={14} aria-hidden="true" /> New conversation
+      </button>
+      <div className="cmdk-history-scroll">
+        {historyLoading && <p className="mne-muted m-0 text-sm">Loading…</p>}
+        {historyError && <span className="mne-help is-error" role="alert">▼ {historyError}</span>}
+        {!historyLoading && !historyError && history.length === 0 && <p className="mne-muted m-0 text-sm">No saved conversations yet.</p>}
+        {groupConversationsByDay(history).map(g => (
+          <div key={g.label} className="cmdk-history-group">
+            <div className="cmdk-title">{g.label}</div>
+            <ul className="cmdk-history-items">
+              {g.items.map(c => (
+                <li key={c.id} className={`cmdk-history-item${c.id === conversationIdRef.current ? ' is-current' : ''}`}>
+                  <button type="button" className="cmdk-history-open" onClick={() => { void handleOpenSaved(c.id) }} aria-label={`Open conversation: ${c.title}`}>
+                    <span className="cmdk-history-name">{c.title}</span>
+                    <span className="cmdk-history-date">{formatDateMDY(c.updated_at)}</span>
+                  </button>
+                  <button type="button" className="cmdk-ibtn" onClick={() => { void handleDeleteSaved(c.id) }} aria-label={`Delete conversation: ${c.title}`} title="Delete">
+                    <Trash2 />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
   const panelBody = (
     <>
       <div className="cmdk-head" {...(docked ? {} : { onPointerDown: handleSheetDragStart, 'data-draggable': 'true' })}>
@@ -790,12 +893,23 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
           />
         )}
         <div className="cmdk-head-row">
-          <Sparkles size={18} strokeWidth={1.5} className="cmdk-head-icon" aria-hidden="true" />
+          <AiMark size={20} className="cmdk-head-icon" aria-hidden="true" />
           <h2 className="cmdk-heading" id={`${panelId}-title`}>Ask mne</h2>
           {contextLabel && <span className="mne-chip cmdk-context">Viewing {contextLabel}</span>}
           <span className="flex-1" />
-          {hasMessages && (
-            <button type="button" className="cmdk-ibtn" onClick={resetConversation} aria-label="New conversation" title="New conversation">
+          <button
+            type="button"
+            className={`cmdk-ibtn${historyOpen ? ' is-on' : ''}`}
+            onClick={toggleHistory}
+            aria-label="Conversation history"
+            aria-expanded={historyOpen}
+            aria-controls={`${panelId}-history`}
+            title="History"
+          >
+            <History />
+          </button>
+          {hasMessages && !historyOpen && (
+            <button type="button" className="cmdk-ibtn" onClick={() => { resetConversation(); window.setTimeout(focusInput, 0) }} aria-label="New conversation" title="New conversation">
               <SquarePen />
             </button>
           )}
@@ -805,7 +919,10 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         </div>
       </div>
 
-      <div ref={threadRef} className="cmdk-thread" role="log" aria-label="Conversation">
+      {historyOpen && docked && historyList}
+      {historyOpen && !docked && <div className="cmdk-drop-anchor">{historyList}</div>}
+
+      <div ref={threadRef} className="cmdk-thread" role="log" aria-label="Conversation" hidden={docked && historyOpen}>
         {!hasMessages && !loading && (
           <div className="cmdk-empty">
             <p className="mne-muted m-0 text-sm">Ask about your portfolio, or tell me what to add.</p>
@@ -857,7 +974,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
         </AnimatePresence>
       </div>
 
-      <div className="cmdk-foot">
+      <div className="cmdk-foot" hidden={docked && historyOpen}>
         {/* A pending write's Confirm/Cancel bar lands here (CommandResult portals into it). */}
         <div ref={setPinSlot} className="cmdk-pin" />
         {attachment && (

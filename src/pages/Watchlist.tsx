@@ -328,7 +328,6 @@ export default function Watchlist() {
                           >
                             {t.logo && <img src={t.logo} alt="" width={20} height={20} style={{ borderRadius: 6, objectFit: 'contain' }} />}
                             {t.symbol}
-                            {t.is_owned && <span className="mne-chip is-outline">Owned</span>}
                           </button>
                         </td>
                         <td className="r mne-num">${currentPrice.toFixed(2)}</td>

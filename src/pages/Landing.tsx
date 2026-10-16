@@ -37,7 +37,6 @@ export default function Landing({ onSignIn, loading, error }: Props) {
       <header className="landing-head">
         <nav className="landing-wrap landing-nav">
           <div className="landing-brand">
-            <img src="/logo.png" alt="" className="logo-adaptive h-7 w-auto shrink-0 object-contain" />
             <span className="font-display text-2xl font-medium leading-none tracking-tight">mne</span>
           </div>
           <button onClick={onSignIn} disabled={loading} className="landing-link">
