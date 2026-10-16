@@ -1,5 +1,4 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2 } from 'lucide-react'
 
 const PULL_THRESHOLD = 70
 
@@ -8,9 +7,12 @@ interface Props {
   refreshing: boolean
 }
 
+/** Design-system PullToRefresh: a 40px round `.mne-ptr` badge with an arrow
+ *  that flips once the pull passes the threshold and spins while refreshing. */
 export function PullToRefreshIndicator({ pullY, refreshing }: Props) {
   const visible = pullY > 4 || refreshing
-  const progress = Math.min(pullY / PULL_THRESHOLD, 1)
+  const ready = pullY >= PULL_THRESHOLD
+  const state = refreshing ? ' is-spin' : ready ? ' is-ready' : ''
 
   return (
     <AnimatePresence>
@@ -19,32 +21,20 @@ export function PullToRefreshIndicator({ pullY, refreshing }: Props) {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.15 }}
+          transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
           className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none"
-          // Native env(), not the JS-measured --app-safe-top var — see
-          // AppLayout.tsx's CmdKFab comment: the inset itself tracks
-          // Safari's toolbar show/hide state, which only env() stays in
-          // sync with (this indicator's own gesture runs right at the
-          // scroll boundary where that toolbar animates).
+          // Native env(), not the JS-measured --app-safe-top var: the inset
+          // tracks Safari's toolbar show/hide state, which only env() stays in
+          // sync with (this gesture runs right where that toolbar animates).
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}
+          role="status"
+          aria-label={refreshing ? 'Refreshing' : ready ? 'Release to refresh' : 'Pull to refresh'}
         >
-          <div className="bg-card border border-border/60 rounded-full p-2 shadow-md">
+          <div className={`mne-ptr${state}`}>
             {refreshing ? (
-              <Loader2 size={16} className="text-primary animate-spin" />
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16">
-                <circle cx="8" cy="8" r="6" fill="none" stroke="hsl(var(--muted))" strokeWidth="2" />
-                <circle
-                  cx="8" cy="8" r="6"
-                  fill="none"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="2"
-                  strokeDasharray={`${2 * Math.PI * 6}`}
-                  strokeDashoffset={`${2 * Math.PI * 6 * (1 - progress)}`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 8 8)"
-                />
-              </svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" /></svg>
             )}
           </div>
         </motion.div>

@@ -14,38 +14,36 @@ function useAnimatedNumber(target: number, format: (n: number) => string, ref: R
       onUpdate: (v) => { node.textContent = format(v) },
     })
     return () => controls.stop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
 }
 
+/** Design-system hero card: eyebrow, serif figure, change chip + muted amount. */
 export function NetWorthCard({ value, gainLoss, gainLossPercent }: Props) {
   const isGain = gainLoss >= 0
-  const valueRef = useRef<HTMLParagraphElement>(null)
+  const valueRef = useRef<HTMLSpanElement>(null)
   const gainRef = useRef<HTMLSpanElement>(null)
 
   useAnimatedNumber(value, formatCurrency, valueRef)
-  useAnimatedNumber(gainLoss, (n) => {
-    const prefix = n >= 0 ? '+' : ''
-    return `${prefix}${formatCurrency(n)}`
-  }, gainRef)
+  useAnimatedNumber(gainLoss, (n) => `${n >= 0 ? '+' : ''}${formatCurrency(n)}`, gainRef)
 
   return (
-    <div className="relative px-6 pt-12 pb-6">
-      <div className="absolute inset-0 flex items-start justify-center pt-8 pointer-events-none">
-        <div className="ambient-wash" />
+    <section className="mne-card is-hero">
+      <div className="mne-eyebrow">Net Worth</div>
+      <div>
+        <span ref={valueRef} className="mne-hero-figure">{formatCurrency(value)}</span>
       </div>
-      <p className="text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">Net Worth</p>
-      <p ref={valueRef} className="text-5xl font-medium text-foreground tabular-nums font-display">
-        {formatCurrency(value)}
-      </p>
-      <div className="flex items-center gap-2 mt-2">
-        <span ref={gainRef} className={`text-sm font-semibold tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span className="mne-chip">
+          <span className={`${isGain ? 'mne-up' : 'mne-down'} mne-num`}>
+            {`${isGain ? '▲ +' : '▼ −'}${Math.abs(gainLossPercent).toFixed(2)}%`}
+          </span>
+        </span>
+        <span ref={gainRef} className="mne-muted mne-num">
           {`${isGain ? '+' : ''}${formatCurrency(gainLoss)}`}
         </span>
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full tabular-nums ${isGain ? 'bg-gain/[0.12] text-gain' : 'bg-loss/[0.12] text-loss'}`}>
-          {`${isGain ? '+' : ''}${gainLossPercent.toFixed(2)}%`}
-        </span>
       </div>
-    </div>
+    </section>
   )
 }
 

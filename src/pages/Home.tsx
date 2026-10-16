@@ -2,9 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Sparkles, Sunrise, Sun, Sunset, Moon, Lightbulb, RefreshCw, Wallet, PieChart, Activity, Crown } from 'lucide-react'
-import ReactECharts from 'echarts-for-react'
-import type { EChartsOption } from 'echarts'
+import { TrendingUp, TrendingDown, Lightbulb, Wallet, PieChart, Activity, Crown, Sparkles } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
@@ -14,10 +12,9 @@ import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRe
 import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
-import { Skeleton } from '@/components/ui/skeleton'
 import { CardEyebrow } from '@/components/CardEyebrow'
-import { revealUp } from '@/lib/motionPresets'
-import { colorForAssetType } from '@/lib/typeColors'
+import { NetWorthChart } from '@/components/NetWorthChart'
+import { Delta, PageHead, SegmentedControl, Stat } from '@/components/mne'
 import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
@@ -26,34 +23,17 @@ const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 type HomeChartRange = typeof HOME_CHART_RANGES[number]
 
-function getGreeting(): { text: string; Icon: typeof Sun } {
+function getGreeting(): { text: string } {
   const hour = new Date().getHours()
-  if (hour < 5) return { text: 'Good night', Icon: Moon }
-  if (hour < 12) return { text: 'Good morning', Icon: Sunrise }
-  if (hour < 17) return { text: 'Good afternoon', Icon: Sun }
-  if (hour < 21) return { text: 'Good evening', Icon: Sunset }
-  return { text: 'Good night', Icon: Moon }
+  if (hour < 5) return { text: 'Good night' }
+  if (hour < 12) return { text: 'Good morning' }
+  if (hour < 17) return { text: 'Good afternoon' }
+  if (hour < 21) return { text: 'Good evening' }
+  return { text: 'Good night' }
 }
-
-const AXIS_COLOR = 'hsl(30,14%,62%)'
-const TOOLTIP_BG = 'hsl(27,18%,13%)'
-const GRID_COLOR = 'hsl(27,18%,20%)'
-const LINE_COLOR = 'hsl(18,60%,52%)'
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
-}
-
-function formatDateCompact(date: string) {
-  const parsed = new Date(`${date}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return date
-  return new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric' }).format(parsed)
-}
-
-function formatDateShort(date: string) {
-  const parsed = new Date(`${date}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return date
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)
 }
 
 // Counts to the new value in 180ms from wherever it currently is (not from
@@ -92,7 +72,7 @@ export default function Home() {
   const [insightIndex, setInsightIndex] = useState(0)
   const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
-  const heroRef = useRef<HTMLParagraphElement>(null)
+  const heroRef = useRef<HTMLSpanElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
   const [hideValues] = useHideValues()
 
@@ -203,103 +183,6 @@ export default function Home() {
     return filtered.length >= 2 ? filtered : valid.slice(Math.max(0, valid.length - 2))
   }, [snapshots, totalValue, homeChartRange])
 
-  const netWorthValues = useMemo(() => netWorthSeries.map((point) => point.value), [netWorthSeries])
-  const netWorthCount = netWorthValues.length
-  const netWorthBounds = useMemo(() => {
-    if (!netWorthValues.length) return { min: 0, max: 0 }
-
-    const min = Math.min(...netWorthValues)
-    const max = Math.max(...netWorthValues)
-    const range = Math.max(max - min, Math.max(1, Math.abs(max) * 0.04))
-    const pad = range * (netWorthCount <= 2 ? 0.35 : 0.18)
-    return { min: min - pad, max: max + pad }
-  }, [netWorthCount, netWorthValues])
-
-  const netWorthOption = useMemo<EChartsOption>(() => ({
-    backgroundColor: 'transparent',
-    tooltip: {
-      // The chart itself stays visible and unblurred in privacy mode (an
-      // explicit earlier decision — the trend line alone doesn't read as a
-      // dollar figure), but the scrub tooltip prints the exact net worth
-      // for whatever day you're hovering, so that still has to go dark.
-      show: !hideValues,
-      backgroundColor: TOOLTIP_BG,
-      borderColor: 'rgba(244,236,226,0.1)',
-      borderWidth: 1,
-      textStyle: { color: 'hsl(32,35%,93%)', fontSize: 12 },
-      trigger: 'axis',
-      // Scrub feel: a vertical crosshair follows the cursor/touch drag along
-      // the line, so you can trace net worth on any specific day rather than
-      // only seeing the overall shape.
-      axisPointer: {
-        type: 'line',
-        lineStyle: { color: LINE_COLOR, opacity: 0.35, width: 1.5 },
-        label: { show: false },
-      },
-      extraCssText: 'border-radius: 10px; padding: 6px 10px;',
-      formatter: (params: unknown) => {
-        const rows = params as Array<{ axisValue: string; value: number | [string, number] }>
-        if (!rows.length) return ''
-        const first = rows[0]
-        const raw = first.value
-        const value = Array.isArray(raw) ? Number(raw[1]) : Number(raw)
-        return `${formatDateShort(first.axisValue)}<br/>${fmtCurrency(value)}`
-      },
-    },
-    grid: {
-      left: isMobile ? 4 : 2,
-      right: isMobile ? 6 : 4,
-      top: 6,
-      bottom: isMobile ? 24 : 22,
-      containLabel: false,
-    },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: netWorthSeries.map((point) => point.date),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: {
-        color: AXIS_COLOR,
-        fontSize: 10,
-        margin: 8,
-        showMinLabel: true,
-        showMaxLabel: true,
-        hideOverlap: false,
-        formatter: (value: string) => formatDateCompact(value),
-      },
-    },
-    yAxis: {
-      type: 'value',
-      show: false,
-      min: netWorthBounds.min,
-      max: netWorthBounds.max,
-      splitLine: { lineStyle: { color: GRID_COLOR, type: 'dashed' } },
-    },
-    series: [
-      {
-        name: 'Net Worth',
-        type: 'line',
-        smooth: netWorthCount > 2,
-        symbol: netWorthCount <= 2 ? 'circle' : 'none',
-        symbolSize: 6,
-        itemStyle: { color: LINE_COLOR },
-        clip: true,
-        lineStyle: { width: 2.25, color: LINE_COLOR },
-        areaStyle: {
-          opacity: netWorthCount <= 2 ? 0.05 : 0.08,
-          color: LINE_COLOR,
-          origin: 'start',
-        },
-        emphasis: {
-          scale: 1.4,
-          itemStyle: { color: LINE_COLOR, borderColor: 'hsl(27,18%,13%)', borderWidth: 2 },
-        },
-        data: netWorthValues,
-      },
-    ],
-  }), [isMobile, netWorthBounds.max, netWorthBounds.min, netWorthCount, netWorthSeries, netWorthValues, hideValues])
-
   // Sum each position's own gain/loss (the same figure shown on its Portfolio card)
   // rather than re-deriving from separately-summed totals — keeps this tile always
   // equal to the sum of the individual P/L numbers the user sees elsewhere.
@@ -380,7 +263,6 @@ export default function Home() {
   const todayChange = dailyMovers.reduce((sum, m) => sum + m.dollarChange, 0)
   const todayChangePercent = totalValue > 0 ? (todayChange / totalValue) * 100 : 0
   const hasMood = dailyMovers.length > 0 && todayChange !== 0
-  const moodIsPositive = todayChange >= 0
 
   // Short rotating one-liners for the insight ticker — all derived from data
   // already on screen elsewhere, nothing fabricated.
@@ -413,30 +295,28 @@ export default function Home() {
     return () => window.clearInterval(id)
   }, [insights.length])
 
+  const heroGreeting = `${greeting.text}${firstName ? `, ${firstName}` : ''}`
+  const isUpdating = isRefreshingPrices || refreshing
+
   if (!assetsLoaded) {
     return (
-      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
-            <Skeleton className="h-3 w-32" />
-            <Skeleton className="h-11 w-56" />
-            <Skeleton className="h-[130px] w-full rounded-md" />
-          </div>
-          <div className="md:col-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-full" />
-          </div>
-          <div className="md:col-span-2 bg-card shadow-card rounded-lg p-5 space-y-4">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-3 w-full" />
-          </div>
-          <div className="md:col-span-4 bg-card shadow-card rounded-lg p-5">
-            <Skeleton className="h-3 w-24 mb-4" />
-            <Skeleton className="h-16 w-full rounded-md" />
-          </div>
-          <Skeleton className="md:col-span-1 h-24 w-full rounded-lg" />
-          <Skeleton className="md:col-span-1 h-24 w-full rounded-lg" />
+      <div className="mne-main">
+        <PageHead title={heroGreeting} />
+        <div className="mne-bento" aria-busy="true" aria-label="Loading">
+          <section className="mne-card is-hero s4" style={{ display: 'grid', gap: 12 }}>
+            <div className="mne-skel is-pill" style={{ height: 12, width: 90 }} />
+            <div className="mne-skel" style={{ height: 52, width: '60%' }} />
+            <div className="mne-skel is-pill" style={{ height: 26, width: 130 }} />
+            <div className="mne-skel" style={{ height: 90 }} />
+          </section>
+          <section className="mne-card s2" style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+            <div className="mne-skel is-pill" style={{ height: 12, width: 80 }} />
+            <div className="mne-skel is-pill" style={{ height: 14 }} />
+            <div className="mne-skel" style={{ height: 20 }} />
+            <div className="mne-skel" style={{ height: 20 }} />
+          </section>
+          <section className="mne-card s3"><div className="mne-skel" style={{ height: 80 }} /></section>
+          <section className="mne-card s3"><div className="mne-skel" style={{ height: 80 }} /></section>
         </div>
       </div>
     )
@@ -444,160 +324,104 @@ export default function Home() {
 
   if (assetsLoaded && assets.length === 0) {
     return (
-      <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6">
-        <motion.div
-          {...revealUp(0)}
-          className="bg-card shadow-card rounded-lg p-6 md:p-7 border border-border/60 relative overflow-hidden"
-        >
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute -top-8 left-1/4 w-72 h-36 bg-brand-subtle rounded-full blur-3xl" />
+      <div className="mne-main">
+        <PageHead title={heroGreeting} />
+        <section className="mne-card is-hero">
+          <div className="mne-empty">
+            <span className="ico"><Sparkles aria-hidden="true" /></span>
+            <h3>Add your first asset to get started.</h3>
+            <p>Portfolio and Charts unlock after your first asset is added. Use the command button to record a position.</p>
           </div>
-          <div className="relative mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-brand-subtle">
-            <Sparkles size={18} className="text-primary" />
-          </div>
-          <p className="relative text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">
-            {firstName ? `${firstName}'s Workspace` : 'Workspace'}
-          </p>
-          <h1 className="relative font-display text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-            Add your first asset to get started.
-          </h1>
-          <p className="relative mt-4 text-sm md:text-base text-muted-foreground max-w-2xl">
-            Portfolio and Charts unlock after your first asset is added. Use the command button to record a position.
-          </p>
-        </motion.div>
+        </section>
       </div>
     )
   }
 
+  // Rows below the hero/allocation/pulse rows pair up in halves; without any
+  // daily movers the remaining three cards share the row in thirds instead.
+  const hasMovers = dailyMovers.length > 0
+  const rest = hasMovers ? 's3' : 's2'
+  const rangeLabel = homeChartRange === 'ALL' ? 'all time' : homeChartRange
+
   return (
     <>
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
-    <div className="px-4 pt-5 pb-6 md:px-6 md:pt-6 space-y-3">
+    <div className="mne-main">
+      <PageHead title={heroGreeting}>
+        <button
+          type="button"
+          className="mne-btn is-ghost is-sm"
+          onClick={handleManualRefresh}
+          disabled={isRefreshingPrices}
+          aria-label="Refresh prices"
+        >
+          {isRefreshingPrices ? 'Updating…' : 'Refresh prices'}
+        </button>
+      </PageHead>
 
-      {/* GREETING */}
-      <motion.div {...revealUp(0)} className="flex items-center gap-2.5 px-1">
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle">
-          <greeting.Icon size={16} className="text-primary" aria-hidden="true" />
-        </div>
-        <p className="font-display text-lg md:text-xl font-medium text-foreground tracking-tight">
-          {greeting.text}{firstName ? `, ${firstName}` : ''}
-        </p>
-      </motion.div>
-
-      {/* BENTO GRID — one shared 6-column grid (rather than three separate
-          stacked grids) so cards can be genuinely different sizes and not
-          line up row after row. Net Worth is a tall 4x2 tile; Allocation and
-          P&L stack in the remaining 2x2 area beside it; Daily Movers, Best
-          Performer, and Largest Holding split the row below unevenly
-          (4 + 1 + 1). Every card shares the same p-5 padding, rounded-lg
-          corners, and hover lift regardless of its span. */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+      <div className="mne-bento">
 
         {/* NET WORTH HERO */}
-        <motion.div
-          {...revealUp(0)}
-          className="md:col-span-4 md:row-span-2 bg-card shadow-card rounded-lg p-5 relative overflow-hidden"
-        >
-          {/* Ambient wash: two faint accent and amber glows that drift slowly
-              behind the figure (design system "rich ambient"); content sits above. */}
-          <div aria-hidden="true" className="ambient-wash" />
-
-          <div className="mb-3 relative">
-            <CardEyebrow icon={Wallet}>Net Worth</CardEyebrow>
+        <section className="mne-card is-hero s4">
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <CardEyebrow icon={Wallet}>Net worth</CardEyebrow>
+            <span className="mne-live"><i />live</span>
           </div>
 
-          <div className="mb-1 relative">
-            <p
+          <div>
+            <span
               ref={heroRef}
-              className={`text-4xl md:text-5xl font-medium tabular-nums tracking-tight leading-none font-display ${hiddenValueClass(hideValues, '', 'lg')}`}
+              className={`mne-hero-figure ${hiddenValueClass(hideValues, '', 'lg')}`}
             >
               {fmtCurrency(totalValue)}
-            </p>
-            {isRefreshingPrices && <div className="progress-shimmer mt-2 w-40" role="status" aria-label="Updating prices" />}
+            </span>
+            {isUpdating && <div className="mne-progress" style={{ width: 160, height: 6 }} role="status" aria-label="Updating prices" />}
           </div>
 
-          {hasMood && Math.abs(todayChange) >= 1 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4, duration: 0.3 }}
-              className={`mb-4 relative inline-flex items-center gap-1 text-xs ${moodIsPositive ? 'text-gain' : 'text-loss'}`}
-            >
-              {moodIsPositive ? <TrendingUp size={11} aria-hidden="true" /> : <TrendingDown size={11} aria-hidden="true" />}
-              <span className={hiddenValueClass(hideValues)}>
-                {todayChange >= 0 ? '+' : ''}{fmtCurrency(todayChange)} ({todayChange >= 0 ? '+' : ''}{todayChangePercent.toFixed(2)}%) today
-              </span>
-            </motion.div>
-          ) : (
-            <div className="mb-4" />
+          {hasMood && Math.abs(todayChange) >= 1 && (
+            <div className={hiddenValueClass(hideValues)} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="mne-chip"><Delta value={todayChangePercent} suffix="today" /></span>
+              <span className="mne-muted mne-num">{todayChange >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(todayChange))}</span>
+            </div>
           )}
 
-          {/* Chart range selector */}
-          <div className="flex items-center justify-end gap-1.5 mb-1.5 relative">
-            <button
-              type="button"
-              onClick={handleManualRefresh}
-              disabled={isRefreshingPrices}
-              title="Refresh prices"
-              aria-label="Refresh prices"
-              className="flex h-6 w-6 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground hover:text-foreground disabled:opacity-60 transition-colors"
-            >
-              <RefreshCw size={11} className={isRefreshingPrices ? 'animate-spin' : ''} />
-            </button>
-            {isRefreshingPrices && <span className="text-xs text-muted-foreground">Updating…</span>}
-            <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
-              {HOME_CHART_RANGES.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => handleRangeChange(r)}
-                  className={`text-xs px-1.5 py-0.5 rounded-full transition-colors ${
-                    homeChartRange === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* pointer-events-none (not a blur — the line itself stays
-              visible) fully disables the scrub gesture in privacy mode:
-              disabling the tooltip alone still let a drag move the
-              crosshair, which is tied to the same hover interaction. */}
-          <div className={`relative mb-4 -mx-1 ${hideValues ? 'pointer-events-none' : ''}`}>
-            <ReactECharts
-              option={netWorthOption}
-              style={{ width: '100%', height: isMobile ? 130 : 150 }}
-              notMerge
-              opts={{ renderer: 'svg' }}
+          {/* The line stays visible in privacy mode (an earlier decision: the
+              trend alone doesn't read as a dollar figure); NetWorthChart turns
+              the scrub tooltip, which prints exact values, off. */}
+          <div style={{ marginTop: 14 }}>
+            <NetWorthChart
+              series={netWorthSeries}
+              height={isMobile ? 110 : 150}
+              hideValues={hideValues}
+              label={`Net worth over ${rangeLabel}`}
             />
           </div>
 
-          {/* Mini meta row — positions + asset types */}
-          <div className="flex gap-5 pt-3 border-t border-white/[0.05] relative">
-            <div>
-              <p className="text-muted-foreground text-xs uppercase tracking-widest">Positions</p>
-              <p className="text-sm font-medium tabular-nums mt-0.5">{assets.length}</p>
-            </div>
-            <div className="w-px bg-border" />
-            <div>
-              <p className="text-muted-foreground text-xs uppercase tracking-widest">Asset Types</p>
-              <p className="text-sm font-medium tabular-nums mt-0.5">{uniqueAssetTypes}</p>
-            </div>
+          <div style={{ marginTop: 10 }}>
+            <SegmentedControl
+              label="Chart range"
+              value={homeChartRange}
+              options={HOME_CHART_RANGES}
+              onChange={handleRangeChange}
+            />
+          </div>
+
+          <div className="mne-stats" style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--mne-line)' }}>
+            <Stat label="Positions" value={assets.length} />
+            <Stat label="Asset types" value={uniqueAssetTypes} />
           </div>
 
           {/* Rotating insight ticker */}
           {insights.length > 0 && (
-            <div className="flex items-center gap-1.5 pt-2.5 mt-2.5 border-t border-white/[0.05] relative text-xs text-muted-foreground overflow-hidden">
-              <Lightbulb size={12} className="flex-shrink-0 text-primary/70" aria-hidden="true" />
+            <div className="mne-muted" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12, lineHeight: '16px', overflow: 'hidden' }}>
+              <Lightbulb size={14} style={{ flex: 'none', color: 'var(--mne-accent)' }} aria-hidden="true" />
               <AnimatePresence mode="wait">
                 <motion.span
                   key={insights[insightIndex % insights.length]}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
                   className="truncate"
                 >
                   {insights[insightIndex % insights.length]}
@@ -605,185 +429,112 @@ export default function Home() {
               </AnimatePresence>
             </div>
           )}
-        </motion.div>
+        </section>
 
         {/* ALLOCATION */}
-        <motion.div
-          {...revealUp(0.05)}
-          className="md:col-span-2 bg-card shadow-card rounded-lg p-5"
-        >
-          <div className="mb-3">
-            <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
-          </div>
-
+        <section className="mne-card s2">
+          <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
           {typeEntries.length === 0 ? (
-            <p className="text-muted-foreground text-xs mt-2">No assets yet</p>
+            <p className="mne-muted" style={{ marginTop: 14 }}>No assets yet</p>
           ) : (
-            <div className="space-y-3.5">
-              {typeEntries.map(({ name, value, pct }, i) => {
-                const color = colorForAssetType(name, i)
-                return (
+            <>
+              <div className="mne-stack" style={{ marginTop: 14 }} role="img" aria-label="Allocation by asset type">
+                {typeEntries.map(({ name, pct }, i) => (
+                  <span key={name} style={{ width: `${pct}%`, background: `var(--mne-chart-${(i % 5) + 1})` }} />
+                ))}
+              </div>
+              <div className="mne-breakdown">
+                {typeEntries.map(({ name, value, pct }, i) => (
                   <div key={name}>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                        <span className="text-xs font-medium">{name}</span>
-                      </div>
-                      <span className="text-xs tabular-nums text-muted-foreground">{pct.toFixed(1)}%</span>
-                    </div>
-                    <div className="h-[3px] bg-muted rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ delay: 0.15 + i * 0.06, duration: 0.7, ease: [0.25, 0.1, 0.25, 1] }}
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: color }}
-                      />
-                    </div>
-                    <p className={`text-xs tabular-nums text-muted-foreground mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(value)}</p>
+                    <i style={{ background: `var(--mne-chart-${(i % 5) + 1})` }} />
+                    <span>{name}</span>
+                    <span className="mne-muted">{pct.toFixed(1)}%</span>
+                    <b className={`mne-num ${hiddenValueClass(hideValues)}`} style={{ fontWeight: 500 }}>{fmtCurrency(value)}</b>
                   </div>
-                )
-              })}
-            </div>
+                ))}
+              </div>
+            </>
           )}
-        </motion.div>
+        </section>
 
-        {/* P&L — placed here (not in the row below) so it fills the 2x1 gap
-            beside Net Worth's second row instead of lining up with
-            Allocation directly above it. */}
-        <motion.div
-          {...revealUp(0.1)}
-          className="bg-card shadow-card rounded-lg p-5 md:col-span-2"
-        >
-          <div className="mb-3">
-            <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&L</CardEyebrow>
-          </div>
-          <p className={`text-lg font-medium tabular-nums leading-tight font-display ${stockIsGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
-            {stockIsGain ? '+' : ''}{fmtCurrency(stockGainLoss)}
-          </p>
-          <p className={`text-xs tabular-nums mt-0.5 ${stockIsGain ? 'text-gain' : 'text-loss'}`}>
-            {stockIsGain ? '+' : ''}{stockGainLossPercent.toFixed(2)}%
-          </p>
-        </motion.div>
-
-        {/* PORTFOLIO PULSE — placed after Allocation/P&L (not right below the
-            Net Worth hero) so the grid's auto-placement fills the 2x2 gap
-            beside the hero with those two cards first, same as without this
-            card; a col-span-6 item any earlier pushes the placement cursor
-            past that gap and leaves it permanently empty. */}
+        {/* PORTFOLIO PULSE (renders nothing when there's no relevant insight) */}
         <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />
 
         {/* DAILY MOVERS */}
-        {dailyMovers.length > 0 && (
-        <motion.div
-          {...revealUp(0.13)}
-          className="md:col-span-4 bg-card shadow-card rounded-lg p-5"
-        >
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <CardEyebrow icon={Activity}>Daily Movers</CardEyebrow>
-            <div className="flex items-center gap-0.5 bg-muted rounded-full p-0.5">
-              <button
-                type="button"
-                onClick={() => setMoverSort('percent')}
-                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-                  moverSort === 'percent' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                By %
-              </button>
-              <button
-                type="button"
-                onClick={() => setMoverSort('value')}
-                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-                  moverSort === 'value' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                By Value
-              </button>
+        {hasMovers && (
+          <section className="mne-card s3">
+            <div className="flex items-center justify-between gap-2">
+              <CardEyebrow icon={Activity}>Daily movers</CardEyebrow>
+              <SegmentedControl
+                label="Sort movers"
+                value={moverSort}
+                options={[{ value: 'percent', label: 'By %' }, { value: 'value', label: 'By value' }] as const}
+                onChange={setMoverSort}
+              />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-            {sortedMovers.map((mover, i) => {
-              const isGain = mover.dollarChange >= 0
-              return (
-                <motion.div
-                  key={mover.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.05 * i, duration: 0.3 }}
-                >
-                  <Link
-                    to={`/portfolio/${mover.id}`}
-                    className="block rounded-md bg-muted/40 p-3 transition-colors hover:bg-muted/60"
-                  >
-                    <div className="flex items-center gap-1 mb-1.5">
-                      {isGain
-                        ? <TrendingUp size={11} className="text-gain flex-shrink-0" />
-                        : <TrendingDown size={11} className="text-loss flex-shrink-0" />}
-                      <p className="text-xs font-semibold truncate">{mover.symbol}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate mb-1.5">{mover.name}</p>
-                    <p className={`text-sm font-medium tabular-nums font-display ${isGain ? 'text-gain' : 'text-loss'}`}>
-                      {isGain ? '+' : ''}{mover.percentChange.toFixed(2)}%
-                    </p>
-                    <p className={`text-xs tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
-                      {isGain ? '+' : ''}{fmtCurrency(mover.dollarChange)}
-                    </p>
-                  </Link>
-                </motion.div>
-              )
-            })}
-          </div>
-        </motion.div>
+            <table className="mne-table is-compact" style={{ marginTop: 8 }}>
+              <tbody>
+                {sortedMovers.map((mover) => (
+                  <tr key={mover.id}>
+                    <td>
+                      <Link to={`/portfolio/${mover.id}`} title={mover.name}>{mover.symbol}</Link>
+                    </td>
+                    <td className="r">
+                      <span className={`mne-muted mne-num ${hiddenValueClass(hideValues)}`} style={{ marginRight: 10 }}>
+                        {mover.dollarChange >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(mover.dollarChange))}
+                      </span>
+                      <Delta value={mover.percentChange} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
         )}
 
-        {/* BEST PERFORMER — no ring/infographic here: a percentage ring next
-            to a percentage in text was two representations of the same
-            fact. Just the two complementary numbers (dollar gain, then
-            percent), matching how P&L presents its figures. */}
-        <motion.div
-          {...revealUp(0.16)}
-          className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
-        >
-          <div className="mb-3">
-            <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best Performer</CardEyebrow>
-          </div>
-          {bestAsset ? (
-            <Link to={`/portfolio/${bestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
-              <p className="text-sm font-semibold truncate">{bestAsset.name}</p>
-              <p className={`text-lg font-medium tabular-nums font-display mt-1 ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}>
-                {bestAssetGain >= 0 ? '+' : ''}{fmtCurrency(bestAssetGain)}
-              </p>
-              <p className={`text-xs tabular-nums ${bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}`}>
-                {bestAssetGain >= 0 ? '+' : ''}{bestAssetGainPct.toFixed(2)}%
-              </p>
-            </Link>
-          ) : (
-            <p className="text-sm font-semibold truncate">—</p>
-          )}
-        </motion.div>
-
-        {/* LARGEST HOLDING — same reasoning as Best Performer: one set of
-            numbers (dollar value, then share of portfolio), no ring. */}
-        <motion.div
-          {...revealUp(0.19)}
-          className="md:col-span-1 bg-card shadow-card rounded-lg p-5"
-        >
-          <div className="mb-3">
-            <CardEyebrow icon={Crown} className="text-primary">Largest Holding</CardEyebrow>
-          </div>
+        {/* LARGEST HOLDING */}
+        <section className={`mne-card ${rest}`}>
+          <CardEyebrow icon={Crown} accent>Largest holding</CardEyebrow>
           {largestAsset ? (
-            <Link to={`/portfolio/${largestAsset.id}`} className="block -m-1 p-1 rounded-lg transition-colors hover:bg-muted/40">
-              <p className="text-sm font-semibold truncate">{largestAsset.name}</p>
-              <p className={`text-lg font-medium tabular-nums font-display mt-1 ${hiddenValueClass(hideValues)}`}>{fmtCurrency(largestValue)}</p>
-              <p className="text-xs tabular-nums text-muted-foreground">{largestPct.toFixed(1)}% of portfolio</p>
+            <Link to={`/portfolio/${largestAsset.id}`} className="block" style={{ marginTop: 10 }}>
+              <Stat
+                label={largestAsset.ticker?.symbol ?? largestAsset.name}
+                value={<span className={hiddenValueClass(hideValues)}>{fmtCurrency(largestValue)}</span>}
+                sub={`${largestPct.toFixed(0)}% of net worth`}
+                subClassName="mne-muted"
+              />
             </Link>
           ) : (
-            <p className="text-sm font-semibold truncate">—</p>
+            <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
           )}
-        </motion.div>
+        </section>
+
+        {/* P&L */}
+        <section className={`mne-card ${rest}`}>
+          <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&amp;L</CardEyebrow>
+          <Stat
+            className="mt-2.5"
+            label="Unrealized, all stocks"
+            value={<span className={`${stockIsGain ? 'mne-up' : 'mne-down'} ${hiddenValueClass(hideValues)}`}>{stockIsGain ? '+' : '−'}{fmtCurrency(Math.abs(stockGainLoss))}</span>}
+            sub={<Delta value={stockGainLossPercent} />}
+          />
+        </section>
+
+        {/* BEST PERFORMER */}
+        <section className={`mne-card ${rest}`}>
+          <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best performer</CardEyebrow>
+          {bestAsset ? (
+            <Link to={`/portfolio/${bestAsset.id}`} className="block" style={{ marginTop: 10 }}>
+              <Stat
+                label={bestAsset.ticker?.symbol ?? bestAsset.name}
+                value={<span className={`${bestAssetGain >= 0 ? 'mne-up' : 'mne-down'} ${hiddenValueClass(hideValues)}`}>{bestAssetGain >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(bestAssetGain))}</span>}
+                sub={<Delta value={bestAssetGainPct} />}
+              />
+            </Link>
+          ) : (
+            <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
+          )}
+        </section>
 
       </div>
     </div>

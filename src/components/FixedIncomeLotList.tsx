@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Trash2, Pencil, Plus } from 'lucide-react'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import '@/styles/portfolio.css'
 
 interface Lot {
   id: string
@@ -78,94 +79,93 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
 
   function renderForm(onSave: () => void, onCancel: () => void) {
     return (
-      <div className="border border-border rounded-lg p-3 space-y-2 bg-background">
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wide">Units</label>
-            <input
-              type="number"
-              step="0.0001"
-              value={values.count}
-              onChange={e => setValues(v => ({ ...v, count: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-            />
+      <div className="pf-lot-edit">
+        <div className="pf-lot-edit-grid">
+          <div className="mne-field">
+            <label htmlFor="fi-lot-units">Units</label>
+            <input id="fi-lot-units" className="mne-input" type="number" step="0.0001" value={values.count}
+              onChange={e => setValues(v => ({ ...v, count: e.target.value }))} />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wide">Cost/unit</label>
-            <input
-              type="number"
-              step="0.01"
-              value={values.cost_price}
-              onChange={e => setValues(v => ({ ...v, cost_price: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-            />
+          <div className="mne-field">
+            <label htmlFor="fi-lot-cost">Cost/unit</label>
+            <input id="fi-lot-cost" className="mne-input" type="number" step="0.01" value={values.cost_price}
+              onChange={e => setValues(v => ({ ...v, cost_price: e.target.value }))} />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wide">Purchase date</label>
-            <input
-              type="date"
-              value={values.purchase_date}
-              onChange={e => setValues(v => ({ ...v, purchase_date: e.target.value }))}
-              className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-            />
+          <div className="mne-field">
+            <label htmlFor="fi-lot-date">Purchase date</label>
+            <input id="fi-lot-date" className="mne-input" type="date" value={values.purchase_date}
+              onChange={e => setValues(v => ({ ...v, purchase_date: e.target.value }))} />
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="text-xs bg-primary text-primary-foreground hover:opacity-90 px-3 py-1.5 rounded-md transition-opacity font-medium disabled:opacity-50"
-          >
-            Save
-          </button>
-          <button onClick={onCancel} className="text-xs bg-muted text-muted-foreground hover:bg-muted/80 px-3 py-1.5 rounded-md transition-colors">
-            Cancel
-          </button>
+        <div className="pf-actions">
+          <button type="button" className="mne-btn is-sm" onClick={onSave} disabled={saving}>Save</button>
+          <button type="button" className="mne-btn is-ghost is-sm" onClick={onCancel}>Cancel</button>
         </div>
       </div>
     )
   }
 
+  const showFace = faceValue != null
+
   return (
-    <div className="space-y-2">
-      {lots.map((lot) => {
-        if (editingId === lot.id) {
-          return <div key={lot.id}>{renderForm(() => handleSaveEdit(lot.id), () => setEditingId(null))}</div>
-        }
-        const count = Number(lot.count)
-        const costPrice = Number(lot.cost_price)
-        const totalCost = count * costPrice
-        const totalFace = faceValue != null ? count * faceValue : null
-        return (
-          <div key={lot.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
-            <div className="min-w-0">
-              <p className="text-xs font-medium">{formatDateMDY(lot.purchase_date)}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {fmtUnits(count)} units @ <span className={hiddenValueClass(hideValues)}>{fmt(costPrice)} = {fmt(totalCost)}</span>
-                {totalFace != null && <span className={hiddenValueClass(hideValues, 'text-muted-foreground')}> · face {fmt(totalFace)}</span>}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button onClick={() => startEdit(lot)} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Edit lot">
-                <Pencil size={12} />
-              </button>
-              <button onClick={() => onDeleteLot(lot.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Delete lot">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </div>
-        )
-      })}
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
+      {lots.length > 0 && (
+        <div className="pf-scroll">
+          <table className="mne-table is-compact">
+            <thead>
+              <tr>
+                <th>Purchased</th>
+                <th className="r">Units</th>
+                <th className="r">Cost/unit</th>
+                <th className="r pf-hide-sm">Total cost</th>
+                {showFace && <th className="r">Face value</th>}
+                <th className="r"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lots.map((lot) => {
+                if (editingId === lot.id) {
+                  return (
+                    <tr key={lot.id}>
+                      <td colSpan={showFace ? 6 : 5}>{renderForm(() => handleSaveEdit(lot.id), () => setEditingId(null))}</td>
+                    </tr>
+                  )
+                }
+                const count = Number(lot.count)
+                const costPrice = Number(lot.cost_price)
+                const totalCost = count * costPrice
+                const totalFace = faceValue != null ? count * faceValue : null
+                return (
+                  <tr key={lot.id}>
+                    <td>{formatDateMDY(lot.purchase_date)}</td>
+                    <td className="r">{fmtUnits(count)}</td>
+                    <td className="r"><span className={hiddenValueClass(hideValues)}>{fmt(costPrice)}</span></td>
+                    <td className="r pf-hide-sm"><span className={hiddenValueClass(hideValues)}>{fmt(totalCost)}</span></td>
+                    {showFace && <td className="r"><span className={hiddenValueClass(hideValues)}>{totalFace != null ? fmt(totalFace) : '—'}</span></td>}
+                    <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                      <button type="button" className="pf-iconbtn" onClick={() => startEdit(lot)} aria-label="Edit lot">
+                        <Pencil size={14} aria-hidden="true" />
+                      </button>
+                      <button type="button" className="pf-iconbtn is-danger" onClick={() => onDeleteLot(lot.id)} aria-label="Delete lot">
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {adding ? (
         renderForm(handleSaveAdd, () => setAdding(false))
       ) : (
-        <button
-          onClick={startAdd}
-          className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg py-2 transition-colors"
-        >
-          <Plus size={13} /> Add Lot
-        </button>
+        <div>
+          <button type="button" className="mne-btn is-ghost is-sm" onClick={startAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={14} aria-hidden="true" /> Add Lot
+          </button>
+        </div>
       )}
     </div>
   )

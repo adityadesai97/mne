@@ -277,3 +277,63 @@ export function computeThemeDistribution(assets: any[], includeCash = false) {
     .filter((row) => row.value > 0)
     .sort((a, b) => b.value - a.value)
 }
+
+// ── RSU vesting timeline (rail chart) ─────────────────────────
+//
+// Same grants and ordering as computeRsuVesting, plus the dates the rail
+// chart needs: the grant's span, its cliff, each discrete vest event and the
+// next one still to come. Reuses computeRsuVestEvents / rsuVestedSharesAsOf,
+// so the numbers can never disagree with the bar rows.
+
+export type RsuTimelineEvent = { ms: number; shares: number; done: boolean }
+export type RsuTimelineRow = {
+  label: string
+  vestedShares: number
+  totalShares: number
+  ended: boolean
+  startMs: number
+  endMs: number
+  todayMs: number
+  /** Cliff (or first vest) date, when the grant has one. */
+  cliffMs: number | null
+  /** Discrete installments; empty for a continuously vesting grant. */
+  events: RsuTimelineEvent[]
+  nextVest: { ms: number; shares: number } | null
+}
+
+export function computeRsuVestTimeline(assets: any[], today: Date = new Date()): RsuTimelineRow[] {
+  const rows: RsuTimelineRow[] = []
+  for (const a of assets) {
+    for (const st of a.stock_subtypes ?? []) {
+      if (st.subtype !== 'RSU') continue
+      for (const grant of st.rsu_grants ?? []) {
+        const total = Number(grant.total_shares)
+        const endedAt = grant.ended_at ? new Date(grant.ended_at) : null
+        const startMs = new Date(grant.grant_date ?? grant.vest_start).getTime()
+        const endMs = new Date(grant.vest_end).getTime()
+        const events = computeRsuVestEvents(grant).map(e => ({
+          ms: e.date.getTime(),
+          shares: e.shares,
+          done: e.date <= (endedAt && endedAt < today ? endedAt : today),
+        }))
+        const cliffSource = grant.cliff_date ?? (events.length > 0 ? grant.vest_start : null)
+        const cliffMs = cliffSource ? new Date(cliffSource).getTime() : null
+        const next = endedAt ? undefined : events.find(e => !e.done)
+        rows.push({
+          label: `${a.ticker?.symbol ?? a.name} · ${formatDateMDY(grant.grant_date)}${endedAt ? ' (Ended)' : ''}`,
+          vestedShares: rsuVestedSharesAsOf(grant, today),
+          totalShares: total,
+          ended: !!endedAt,
+          startMs: Number.isFinite(startMs) ? startMs : endMs,
+          endMs,
+          todayMs: (endedAt && endedAt < today ? endedAt : today).getTime(),
+          cliffMs: cliffMs !== null && Number.isFinite(cliffMs) ? cliffMs : null,
+          events,
+          nextVest: next ? { ms: next.ms, shares: next.shares } : null,
+        })
+      }
+    }
+  }
+  rows.sort((a, b) => a.endMs - b.endMs)
+  return rows
+}

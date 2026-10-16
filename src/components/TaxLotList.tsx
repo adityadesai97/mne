@@ -1,9 +1,10 @@
 // src/components/TaxLotList.tsx
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { ChevronDown, Trash2, Pencil } from 'lucide-react'
+import { Trash2, Pencil } from 'lucide-react'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { Delta } from '@/components/mne'
+import '@/styles/portfolio.css'
 
 interface EditValues {
   count: string
@@ -21,6 +22,14 @@ type EditTransactionUpdates = {
   sold_at_vest?: number
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className={`pf-chev${open ? ' is-open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  )
+}
+
 export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
   subtypes: any[]
   ticker: any
@@ -32,12 +41,9 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   const [hideValues] = useHideValues()
   const isCrypto = ticker?.kind === 'crypto'
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  // Subtype sections (Market/ESPP/RSU) and RSU grant blocks start collapsed
-  // — a stock with a lot of activity otherwise dumps every lot and grant on
-  // screen at once. Individual lot rows (expandedIds above) already worked
-  // this way; this just extends the same pattern one level up.
-  const [expandedSubtypeIds, setExpandedSubtypeIds] = useState<Set<string>>(new Set())
+  // Subtype tables start open (they are compact); RSU grant blocks start
+  // collapsed so a stock with lots of vesting history doesn't dump every row.
+  const [collapsedSubtypeIds, setCollapsedSubtypeIds] = useState<Set<string>>(new Set())
   const [expandedGrantIds, setExpandedGrantIds] = useState<Set<string>>(new Set())
   const [editValues, setEditValues] = useState<EditValues>({
     count: '',
@@ -47,24 +53,8 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     sold_at_vest: '',
   })
 
-  function toggleExpanded(id: string) {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function toggleSubtypeExpanded(id: string) {
-    setExpandedSubtypeIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function toggleGrantExpanded(id: string) {
-    setExpandedGrantIds(prev => {
+  function toggleIn(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
+    setter(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -88,7 +78,59 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     setEditingId(null)
   }
 
-  function renderTransactionCard(t: any) {
+  const hasActions = Boolean(onEditTransaction || onDeleteTransaction)
+  const colCount = 6 + (hasActions ? 1 : 0)
+
+  function renderEditRow(t: any) {
+    const step = isCrypto ? 'any' : '0.01'
+    return (
+      <tr key={t.id}>
+        <td colSpan={colCount}>
+          <div className="pf-lot-edit">
+            <div className="pf-lot-edit-grid">
+              <div className="mne-field">
+                <label htmlFor={`${t.id}-count`}>{isCrypto ? 'Units' : 'Shares'}</label>
+                <input id={`${t.id}-count`} className="mne-input" type="number" step={step} value={editValues.count}
+                  onChange={e => setEditValues(v => ({ ...v, count: e.target.value }))} />
+              </div>
+              <div className="mne-field">
+                <label htmlFor={`${t.id}-cost`}>{isCrypto ? 'Cost/unit' : 'Cost/share'}</label>
+                <input id={`${t.id}-cost`} className="mne-input" type="number" step={step} value={editValues.cost_price}
+                  onChange={e => setEditValues(v => ({ ...v, cost_price: e.target.value }))} />
+              </div>
+              <div className="mne-field">
+                <label htmlFor={`${t.id}-date`}>Purchase date</label>
+                <input id={`${t.id}-date`} className="mne-input" type="date" value={editValues.purchase_date}
+                  onChange={e => setEditValues(v => ({ ...v, purchase_date: e.target.value }))} />
+              </div>
+              <div className="mne-field">
+                <label htmlFor={`${t.id}-status`}>Status</label>
+                <div className="mne-select-wrap">
+                  <select id={`${t.id}-status`} className="mne-input" value={editValues.capital_gains_status}
+                    onChange={e => setEditValues(v => ({ ...v, capital_gains_status: e.target.value }))}>
+                    <option value="Short Term">Short Term</option>
+                    <option value="Long Term">Long Term</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mne-field">
+                <label htmlFor={`${t.id}-sav`}>Sold at vest</label>
+                <input id={`${t.id}-sav`} className="mne-input" type="number" step={step} min="0" placeholder="0" value={editValues.sold_at_vest}
+                  onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))} />
+              </div>
+            </div>
+            <div className="pf-actions">
+              <button type="button" className="mne-btn is-sm" onClick={() => handleSave(t.id)}>Save</button>
+              <button type="button" className="mne-btn is-ghost is-sm" onClick={() => setEditingId(null)}>Cancel</button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  function renderTransactionRow(t: any) {
+    if (editingId === t.id) return renderEditRow(t)
     const totalVested = Number(t.count)
     const soldAtVest = Number(t.sold_at_vest ?? 0)
     const shares = Math.max(0, totalVested - soldAtVest)
@@ -97,298 +139,189 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     const totalCost = shares * costPerShare
     const currentValue = currentPrice !== null ? shares * currentPrice : null
     const gain = currentValue !== null ? currentValue - totalCost : null
-
-    if (editingId === t.id) {
-      return (
-        <div key={t.id} className="border border-border rounded-lg p-3 space-y-2 bg-background">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">Shares</label>
-              <input
-                type="number"
-                step={isCrypto ? "any" : "0.01"}
-                value={editValues.count}
-                onChange={e => setEditValues(v => ({ ...v, count: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">Cost/share</label>
-              <input
-                type="number"
-                step={isCrypto ? "any" : "0.01"}
-                value={editValues.cost_price}
-                onChange={e => setEditValues(v => ({ ...v, cost_price: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">Purchase date</label>
-              <input
-                type="date"
-                value={editValues.purchase_date}
-                onChange={e => setEditValues(v => ({ ...v, purchase_date: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">Status</label>
-              <select
-                value={editValues.capital_gains_status}
-                onChange={e => setEditValues(v => ({ ...v, capital_gains_status: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-              >
-                <option value="Short Term">Short Term</option>
-                <option value="Long Term">Long Term</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide">Sold at vest</label>
-              <input
-                type="number"
-                step={isCrypto ? "any" : "0.01"}
-                min="0"
-                value={editValues.sold_at_vest}
-                onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))}
-                className="w-full mt-0.5 bg-background border border-border rounded-sm px-2 py-1 text-xs"
-                placeholder="0"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleSave(t.id)} className="text-xs bg-primary text-primary-foreground hover:opacity-90 px-3 py-1.5 rounded-md transition-opacity font-medium">Save</button>
-            <button onClick={() => setEditingId(null)} className="text-xs bg-muted text-muted-foreground hover:bg-muted/80 px-3 py-1.5 rounded-md transition-colors">Cancel</button>
-          </div>
-        </div>
-      )
-    }
-
-    const isOpen = expandedIds.has(t.id)
+    const isLong = t.capital_gains_status === 'Long Term'
 
     return (
-      <div key={t.id} className="rounded-lg border border-border/60 bg-muted/20">
-        <button
-          type="button"
-          onClick={() => toggleExpanded(t.id)}
-          aria-expanded={isOpen}
-          className="w-full text-left"
-        >
-          <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-            <div>
-              <p className="text-xs font-medium">{formatDateMDY(t.purchase_date)}</p>
-              <p className="text-xs text-muted-foreground">
-                {isCrypto ? fmtCoins(shares) : shares.toFixed(shares % 1 === 0 ? 0 : 4)} {isCrypto ? 'coins' : 'shares'} @ <span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span>
-                {soldAtVest > 0 && <span className="text-muted-foreground"> · {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest</span>}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-medium tabular-nums ${gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
-                {gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
-              </span>
-              <ChevronDown size={14} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-            </div>
-          </div>
-        </button>
+      <tr key={t.id}>
+        <td>{formatDateMDY(t.purchase_date)}</td>
+        <td><span className="mne-chip is-outline">{isLong ? 'Long term' : 'Short term'}</span></td>
+        <td className="r">
+          {isCrypto ? fmtCoins(shares) : shares.toFixed(shares % 1 === 0 ? 0 : 4)}
+          {soldAtVest > 0 && (
+            <span className="mne-help" style={{ display: 'block' }}>
+              {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest
+            </span>
+          )}
+        </td>
+        <td className="r"><span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span></td>
+        <td className="r pf-hide-sm"><span className={hiddenValueClass(hideValues)}>{currentValue !== null ? fmt(currentValue) : '—'}</span></td>
+        <td className="r">
+          {gain !== null
+            ? <span className={hiddenValueClass(hideValues)}><Delta value={gain} format={abs => fmt(abs)} /></span>
+            : <span className="mne-muted">—</span>}
+        </td>
+        {hasActions && (
+          <td className="r" style={{ whiteSpace: 'nowrap' }}>
+            {onEditTransaction && (
+              <button
+                type="button"
+                className="pf-iconbtn"
+                aria-label="Edit"
+                onClick={() => {
+                  setEditingId(t.id)
+                  setEditValues({
+                    count: String(t.count),
+                    cost_price: String(t.cost_price),
+                    purchase_date: t.purchase_date,
+                    capital_gains_status: t.capital_gains_status,
+                    sold_at_vest: String(t.sold_at_vest ?? 0),
+                  })
+                }}
+              >
+                <Pencil size={14} aria-hidden="true" />
+              </button>
+            )}
+            {onDeleteTransaction && (
+              <button type="button" className="pf-iconbtn is-danger" aria-label="Delete" onClick={() => onDeleteTransaction(t.id)}>
+                <Trash2 size={14} aria-hidden="true" />
+              </button>
+            )}
+          </td>
+        )}
+      </tr>
+    )
+  }
 
-        {/* CSS grid-rows accordion — a native transition the browser drives
-            itself, not a JS-measured height or a framer-motion state
-            machine. Can't get stuck mid-animation the way those can. */}
-        <div
-          className="grid transition-[grid-template-rows] duration-200 ease-out"
-          style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <div className="px-3 pb-3">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-2.5">
-                <Metric label="Shares held" value={shares.toFixed(shares % 1 === 0 ? 0 : 4)} />
-                <Metric label="Cost / share" value={fmt(costPerShare)} hidden={hideValues} />
-                <Metric label="Amount paid" value={fmt(totalCost)} hidden={hideValues} />
-                <Metric
-                  label="Current value"
-                  value={currentValue !== null ? fmt(currentValue) : '—'}
-                  className={currentValue !== null && gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
-                  hidden={hideValues}
-                />
-                <Metric label="Purchased" value={formatDateMDY(t.purchase_date)} />
-                <Metric
-                  label="Gain / loss"
-                  value={gain !== null ? `${gain >= 0 ? '+' : ''}${fmt(gain)}` : '—'}
-                  className={gain !== null ? (gain >= 0 ? 'text-gain' : 'text-loss') : ''}
-                  hidden={hideValues}
-                />
-                {soldAtVest > 0 && (
-                  <>
-                    <Metric label="Vested" value={totalVested.toFixed(totalVested % 1 === 0 ? 0 : 4)} />
-                    <Metric label="Sold at vest" value={soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} />
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Badge
-                  variant={t.capital_gains_status === 'Long Term' ? 'secondary' : 'outline'}
-                  className="text-xs"
-                >
-                  {t.capital_gains_status}
-                </Badge>
-                <div className="flex items-center gap-2">
-                  {onEditTransaction && (
-                    <button
-                      onClick={() => {
-                        setEditingId(t.id)
-                        setEditValues({
-                          count: String(t.count),
-                          cost_price: String(t.cost_price),
-                          purchase_date: t.purchase_date,
-                          capital_gains_status: t.capital_gains_status,
-                          sold_at_vest: String(t.sold_at_vest ?? 0),
-                        })
-                      }}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label="Edit"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                  )}
-                  {onDeleteTransaction && (
-                    <button onClick={() => onDeleteTransaction(t.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Delete">
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+  function renderTable(txs: any[]) {
+    return (
+      <div className="pf-scroll">
+        <table className="mne-table is-compact">
+          <thead>
+            <tr>
+              <th>Purchased</th>
+              <th>Term</th>
+              <th className="r">{isCrypto ? 'Units' : 'Shares'}</th>
+              <th className="r">{isCrypto ? 'Cost/unit' : 'Cost/share'}</th>
+              <th className="r pf-hide-sm">Value</th>
+              <th className="r">Gain</th>
+              {hasActions && <th className="r"><span className="sr-only">Actions</span></th>}
+            </tr>
+          </thead>
+          <tbody>{txs.map(t => renderTransactionRow(t))}</tbody>
+        </table>
       </div>
     )
   }
 
   return (
-    <div className="space-y-5">
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
       {subtypesWithActivity.map((st: any) => {
         const transactions = st.transactions ?? []
         const rsuGrants = st.rsu_grants ?? []
         const isRsuSubtype = st.subtype === 'RSU'
         const rsuGrantGroups = isRsuSubtype ? groupRsuActivityByGrant(rsuGrants, transactions) : null
-        const isSubtypeOpen = expandedSubtypeIds.has(st.id)
+        const isSubtypeOpen = !collapsedSubtypeIds.has(st.id)
 
         return (
-          <div key={st.id}>
+          <div key={st.id} className="pf-sub">
             <button
               type="button"
-              onClick={() => toggleSubtypeExpanded(st.id)}
+              className="pf-disclose"
+              onClick={() => toggleIn(setCollapsedSubtypeIds, st.id)}
               aria-expanded={isSubtypeOpen}
-              className="w-full flex items-center justify-between mb-2"
             >
-              <div className="flex items-center gap-1.5">
-                <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 ${isSubtypeOpen ? 'rotate-180' : ''}`} />
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{st.subtype}</p>
-              </div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Chevron open={isSubtypeOpen} />
+                <span className="mne-eyebrow">{st.subtype}</span>
+              </span>
+              <span className="mne-help">
                 {transactions.length} tx
                 {rsuGrants.length > 0 && <> · {rsuGrants.length} grant{rsuGrants.length === 1 ? '' : 's'}</>}
-              </p>
+              </span>
             </button>
 
-            {/* Same CSS grid-rows accordion as individual lot rows below. */}
-            <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isSubtypeOpen ? '1fr' : '0fr' }}>
-              <div className="overflow-hidden">
+            {isSubtypeOpen && (
+              <div className="pf-fade" style={{ marginTop: 8 }}>
                 {isRsuSubtype && rsuGrantGroups ? (
-                  <div className="space-y-2">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
                     {rsuGrantGroups.grants.map(group => {
                       const vesting = computeGrantVesting(group.grant, group.transactions)
                       const summary = computeGrantSummary(group.transactions, ticker)
                       const isGrantOpen = expandedGrantIds.has(group.grant.id)
                       return (
-                        <div key={group.grant.id} className="rounded-lg border border-border/60 bg-muted/20">
+                        <div key={group.grant.id} style={{ background: 'var(--mne-surface-300)', borderRadius: 'var(--mne-radius-md)', padding: 12 }}>
                           <button
                             type="button"
-                            onClick={() => toggleGrantExpanded(group.grant.id)}
+                            className="pf-disclose"
+                            onClick={() => toggleIn(setExpandedGrantIds, group.grant.id)}
                             aria-expanded={isGrantOpen}
-                            className="w-full text-left"
                           >
-                            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-                              <div>
-                                <p className="text-xs font-medium">Grant {formatDateMDY(group.grant.grant_date)}</p>
-                                <p className="text-xs text-muted-foreground tabular-nums">{isCrypto ? `${fmtCoins(summary.shares)} coins` : `${fmtShares(summary.shares)} shares`}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs font-medium tabular-nums ${summary.gain !== null ? (summary.gain >= 0 ? 'text-gain' : 'text-loss') : 'text-muted-foreground'} ${hiddenValueClass(hideValues)}`}>
-                                  {summary.gain !== null ? `${summary.gain >= 0 ? '+' : ''}${fmt(summary.gain)}` : '—'}
-                                </span>
-                                <ChevronDown size={14} className={`text-muted-foreground transition-transform duration-200 ${isGrantOpen ? 'rotate-180' : ''}`} />
-                              </div>
-                            </div>
+                            <span>
+                              <b>Grant {formatDateMDY(group.grant.grant_date)}</b>
+                              <span className="mne-help" style={{ display: 'block' }}>{isCrypto ? `${fmtCoins(summary.shares)} units` : `${fmtShares(summary.shares)} shares`}</span>
+                            </span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              {summary.gain !== null
+                                ? <span className={hiddenValueClass(hideValues)}><Delta value={summary.gain} format={abs => fmt(abs)} /></span>
+                                : <span className="mne-muted">—</span>}
+                              <Chevron open={isGrantOpen} />
+                            </span>
                           </button>
 
-                          <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: isGrantOpen ? '1fr' : '0fr' }}>
-                            <div className="overflow-hidden">
-                              <div className="px-3 pb-3">
-                                <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-xs font-medium tabular-nums">{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</p>
-                                    <div className="flex items-center gap-2">
-                                      {group.grant.ended_at ? (
-                                        <Badge variant="outline" className="text-xs">Ended</Badge>
-                                      ) : onEndGrant ? (
-                                        <button
-                                          onClick={() => { void onEndGrant(group.grant.id) }}
-                                          className="text-xs text-loss bg-loss/10 px-2 py-1 rounded-sm hover:bg-loss/20 transition-colors"
-                                        >
-                                          End Grant
-                                        </button>
-                                      ) : null}
-                                      {onDeleteGrant && (
-                                        <button
-                                          onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
-                                          className="text-muted-foreground hover:text-destructive transition-colors"
-                                          aria-label="Delete grant"
-                                        >
-                                          <Trash2 size={12} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1 tabular-nums">
-                                    {fmtShares(vesting.unvestedShares)} unvested
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-1">
+                          {isGrantOpen && (
+                            <div className="pf-fade" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ fontWeight: 500 }}>{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</div>
+                                  <div className="mne-help">{fmtShares(vesting.unvestedShares)} unvested</div>
+                                  <div className="mne-help">
                                     Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
                                     {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
-                                  </p>
+                                  </div>
                                 </div>
-
-                                <div className="mt-2 space-y-2">
-                                  {group.transactions.length > 0 ? (
-                                    group.transactions.map((t: any) => renderTransactionCard(t))
-                                  ) : (
-                                    <p className="text-xs text-muted-foreground">No transactions mapped to this grant yet.</p>
+                                <div className="pf-actions" style={{ alignItems: 'center' }}>
+                                  {group.grant.ended_at ? (
+                                    <span className="mne-chip is-outline">Ended</span>
+                                  ) : onEndGrant ? (
+                                    <button type="button" className="mne-btn is-ghost is-sm" onClick={() => { void onEndGrant(group.grant.id) }}>
+                                      End Grant
+                                    </button>
+                                  ) : null}
+                                  {onDeleteGrant && (
+                                    <button
+                                      type="button"
+                                      className="pf-iconbtn is-danger"
+                                      aria-label="Delete grant"
+                                      onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
+                                    >
+                                      <Trash2 size={14} aria-hidden="true" />
+                                    </button>
                                   )}
                                 </div>
                               </div>
+                              {group.transactions.length > 0 ? (
+                                renderTable(group.transactions)
+                              ) : (
+                                <p className="mne-help">No transactions mapped to this grant yet.</p>
+                              )}
                             </div>
-                          </div>
+                          )}
                         </div>
                       )
                     })}
 
                     {rsuGrantGroups.unassignedTransactions.length > 0 && (
-                      <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-3">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Unmatched Transactions</p>
-                        <div className="space-y-2">
-                          {rsuGrantGroups.unassignedTransactions.map((t: any) => renderTransactionCard(t))}
-                        </div>
+                      <div>
+                        <div className="mne-eyebrow" style={{ marginBottom: 8 }}>Unmatched Transactions</div>
+                        {renderTable(rsuGrantGroups.unassignedTransactions)}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {transactions.map((t: any) => renderTransactionCard(t))}
-                  </div>
+                  renderTable(transactions)
                 )}
               </div>
-            </div>
+            )}
           </div>
         )
       })}
@@ -508,15 +441,6 @@ function computeGrantSummary(transactions: any[], ticker: any) {
   const currentValue = currentPrice !== null ? shares * currentPrice : null
   const gain = currentValue !== null ? currentValue - costBasis : null
   return { shares, currentValue, gain }
-}
-
-function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
-    </div>
-  )
 }
 
 function fmt(n: number) {

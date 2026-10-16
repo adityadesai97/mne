@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, Fragment, useCallback } from 'react'
-import { X, Paperclip, Sparkles, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
+import { useState, useEffect, useRef, useId, Fragment, useCallback } from 'react'
+import '@/styles/cmdbar.css'
+import { X, Paperclip, Maximize2, Minimize2, MessageSquare } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
@@ -40,7 +41,7 @@ function parseInlineMd(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g)
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>
+      return <strong key={i} className="text-foreground">{part.slice(2, -2)}</strong>
     }
     if (part.startsWith('*') && part.endsWith('*')) {
       return <em key={i}>{part.slice(1, -1)}</em>
@@ -88,10 +89,18 @@ function parseColumnAlign(dividerCell: string): TableAlign {
   return 'left'
 }
 
-const ALIGN_CLASS: Record<TableAlign, string> = {
-  left: 'text-left',
-  center: 'text-center',
-  right: 'text-right',
+// `.mne-table` sets text-align on th/td with more specificity than a utility
+// class, so alignment is applied inline (right-aligned numerics per the design).
+const ALIGN_CLASS: Record<TableAlign, string> = { left: 'text-left', center: 'text-center', right: 'text-right' }
+function alignStyle(align: TableAlign): React.CSSProperties | undefined {
+  return align === 'left' ? undefined : { textAlign: align }
+}
+
+// A column is numeric when every non-empty cell is a number / currency / percent.
+const NUMERIC_CELL_RE = /^[+\-−]?\$?[\d,]+(?:\.\d+)?%?$/
+function isNumericColumn(rows: unknown[][], colIdx: number): boolean {
+  const cells = rows.map((row) => String(row[colIdx] ?? '').trim()).filter((c) => c && c !== '-')
+  return cells.length > 0 && cells.every((c) => NUMERIC_CELL_RE.test(c))
 }
 
 function splitTableRow(line: string): string[] {
@@ -131,12 +140,12 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
         i += 1
       }
       blocks.push(
-        <div key={`table-${i}`} className="overflow-x-auto rounded-md border border-border/60">
+        <div key={`table-${i}`} className="overflow-x-auto">
           <FluidTable size="compact">
             <FluidTableHeader>
               <FluidTableRow>
                 {headers.map((header, idx) => (
-                  <FluidTableHead key={idx} className={`whitespace-nowrap ${ALIGN_CLASS[aligns[idx] ?? 'left']}`}>
+                  <FluidTableHead key={idx} className={`whitespace-nowrap ${ALIGN_CLASS[aligns[idx] ?? 'left']}`} style={alignStyle(aligns[idx] ?? 'left')}>
                     {parseInlineMd(header)}
                   </FluidTableHead>
                 ))}
@@ -146,7 +155,7 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
               {rows.map((row, rowIdx) => (
                 <FluidTableRow key={rowIdx} index={rowIdx}>
                   {headers.map((_, colIdx) => (
-                    <FluidTableCell key={colIdx} className={`align-top tabular-nums ${ALIGN_CLASS[aligns[colIdx] ?? 'left']}`}>
+                    <FluidTableCell key={colIdx} className={`align-top ${ALIGN_CLASS[aligns[colIdx] ?? 'left']}`} style={alignStyle(aligns[colIdx] ?? 'left')}>
                       {parseTableCell(row[colIdx] ?? '')}
                     </FluidTableCell>
                   ))}
@@ -163,9 +172,9 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
       const level = Math.min(3, trimmed.match(/^#+/)?.[0].length ?? 1)
       const text = trimmed.replace(/^#{1,6}\s+/, '')
       const className =
-        level === 1 ? 'text-base font-semibold' :
-        level === 2 ? 'text-sm font-semibold' :
-        'text-sm font-medium'
+        level === 1 ? 'text-base font-semibold text-foreground' :
+        level === 2 ? 'text-sm font-semibold text-foreground' :
+        'text-sm font-medium text-foreground'
       blocks.push(
         <p key={`h-${i}`} className={className}>
           {parseInlineMd(text)}
@@ -204,7 +213,7 @@ function renderAssistantMarkdown(content: string): React.ReactNode {
     }
 
     if (/^-{3,}$/.test(trimmed)) {
-      blocks.push(<hr key={`hr-${i}`} className="border-border/60" />)
+      blocks.push(<hr key={`hr-${i}`} className="border-border" />)
       i += 1
       continue
     }
@@ -300,8 +309,8 @@ function useSmoothedStream() {
 }
 
 /** Shows the thinking-orbs "solving" indicator until the first token of the
- *  reply actually starts streaming in, then swaps to the live text itself in
- *  an assistant-style avatar + bubble — rendered plain (not through
+ *  reply actually starts streaming in, then swaps to the live text itself as
+ *  muted text with the terracotta caret (design `.mne-caret`) — rendered plain (not through
  *  renderAssistantMarkdown) since a reply mid-stream is, by definition,
  *  incomplete markdown; the settled message gets full markdown rendering
  *  once the call resolves.
@@ -313,20 +322,13 @@ function useSmoothedStream() {
 function ThinkingBubble({ streamingText }: { streamingText: string }) {
   if (!streamingText) {
     return (
-      <div className="bg-muted/40 rounded-lg rounded-tl-md px-3.5 py-3 inline-block">
+      <div className="inline-block" role="status" aria-label="Thinking">
         <ThinkingOrb state="solving" size={20} theme="auto" />
       </div>
     )
   }
   return (
-    <div className="flex items-start gap-2">
-      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
-        <Sparkles size={11} className="text-primary" aria-hidden="true" />
-      </div>
-      <div className="bg-muted/40 rounded-lg rounded-tl-md px-3.5 py-3 max-w-[80%]">
-        <p className="text-sm text-foreground whitespace-pre-wrap break-words stream-caret">{streamingText}</p>
-      </div>
-    </div>
+    <p className="mne-muted mne-caret whitespace-pre-wrap break-words text-sm m-0">{streamingText}</p>
   )
 }
 
@@ -759,7 +761,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+            className="cmdk-backdrop"
             onClick={handleClose}
           />
 
@@ -783,11 +785,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
               layout
               data-testid="cmdk-panel"
               data-fullscreen={isFullscreen}
-              className={`pointer-events-auto overflow-hidden bg-card border border-border shadow-2xl ${
+              className={`mne-cmd cmdk-panel pointer-events-auto overflow-hidden ${
                 isFullscreen ? 'w-full h-full max-w-none' : 'w-full max-w-lg'
               }`}
-              style={{ borderRadius: isFullscreen && isMobileViewport ? '0.75rem' : '1rem' }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              style={{ borderRadius: isFullscreen && isMobileViewport ? 'var(--mne-radius-md)' : 'var(--mne-radius-lg)' }}
+              transition={{ duration: 0.43, ease: [0.4, 0, 0.2, 1] }}
             >
               {!isExpanded ? (
                 <motion.div
@@ -805,7 +807,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                         <button
                           type="button"
                           onClick={toggleFullscreen}
-                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
+                          className="cmdk-ibtn"
                           aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
                           title={isFullscreen ? 'Exit full screen' : 'Full screen'}
                         >
@@ -814,103 +816,106 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                       </div>
                       <div className="overflow-y-auto" style={{ maxHeight: `${Math.min(Math.floor(viewportHeight * 0.65), 480)}px` }}>
                         {loading && (
-                          <div className="p-4 space-y-2">
-                            <div className="flex justify-end">
-                              <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-lg rounded-br-md max-w-[90%] inline-block whitespace-pre-wrap break-words">
-                                {pendingQuery}
-                              </span>
-                            </div>
+                          <div className="cmdk-section">
+                            <div className="mne-cmd-q whitespace-pre-wrap break-words">{pendingQuery}</div>
                             <ThinkingBubble streamingText={streamingText} />
                           </div>
                         )}
-                        {done && <p className="p-4 text-sm text-gain">Done ✓</p>}
+                        {done && <p className="cmdk-section cmdk-ok m-0 text-sm">Done ✓</p>}
                         {compactResult && !loading && !done && (
                           <CommandResult action={compactResult} onDone={handleWriteDone} onClose={handleClose} />
                         )}
                       </div>
                       {/* Input pinned to the bottom, matching the expanded thread's footer */}
-                      <div className="border-t border-border flex-shrink-0">
+                      <div className="cmdk-foot flex-shrink-0">
                         {attachment && (
-                          <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/20 text-xs text-muted-foreground">
+                          <div className="cmdk-attach">
                             <Paperclip size={11} className="shrink-0" />
                             <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                            <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                            <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
                               <X size={12} />
                             </button>
                           </div>
                         )}
-                        <div className="flex items-center gap-2 px-4 py-3">
-                          <textarea
-                            ref={inputRef}
-                            rows={1}
-                            placeholder="Reply..."
-                            value={query}
-                            onChange={e => setQuery(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                              if (e.key === 'Escape') handleClose()
-                            }}
-                            className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
-                            style={{ maxHeight: '144px' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                            title="Attach CSV, PDF, or image"
-                          >
-                            <Paperclip size={16} />
-                          </button>
+                        <div className="mne-cmd-row">
+                          <div className="cmdk-field">
+                            <textarea
+                              ref={inputRef}
+                              rows={1}
+                              placeholder="Reply..."
+                              value={query}
+                              onChange={e => setQuery(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                                if (e.key === 'Escape') handleClose()
+                              }}
+                              className="overflow-y-auto"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="cmdk-ibtn"
+                              title="Attach CSV, PDF, or image"
+                              aria-label="Attach CSV, PDF, or image"
+                            >
+                              <Paperclip />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="flex items-center border-b border-border px-4 py-3 gap-2">
-                        <textarea
-                          ref={inputRef}
-                          autoFocus
-                          rows={1}
-                          placeholder="Ask anything or issue a command..."
-                          value={query}
-                          onChange={e => setQuery(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                            if (e.key === 'Escape') handleClose()
-                          }}
-                          className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
-                          style={{ maxHeight: '144px' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-                        >
-                          {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                          title="Attach CSV, PDF, or image"
-                        >
-                          <Paperclip size={16} />
-                        </button>
-                      </div>
-                      {attachment && (
-                        <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/20 text-xs text-muted-foreground">
-                          <Paperclip size={11} className="shrink-0" />
-                          <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                          <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
-                            <X size={12} />
-                          </button>
+                      <div className="cmdk-section">
+                        <div className="mne-cmd-row">
+                          <div className="cmdk-field">
+                            <textarea
+                              ref={inputRef}
+                              autoFocus
+                              rows={1}
+                              placeholder="Ask anything or issue a command..."
+                              value={query}
+                              onChange={e => setQuery(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                                if (e.key === 'Escape') handleClose()
+                              }}
+                              className="overflow-y-auto"
+                            />
+                            <button
+                              type="button"
+                              onClick={toggleFullscreen}
+                              className="cmdk-ibtn"
+                              aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                            >
+                              {isFullscreen ? <Minimize2 /> : <Maximize2 />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="cmdk-ibtn"
+                              title="Attach CSV, PDF, or image"
+                              aria-label="Attach CSV, PDF, or image"
+                            >
+                              <Paperclip />
+                            </button>
+                          </div>
+                          <span className="mne-kbd hidden md:inline-block" aria-hidden="true">⌘K</span>
                         </div>
-                      )}
-                      <p className="p-4 text-muted-foreground text-xs">
-                        Try: "What's my net worth?" or "Add 10 AAPL shares at $220 bought today"
-                      </p>
+                        {attachment && (
+                          <div className="cmdk-attach">
+                            <Paperclip size={12} className="shrink-0" />
+                            <span className="truncate max-w-[220px]">{attachment.filename}</span>
+                            <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                        <p className="mne-muted m-0 text-xs">
+                          Try: "What's my net worth?" or "Add 10 AAPL shares at $220 bought today"
+                        </p>
+                      </div>
                     </>
                   )}
                 </motion.div>
@@ -932,7 +937,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                   <div className="flex items-center justify-end gap-1 px-3 pt-2 pb-1 flex-shrink-0">
                     <button
                       onClick={toggleFullscreen}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
+                      className="cmdk-ibtn"
                       aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
                       title={isFullscreen ? 'Exit full screen' : 'Full screen'}
                     >
@@ -940,13 +945,13 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                     </button>
                     <button
                       onClick={handleClose}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/60"
+                      className="cmdk-ibtn"
                       aria-label="Close"
                     >
                       <X size={14} />
                     </button>
                   </div>
-                  <div ref={threadRef} className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 min-h-0">
+                  <div ref={threadRef} className="flex-1 overflow-y-auto px-4 pb-4 min-h-0 flex flex-col gap-3">
                     <AnimatePresence initial={false}>
                       {displayMessages.map((m, idx) => {
                         // The nearest preceding user turn — passed along so feedback
@@ -957,7 +962,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                             key={m.id}
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
                           >
                             <MessageBubble
                               message={m}
@@ -977,47 +982,49 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                          transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
                         >
                           <ThinkingBubble streamingText={streamingText} />
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
-                  <div className="border-t border-border flex-shrink-0">
+                  <div className="cmdk-foot flex-shrink-0">
                     {attachment && (
-                      <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-border bg-muted/20 text-xs text-muted-foreground">
+                      <div className="cmdk-attach">
                         <Paperclip size={11} className="shrink-0" />
                         <span className="truncate max-w-[220px]">{attachment.filename}</span>
-                        <button onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
+                        <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
                           <X size={12} />
                         </button>
                       </div>
                     )}
-                    <div className="flex items-center gap-2 px-4 py-3">
-                      <textarea
-                        ref={inputRef}
-                        rows={1}
-                        placeholder="Reply..."
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
-                          if (e.key === 'Escape') handleClose()
-                        }}
-                        className="flex-1 border-0 focus-visible:ring-0 text-base bg-transparent resize-none outline-none overflow-y-auto leading-normal py-0"
-                        style={{ maxHeight: '144px' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Attach CSV, PDF, or image"
-                      >
-                        <Paperclip size={16} />
-                      </button>
-                    </div>
-                  </div>
+                    <div className="mne-cmd-row">
+                          <div className="cmdk-field">
+                            <textarea
+                              ref={inputRef}
+                              rows={1}
+                              placeholder="Reply..."
+                              value={query}
+                              onChange={e => setQuery(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() }
+                                if (e.key === 'Escape') handleClose()
+                              }}
+                              className="overflow-y-auto"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="cmdk-ibtn"
+                              title="Attach CSV, PDF, or image"
+                              aria-label="Attach CSV, PDF, or image"
+                            >
+                              <Paperclip />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                 </motion.div>
               )}
             </motion.div>
@@ -1055,22 +1062,24 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
   const PreviewSections = ({ sections }: { sections: any[] }) => {
     if (!Array.isArray(sections) || sections.length === 0) return null
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col gap-3">
         {sections.map((section, idx) => {
           const title = String(section?.title ?? '').trim() || `Items ${idx + 1}`
           const columns = Array.isArray(section?.columns) ? section.columns.map((col: unknown) => String(col ?? '')) : []
           const rows = Array.isArray(section?.rows) ? section.rows : []
           if (columns.length === 0) return null
+          const cellRows: unknown[][] = rows.map((row: unknown) => (Array.isArray(row) ? row : []))
+          const numeric = columns.map((_: string, columnIdx: number) => isNumericColumn(cellRows, columnIdx))
 
           return (
-            <div key={`${title}-${idx}`} className="rounded-md border border-border/60 overflow-hidden">
-              <p className="px-2 py-1 text-xs font-medium bg-muted/40">{title}</p>
-              <div className="overflow-auto max-h-56">
-                <table className="min-w-full text-xs">
-                  <thead className="bg-muted/20">
+            <div key={`${title}-${idx}`}>
+              {sections.length > 1 && <p className="cmdk-title m-0 mb-1">{title}</p>}
+              <div className="cmdk-table-wrap">
+                <table className="mne-table is-compact">
+                  <thead>
                     <tr>
                       {columns.map((column: string, columnIdx: number) => (
-                        <th key={columnIdx} className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                        <th key={columnIdx} className={`whitespace-nowrap${numeric[columnIdx] ? ' r' : ''}`}>
                           {column}
                         </th>
                       ))}
@@ -1078,24 +1087,21 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
                   </thead>
                   <tbody>
                     {rows.length === 0 ? (
-                      <tr className="border-t border-border/60">
-                        <td colSpan={columns.length} className="px-2 py-1.5 text-muted-foreground">
+                      <tr>
+                        <td colSpan={columns.length} className="mne-muted">
                           No items
                         </td>
                       </tr>
                     ) : (
-                      rows.map((row: unknown, rowIdx: number) => {
-                        const cells = Array.isArray(row) ? row : []
-                        return (
-                          <tr key={rowIdx} className="border-t border-border/60">
-                            {columns.map((_: string, columnIdx: number) => (
-                              <td key={columnIdx} className="px-2 py-1.5 align-top whitespace-nowrap">
-                                {String(cells[columnIdx] ?? '-')}
-                              </td>
-                            ))}
-                          </tr>
-                        )
-                      })
+                      cellRows.map((cells, rowIdx) => (
+                        <tr key={rowIdx}>
+                          {columns.map((_: string, columnIdx: number) => (
+                            <td key={columnIdx} className={`align-top whitespace-nowrap${numeric[columnIdx] ? ' r' : ''}`}>
+                              {String(cells[columnIdx] ?? '-')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
@@ -1107,33 +1113,45 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
     )
   }
 
+  // "Confirm: Crypto Purchases" — the card title is the preview section titles.
+  const confirmTitle = (sections: any[] | undefined, progress?: string) => {
+    const titles = Array.isArray(sections)
+      ? Array.from(new Set(sections.map((section) => String(section?.title ?? '').trim()).filter(Boolean)))
+      : []
+    const label = titles.length > 0 ? titles.join(', ') : 'Action'
+    return `Confirm: ${label}${progress ? ` (${progress})` : ''}`
+  }
+
   if (action.type === 'navigate') {
-    return <p className="p-4 text-sm text-gain">Navigating to {action.route}...</p>
+    return <p className="cmdk-section cmdk-ok m-0 text-sm">Navigating to {action.route}...</p>
   }
 
   if (action.type === 'write_confirm_queue') {
     const confirmations = Array.isArray(action.confirmations) ? action.confirmations : []
     if (confirmations.length === 0) {
-      return <p className="p-4 text-sm text-muted-foreground">Nothing to confirm.</p>
+      return <p className="cmdk-section mne-muted m-0 text-sm">Nothing to confirm.</p>
     }
 
     const current = confirmations[Math.min(queueIndex, confirmations.length - 1)]
     const progress = `${Math.min(queueIndex + 1, confirmations.length)} of ${confirmations.length}`
 
     if (completed) {
-      return <p className="p-4 text-sm text-gain">Saved ✓</p>
+      return <p className="cmdk-section cmdk-ok m-0 text-sm">Saved ✓</p>
     }
 
     return (
-      <div className="p-4 space-y-3">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Confirm Action {progress}</p>
-        <p className="text-sm">{current.confirmationMessage}</p>
+      <div className="cmdk-section">
+        <div className="mne-cmd-q">{confirmTitle(current.previewSections, progress)}</div>
+        <p className="mne-muted m-0 text-sm">{current.confirmationMessage}</p>
         <PreviewSections sections={current.previewSections} />
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex gap-2">
+        {error && <p className="cmdk-error m-0">▼ {error}</p>}
+        <div className="mne-cmd-actions">
+          <button className="mne-btn is-ghost is-sm" onClick={onClose}>
+            Cancel
+          </button>
           <button
             disabled={executing}
-            className="flex-1 bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium disabled:opacity-50"
+            className="mne-btn is-sm"
             onClick={async () => {
               setExecuting(true)
               setError(null)
@@ -1154,12 +1172,6 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
           >
             {executing ? 'Saving...' : queueIndex < confirmations.length - 1 ? 'Confirm & next' : 'Confirm'}
           </button>
-          <button
-            className="flex-1 bg-muted text-muted-foreground rounded-md py-2 text-sm hover:bg-muted/80 transition-colors"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
         </div>
       </div>
     )
@@ -1167,19 +1179,22 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
 
   if (action.type === 'write_confirm') {
     if (completed) {
-      return <p className="p-4 text-sm text-gain">Saved ✓</p>
+      return <p className="cmdk-section cmdk-ok m-0 text-sm">Saved ✓</p>
     }
 
     return (
-      <div className="p-4 space-y-3">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Confirm Action</p>
-        <p className="text-sm">{action.confirmationMessage}</p>
+      <div className="cmdk-section">
+        <div className="mne-cmd-q">{confirmTitle(action.previewSections)}</div>
+        <p className="mne-muted m-0 text-sm">{action.confirmationMessage}</p>
         <PreviewSections sections={action.previewSections} />
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex gap-2">
+        {error && <p className="cmdk-error m-0">▼ {error}</p>}
+        <div className="mne-cmd-actions">
+          <button className="mne-btn is-ghost is-sm" onClick={onClose}>
+            Cancel
+          </button>
           <button
             disabled={executing}
-            className="flex-1 bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium disabled:opacity-50"
+            className="mne-btn is-sm"
             onClick={async () => {
               setExecuting(true)
               setError(null)
@@ -1196,18 +1211,12 @@ function CommandResult({ action, onDone, onClose }: { action: any; onDone: () =>
           >
             {executing ? 'Saving...' : 'Confirm'}
           </button>
-          <button
-            className="flex-1 bg-muted text-muted-foreground rounded-md py-2 text-sm hover:bg-muted/80 transition-colors"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
         </div>
       </div>
     )
   }
 
-  return <p className="p-4 text-sm text-destructive">{normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
+  return <p className="cmdk-section cmdk-error m-0">▼ {normalizeErrorMessage(action.message ?? 'Something went wrong')}</p>
 }
 
 function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin }: { message: DisplayMessage; onDone: () => void; onClose: () => void; userQuery?: string; conversationOrigin?: ConversationOrigin }) {
@@ -1215,85 +1224,76 @@ function MessageBubble({ message, onDone, onClose, userQuery, conversationOrigin
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   if (message.role === 'user') {
-    return (
-      <div className="flex justify-end">
-        <span className="bg-primary text-primary-foreground text-sm px-3.5 py-2 rounded-lg rounded-br-md max-w-[80%] whitespace-pre-wrap break-words selection:bg-primary-foreground selection:text-primary">
-          {message.content}
-        </span>
-      </div>
-    )
+    // Design: the question is a bold line (`.mne-cmd-q`), the reply below it is muted.
+    return <div className="mne-cmd-q whitespace-pre-wrap break-words">{message.content}</div>
   }
   if (message.kind === 'text') {
     const traceSteps = message.trace?.steps ?? []
     const usage = message.trace?.usage
 
     return (
-      <div className="flex items-start gap-2">
-        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-subtle mt-0.5">
-          <Sparkles size={11} className="text-primary" aria-hidden="true" />
+      <div className="cmdk-reply text-sm">
+        {message.explanationDetail
+          ? <ExplanationMessageContent content={message.content} detail={message.explanationDetail} />
+          : renderAssistantMarkdown(message.content)}
+        {traceSteps.length > 0 && (
+          <ThinkingSteps
+            size="compact"
+            open={showTrace}
+            onOpenChange={setShowTrace}
+            className="w-full -mx-1"
+          >
+            <ThinkingStepsHeader>Agent trace</ThinkingStepsHeader>
+            <ThinkingStepsContent>
+              {traceSteps.map((step, idx) => (
+                <ThinkingStep
+                  key={`${idx}-${step.label}`}
+                  label={step.label}
+                  description={step.detail}
+                  status="complete"
+                />
+              ))}
+            </ThinkingStepsContent>
+          </ThinkingSteps>
+        )}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen((prev) => !prev)}
+            className="cmdk-feedback-link"
+            aria-label="Give feedback on this response"
+          >
+            <MessageSquare size={12} aria-hidden="true" />
+            Feedback
+          </button>
+          <TokenUsageInfo inputTokens={usage?.inputTokens} outputTokens={usage?.outputTokens} />
         </div>
-        <div className="text-sm text-foreground max-w-[80%] space-y-2 bg-muted/40 rounded-lg rounded-tl-md px-3.5 py-2.5">
-          {message.explanationDetail
-            ? <ExplanationMessageContent content={message.content} detail={message.explanationDetail} />
-            : renderAssistantMarkdown(message.content)}
-          {traceSteps.length > 0 && (
-            <ThinkingSteps
-              size="compact"
-              open={showTrace}
-              onOpenChange={setShowTrace}
-              className="w-full -mx-1"
-            >
-              <ThinkingStepsHeader>Agent trace</ThinkingStepsHeader>
-              <ThinkingStepsContent>
-                {traceSteps.map((step, idx) => (
-                  <ThinkingStep
-                    key={`${idx}-${step.label}`}
-                    label={step.label}
-                    description={step.detail}
-                    status="complete"
-                    isLast={idx === traceSteps.length - 1}
-                  />
-                ))}
-              </ThinkingStepsContent>
-            </ThinkingSteps>
-          )}
-          <div className="pt-1 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setFeedbackOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Give feedback on this response"
-            >
-              <MessageSquare size={11} aria-hidden="true" />
-              Feedback
-            </button>
-            <TokenUsageInfo inputTokens={usage?.inputTokens} outputTokens={usage?.outputTokens} />
-          </div>
-          {feedbackOpen && (
-            <FeedbackForm
-              agentResponse={message.content}
-              userQuery={userQuery}
-              usage={usage}
-              conversationOrigin={conversationOrigin}
-              onDismiss={() => setFeedbackOpen(false)}
-            />
-          )}
-        </div>
+        {feedbackOpen && (
+          <FeedbackForm
+            agentResponse={message.content}
+            userQuery={userQuery}
+            usage={usage}
+            conversationOrigin={conversationOrigin}
+            onDismiss={() => setFeedbackOpen(false)}
+          />
+        )}
       </div>
     )
   }
   return (
     <div className="flex justify-start w-full">
-      <div className="w-full">
+      <div className="w-full -mx-4" style={{ width: 'calc(100% + 2rem)' }}>
         <CommandResult action={message.action} onDone={onDone} onClose={onClose} />
       </div>
     </div>
   )
 }
 
-/** Inline feedback form for a single agent response — free text plus an
- *  optional file attachment (e.g. a screenshot of the bad output), submitted
- *  to `command_feedback` alongside the response text itself. */
+/** Inline feedback form for a single agent response — a thumbs rating, free
+ *  text, and an optional file attachment (e.g. a screenshot of the bad
+ *  output), submitted to `command_feedback` alongside the response text. The
+ *  table has no rating column, so a chosen thumb is recorded as a
+ *  "[Helpful]" / "[Not helpful]" prefix on the feedback text. */
 function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onDismiss }: {
   agentResponse: string
   userQuery?: string
@@ -1302,24 +1302,28 @@ function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onD
   onDismiss: () => void
 }) {
   const [text, setText] = useState('')
+  const [rating, setRating] = useState<'up' | 'down' | null>(null)
   const [attachment, setAttachment] = useState<CommandFeedbackAttachment | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const textId = useId()
 
   if (submitted) {
-    return <p className="text-xs text-gain">Thanks for the feedback ✓</p>
+    return <p className="cmdk-ok m-0 text-xs">Thanks for the feedback ✓</p>
   }
 
   async function handleSubmit() {
     setSubmitting(true)
     setError(null)
     try {
+      const ratingLabel = rating === 'up' ? '[Helpful]' : rating === 'down' ? '[Not helpful]' : ''
+      const body = [ratingLabel, text.trim()].filter(Boolean).join(' ')
       await submitCommandFeedback({
         userQuery,
         agentResponse,
-        feedbackText: text.trim() || null,
+        feedbackText: body || null,
         attachment,
         inputTokens: usage?.inputTokens ?? null,
         outputTokens: usage?.outputTokens ?? null,
@@ -1334,46 +1338,75 @@ function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onD
   }
 
   return (
-    <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+    <div className="mne-card grid gap-3 text-foreground" style={{ padding: 16 }}>
+      <div className="flex items-center justify-between gap-3">
+        <b>Was this helpful?</b>
+        <div className="mne-thumbs">
+          <button
+            type="button"
+            className="mne-thumb"
+            aria-pressed={rating === 'up'}
+            aria-label="Helpful"
+            onClick={() => setRating((prev) => (prev === 'up' ? null : 'up'))}
+          >
+            <svg viewBox="0 0 24 24"><path d="M7 11v9H4v-9zM7 11l4-8c2 0 3 1.5 2.5 3.5L13 9h6a2 2 0 0 1 2 2.4l-1.3 6.6a2 2 0 0 1-2 1.6H7" /></svg>
+          </button>
+          <button
+            type="button"
+            className="mne-thumb"
+            aria-pressed={rating === 'down'}
+            aria-label="Not helpful"
+            onClick={() => setRating((prev) => (prev === 'down' ? null : 'down'))}
+          >
+            <svg viewBox="0 0 24 24"><path d="M7 13V4H4v9zM7 13l4 8c2 0 3-1.5 2.5-3.5L13 15h6a2 2 0 0 0 2-2.4L19.7 6A2 2 0 0 0 17.7 4.4H7" /></svg>
+          </button>
+        </div>
+      </div>
       {conversationOrigin === 'portfolio_explanation' && (
-        <p className="text-xs text-muted-foreground italic">
+        <p className="mne-muted m-0 text-xs">
           This conversation started from the portfolio explanation card — that'll be noted with your feedback.
         </p>
       )}
-      <textarea
-        rows={2}
-        placeholder="What was wrong, or how could this be better?"
-        value={text}
-        onChange={e => setText(e.target.value)}
-        className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-base md:text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      />
+      <div className="mne-field">
+        <label htmlFor={textId}>What went wrong?</label>
+        <textarea
+          id={textId}
+          className="mne-input"
+          rows={2}
+          placeholder="What was wrong, or how could this be better?"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          style={{ resize: 'none' }}
+        />
+      </div>
       {attachment && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Paperclip size={10} className="shrink-0" />
+        <div className="cmdk-attach">
+          <Paperclip size={12} className="shrink-0" />
           <span className="truncate max-w-[200px]">{attachment.filename}</span>
-          <button type="button" onClick={() => setAttachment(null)} className="ml-auto shrink-0 hover:text-foreground transition-colors">
-            <X size={10} />
+          <button type="button" onClick={() => setAttachment(null)} aria-label="Remove attachment">
+            <X size={12} />
           </button>
         </div>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <div className="flex items-center gap-2">
+      {error && <p className="cmdk-error m-0">▼ {error}</p>}
+      <div className="flex items-center gap-2 justify-end">
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+          className="cmdk-ibtn mr-auto"
           title="Attach a file"
+          aria-label="Attach a file"
         >
-          <Paperclip size={13} />
+          <Paperclip />
         </button>
-        <button type="button" onClick={onDismiss} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <button type="button" className="mne-btn is-ghost is-sm" onClick={onDismiss}>
           Cancel
         </button>
         <button
           type="button"
-          disabled={submitting || (!text.trim() && !attachment)}
+          className="mne-btn is-sm"
+          disabled={submitting || (!text.trim() && !attachment && !rating)}
           onClick={handleSubmit}
-          className="ml-auto text-xs font-medium bg-primary text-primary-foreground rounded-md px-2.5 py-1 disabled:opacity-50"
         >
           {submitting ? 'Sending...' : 'Send'}
         </button>

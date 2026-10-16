@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Info } from 'lucide-react'
 
-/** A small (i) icon button that reveals token usage as a click-triggered
- *  tooltip — usage stays hidden until asked for, rather than always
- *  cluttering the explanation card / command bar reply. Click-triggered
- *  (not hover) so it works the same on touch as on desktop; closes on an
- *  outside click. Renders nothing when there's no usage to show. */
+/** Design-system InfoPopover: a small "i" button that reveals token usage in a
+ *  click-triggered popover (click, not hover, so it works on touch). Closes on
+ *  an outside click. Renders nothing when there's no usage to show. */
 export function TokenUsageInfo({ inputTokens, outputTokens }: { inputTokens?: number | null; outputTokens?: number | null }) {
   const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -23,28 +20,28 @@ export function TokenUsageInfo({ inputTokens, outputTokens }: { inputTokens?: nu
   if (!hasUsage) return null
 
   return (
-    <div ref={containerRef} className="relative inline-flex items-center">
+    <span ref={containerRef} className="mne-pop-wrap">
       <button
         type="button"
-        // stopPropagation: this often sits inside a larger click target
-        // (e.g. the whole portfolio explanation card) that must not also
-        // fire when someone's just checking token usage.
+        // stopPropagation: this often sits inside a larger click target that
+        // must not also fire when someone's just checking token usage.
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev) }}
         aria-label="Show token usage"
         aria-expanded={open}
-        className="flex h-4 w-4 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+        className="mne-info-btn"
       >
-        <Info size={11} />
+        i
       </button>
-      {open && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          role="tooltip"
-          className="absolute right-0 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs whitespace-nowrap shadow-md z-50 tabular-nums"
-        >
-          {(inputTokens ?? 0).toLocaleString()} in · {(outputTokens ?? 0).toLocaleString()} out tokens
-        </div>
-      )}
-    </div>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="tooltip"
+        hidden={!open}
+        className={`mne-pop${open ? ' is-open' : ''}`}
+        style={{ top: 'auto', bottom: 'calc(100% + 8px)', left: 'auto', right: 0, display: open ? undefined : 'none' }}
+      >
+        <div>Input <b>{(inputTokens ?? 0).toLocaleString()}</b> tokens</div>
+        <div>Output <b>{(outputTokens ?? 0).toLocaleString()}</b> tokens</div>
+      </div>
+    </span>
   )
 }

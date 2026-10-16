@@ -1,0 +1,42 @@
+/* Portfolio + Asset detail: small additions on top of the design system's .mne-* classes. */
+.pf-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.pf-search { flex: 1; min-width: 220px; max-width: 340px; }
+.pf-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+.pf-card { display: block; color: inherit; text-decoration: none; min-width: 0; }
+.pf-card:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pf-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.pf-card-head > div:first-child { min-width: 0; }
+.pf-card-head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-card-chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.pf-cap { font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.mne-chip { border: 0; color: var(--mne-ink); cursor: pointer; font-family: inherit; transition: background var(--mne-dur) linear, color var(--mne-dur) linear, border-color var(--mne-dur) linear; }
+button.mne-chip.is-outline { border: 1px solid var(--mne-line-strong); }
+button.mne-chip.is-accent { border: 1px solid var(--mne-accent); }
+button.mne-chip:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); color: var(--mne-on-accent); }
+.pf-table-row { cursor: pointer; }
+.pf-table-row a { color: inherit; text-decoration: none; }
+.pf-table-row a:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pf-table-row .sub { display: block; font-weight: 400; font-size: 12px; line-height: 16px; color: var(--mne-ink-muted); }
+@media (max-width: 640px) { .pf-hide-sm { display: none; } }
+.pf-fade { animation: pf-fade var(--mne-dur) var(--mne-ease) both; }
+@keyframes pf-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pf-fade { animation: none; } }
+.pf-lot-edit { display: grid; gap: 12px; padding: 12px; background: var(--mne-surface-300); border-radius: var(--mne-radius-md); }
+.pf-lot-edit-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.pf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pf-iconbtn { background: none; border: 0; padding: 4px; border-radius: var(--mne-radius-sm); color: var(--mne-ink-muted); cursor: pointer; display: inline-grid; place-content: center; }
+.pf-iconbtn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
+.pf-iconbtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pf-iconbtn.is-danger:hover { color: var(--mne-loss); }
+.pf-disclose { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--mne-ink); font: inherit; text-align: left; }
+.pf-disclose:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.pf-chev { transition: transform var(--mne-dur) var(--mne-ease); }
+.pf-chev.is-open { transform: rotate(180deg); }
+.pf-sub { border-top: 1px solid var(--mne-line); padding-top: 12px; }
+.pf-sub:first-child { border-top: 0; padding-top: 0; }
+.pf-scroll { overflow-x: auto; position: relative; }
+.pf-table-row td.r { white-space: nowrap; }
+@media (max-width: 640px) { .mne-card.pf-scroll { padding: 12px; } .mne-table td, .mne-table th { padding-left: 8px; padding-right: 8px; } }
+.pf-scroll .mne-chip, .pf-scroll td { white-space: nowrap; }

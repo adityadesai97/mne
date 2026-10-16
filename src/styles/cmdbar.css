@@ -1,0 +1,51 @@
+/* Small shared rules for the command bar + feedback/notification components
+   that the design bundle's mne.css doesn't cover. Uses only --mne-* tokens. */
+
+/* Button / chip type from the design: 13px/500 (12px for the small button). */
+.ui-btn-text { font: 500 13px/18px var(--mne-font-sans); }
+.ui-btn-text-sm { font: 500 12px/18px var(--mne-font-sans); }
+.ui-chip-text { font: 500 13px/18px var(--mne-font-sans); }
+
+/* Form control type: 15px/22px per .mne-input (16px on touch to avoid iOS zoom). */
+.ui-input-text { font: 400 15px/22px var(--mne-font-sans); }
+@media (pointer: coarse) { .ui-input-text { font-size: 16px; } }
+
+/* Skeleton: same look as .mne-skel but zero specificity, so a call site's
+   rounded and size utilities still win (the design's is-pill = rounded-full). */
+:where(.ui-skel) {
+  background: linear-gradient(90deg, var(--mne-surface-300) 30%, var(--mne-line) 50%, var(--mne-surface-300) 70%);
+  background-size: 200% 100%;
+  animation: mne-sh 1.8s linear infinite;
+  border-radius: var(--mne-radius-sm);
+}
+
+/* Command bar: the panel is .mne-cmd (flat, no stacked rows), content inside
+   keeps the design's 12px rhythm. */
+.mne-cmd.cmdk-panel { padding: 0; gap: 0; box-shadow: var(--mne-shadow-card); }
+.cmdk-section { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.cmdk-section + .cmdk-section, .cmdk-foot { border-top: 1px solid var(--mne-line); }
+.cmdk-foot { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.cmdk-ibtn { flex: none; display: grid; place-content: center; width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--mne-ink-muted); cursor: pointer; transition: background var(--mne-dur) linear, color var(--mne-dur) linear; }
+.cmdk-ibtn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
+.cmdk-ibtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.cmdk-ibtn svg { width: 16px; height: 16px; }
+/* Pill field that hosts the textarea (design: pill .mne-input in .mne-cmd-row). */
+.cmdk-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-pill); padding: 4px 6px 4px 16px; transition: border-color var(--mne-dur) linear; }
+.cmdk-field:hover { border-color: var(--mne-ink-muted); }
+.cmdk-field:focus-within { border-color: var(--mne-accent); }
+.cmdk-field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; resize: none; color: var(--mne-ink); padding: 6px 0; font: 400 15px/22px var(--mne-font-sans); max-height: 144px; }
+.cmdk-field textarea::placeholder { color: var(--mne-ink-muted); }
+@media (pointer: coarse) { .cmdk-field textarea { font-size: 16px; } }
+.cmdk-bubble-user { align-self: flex-end; max-width: 90%; background: var(--mne-surface-300); border-radius: var(--mne-radius-md); padding: 8px 14px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmdk-reply { color: var(--mne-ink-muted); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cmdk-reply .cmdk-md-strong, .cmdk-reply strong { color: var(--mne-ink); }
+.cmdk-attach { display: flex; align-items: center; gap: 6px; color: var(--mne-ink-muted); font: 400 12px/16px var(--mne-font-sans); }
+.cmdk-attach button { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; }
+.cmdk-table-wrap { overflow: auto; max-height: 14rem; }
+.cmdk-error { color: var(--mne-loss); font: 400 13px/18px var(--mne-font-sans); }
+.cmdk-ok { color: var(--mne-gain); font-weight: 500; }
+.cmdk-title { font: 500 12px/16px var(--mne-font-sans); letter-spacing: .08em; text-transform: uppercase; color: var(--mne-ink-muted); }
+.cmdk-feedback-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--mne-ink-muted); font: 500 12px/16px var(--mne-font-sans); transition: color var(--mne-dur) linear; }
+.cmdk-feedback-link:hover { color: var(--mne-ink); }
+.cmdk-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(27, 22, 18, .5); }
+.mne-thumb { padding: 0; }

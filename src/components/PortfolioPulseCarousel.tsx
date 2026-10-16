@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
 import { Sparkles, ArrowRight } from 'lucide-react'
 import {
   computeMovers,
@@ -24,8 +23,8 @@ import { getTickerPriceHistory, type TickerPricePoint } from '@/lib/db/tickerPri
 import { getPortfolioExplanation, type PortfolioExplanationRow } from '@/lib/db/portfolioExplanations'
 import { openPortfolioExplanationInCommandBar, openCommandBarWithPrompt } from '@/lib/commandBarBridge'
 import { isTickerAsset } from '@/lib/portfolio'
-import { revealUp } from '@/lib/motionPresets'
 import { CardEyebrow } from '@/components/CardEyebrow'
+import { Chip } from '@/components/mne'
 
 const AUTOPLAY_MS = 3200
 // How long a manual swipe/scroll suppresses autoplay before it resumes.
@@ -34,6 +33,21 @@ const RESUME_AUTOPLAY_MS = 5000
 // notable-move scan window (270d, see CUSTOM_WINDOW_DAYS in
 // portfolioExplanation.ts), with a little slack.
 const PRICE_HISTORY_LOOKBACK_DAYS = 372
+
+const TIMEFRAME_LABEL: Record<string, string> = {
+  daily: 'Today',
+  weekly: 'This week',
+  monthly: 'This month',
+  yearly: 'This year',
+  custom: 'Notable move',
+}
+const EVENT_LABEL: Record<string, string> = {
+  rsu_vest: 'RSU vest',
+  long_term: 'Long term',
+  harvest: 'Tax-loss candidate',
+  allocation_drift: 'Allocation drift',
+  earnings: 'Earnings',
+}
 
 function slotKey(slot: PortfolioInsightSlot): string {
   return `${slot.scope}:${slot.scopeKey}:${slot.timeframe}`
@@ -219,62 +233,67 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
   if (cards.length === 0) return null
 
   return (
-    <motion.div
-      {...revealUp(0.02)}
+    <section
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="md:col-span-6 bg-card shadow-card rounded-lg p-5"
+      className="mne-card mne-pulse s6"
+      aria-roledescription="carousel"
+      aria-label="Portfolio Pulse"
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
-        {cards.length > 1 && (
-          <div className="flex items-center gap-1.5 shrink-0" role="tablist" aria-label="Portfolio Pulse insights">
-            {cards.map((c, i) => (
-              <button
-                key={c.key}
-                type="button"
-                role="tab"
-                aria-selected={i === index}
-                aria-label={`Show insight ${i + 1} of ${cards.length}`}
-                onClick={() => { pauseAutoplayTemporarily(); setIndex(i) }}
-                className={`shrink-0 rounded-full transition-all ${i === index ? 'h-2 w-2 bg-primary' : 'h-1.5 w-1.5 bg-muted-foreground/30'}`}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
+      {/* The viewport is the scroll-snap strip (swipe/trackpad/dots/autoplay
+          all drive the same scrollLeft); slides use the design's `.slide`. */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         onPointerDown={pauseAutoplayTemporarily}
         onTouchStart={pauseAutoplayTemporarily}
-        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+        className="vp snap-x snap-mandatory no-scrollbar"
+        style={{ marginTop: 12, overflowX: 'auto' }}
       >
-        {cards.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            onClick={() => {
-              if (c.type === 'move') {
-                openPortfolioExplanationInCommandBar(c.slot)
-              } else {
-                setSeenEventIds(markEventSeen(c.event.id))
-                openCommandBarWithPrompt(c.event.question)
-              }
-            }}
-            title="Ask about this in the command bar"
-            className="w-full shrink-0 snap-center text-left cursor-pointer"
-          >
-            <p className="text-sm text-foreground leading-relaxed break-words">
-              {c.type === 'move' && c.tag && (
-                <span className="mr-2 inline-block rounded-full bg-muted px-2 py-0.5 align-baseline text-xs font-medium text-muted-foreground">{c.tag}</span>
-              )}
-              {c.type === 'move' ? c.teaser : c.event.text}{' '}
-              <ArrowRight size={14} className="inline align-text-bottom text-muted-foreground" aria-hidden="true" />
-            </p>
-          </button>
-        ))}
+        <div className="track">
+          {cards.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => {
+                if (c.type === 'move') {
+                  openPortfolioExplanationInCommandBar(c.slot)
+                } else {
+                  setSeenEventIds(markEventSeen(c.event.id))
+                  openCommandBarWithPrompt(c.event.question)
+                }
+              }}
+              title="Ask about this in the command bar"
+              className="slide snap-start text-left cursor-pointer break-words"
+              style={{ border: 0, font: 'inherit', color: 'inherit' }}
+            >
+              {c.type === 'move'
+                ? (c.tag
+                  ? <Chip variant="tag">{c.tag}</Chip>
+                  : <Chip variant="outline">{TIMEFRAME_LABEL[c.slot.timeframe] ?? 'Notable move'}</Chip>)
+                : <Chip variant="outline">{EVENT_LABEL[c.event.kind] ?? 'Heads up'}</Chip>}
+              <span>
+                {c.type === 'move' ? c.teaser : c.event.text}{' '}
+                <ArrowRight size={14} className="inline align-text-bottom mne-muted" aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
-    </motion.div>
+      {cards.length > 1 && (
+        <div className="dots" role="group" aria-label="Portfolio Pulse insights">
+          {cards.map((c, i) => (
+            <button
+              key={c.key}
+              type="button"
+              aria-current={i === index}
+              aria-label={`Show insight ${i + 1} of ${cards.length}`}
+              onClick={() => { pauseAutoplayTemporarily(); setIndex(i) }}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
