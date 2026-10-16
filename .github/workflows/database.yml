@@ -23,6 +23,15 @@ jobs:
         with:
           version: latest
 
+      # Fresh databases are built by the bootstrap script (that is what setup.sh
+      # does). The dated migrations are incremental upgrades for the hosted
+      # project and cannot all replay on an empty database (for example
+      # 20260331 expects an admin_users table the baseline never created), so
+      # keep `supabase start` from applying them. The in-process tests in
+      # src/__tests__/db check the migration chain.
+      - name: Keep supabase start from replaying incremental migrations
+        run: mv supabase/migrations /tmp/mne-migrations
+
       - name: Start local Supabase
         run: supabase start -x edge-runtime,imgproxy,logflare,vector,studio,mailpit
 
