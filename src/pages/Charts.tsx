@@ -139,7 +139,7 @@ export default function Charts() {
       <div className="mne-main">
         <PageHead title="Charts" />
 
-        <Masonry>
+        <Masonry fill>
           {/* PORTFOLIO ALLOCATION */}
           <section className="mne-card">
             <div className="mne-chart-head">
