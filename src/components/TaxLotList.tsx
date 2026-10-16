@@ -94,7 +94,9 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
     if (opts.summary === false) {
       return <StockLotRows lots={[...lots].sort((a, b) => String(b.date).localeCompare(String(a.date)))} ctx={ctx} />
     }
-    return <StockSummary lots={lots} ctx={ctx} detailLabel={opts.detailLabel} />
+    // With a single subtype section the stat strip repeats the asset header's
+    // own Shares / Cost basis / Value / Gain, so it is dropped on phones.
+    return <StockSummary lots={lots} ctx={ctx} detailLabel={opts.detailLabel} hideStatsOnMobile={subtypesWithActivity.length === 1} />
   }
 
   function renderGrant(group: { grant: any; transactions: any[] }) {

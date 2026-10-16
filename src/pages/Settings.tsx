@@ -475,7 +475,7 @@ export default function Settings() {
         {/* API keys */}
         <section className="mne-card" aria-labelledby="settings-keys">
           <h2 id="settings-keys" className="mne-section-title">API keys</h2>
-          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+          <p className="mne-muted hidden sm:block" style={{ margin: '0 0 12px' }}>
             Saved write-only on the server. They never come back to your browser.
           </p>
           {editingKeys ? (
@@ -565,14 +565,14 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Privacy mode</div>
-                <div className="d">Blur dollar amounts on Home, Portfolio, and Charts</div>
+                <div className="d hidden sm:block">Blur dollar amounts on Home, Portfolio, and Charts</div>
               </div>
               <Switch label="Privacy mode" checked={hideValues} onChange={setHideValues} />
             </div>
             <div className="mne-row">
               <div>
                 <div className="t">Tax lot layout</div>
-                <div className="d">How an asset's lots are shown: a summary first, or a timeline with upcoming dates</div>
+                <div className="d hidden sm:block">How an asset's lots are shown: a summary first, or a timeline with upcoming dates</div>
               </div>
               <Dropdown<'default' | 'timeline'>
                 label="Tax lot layout"
@@ -585,7 +585,7 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Portfolio Pulse layout</div>
-                <div className="d">How Home shows insights: one at a time in a carousel, or the top insight with the rest folded below</div>
+                <div className="d hidden sm:block">How Home shows insights: one at a time in a carousel, or the top insight with the rest folded below</div>
               </div>
               <Dropdown<'carousel' | 'headline'>
                 label="Portfolio Pulse layout"
@@ -605,7 +605,7 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Auto-assign themes</div>
-                <div className="d">Use AI to suggest themes when new tickers are created</div>
+                <div className="d hidden sm:block">Use AI to suggest themes when new tickers are created</div>
               </div>
               <Switch
                 label="Auto-assign themes"
@@ -616,7 +616,7 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Conversation history</div>
-                <div className="d">View and continue past command bar conversations</div>
+                <div className="d hidden sm:block">View and continue past command bar conversations</div>
               </div>
               <button type="button" className="mne-btn is-ghost is-sm" onClick={openConversationHistory}>Open</button>
             </div>
@@ -675,7 +675,7 @@ export default function Settings() {
             <div className="mne-row">
               <div>
                 <div className="t">Push notifications</div>
-                <div className="d">{pushEnabled ? 'Enabled' : 'Allow price and vest alerts'}</div>
+                <div className="d hidden sm:block">{pushEnabled ? 'Enabled' : 'Allow price and vest alerts'}</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {pushToggleBusy && <Loader2 size={16} className="animate-spin mne-muted" aria-label="Updating" />}
@@ -687,7 +687,7 @@ export default function Settings() {
                 <div className="mne-row">
                   <div>
                     <div className="t">Price alerts</div>
-                    <div className="d">Alert when a price moves by this %</div>
+                    <div className="d hidden sm:block">Alert when a price moves by this %</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: settings.price_alerts_enabled ? 1 : 0.6 }}>
                     <input
@@ -707,7 +707,7 @@ export default function Settings() {
                 <div className="mne-row">
                   <div>
                     <div className="t">RSU vest reminders</div>
-                    <div className="d">Days before a vest to notify</div>
+                    <div className="d hidden sm:block">Days before a vest to notify</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: settings.vest_alerts_enabled ? 1 : 0.6 }}>
                     <input
@@ -727,7 +727,7 @@ export default function Settings() {
                 <div className="mne-row">
                   <div>
                     <div className="t">Capital gains alerts</div>
-                    <div className="d">Notify when Short Term lots are promoted to Long Term (after 1 year).</div>
+                    <div className="d hidden sm:block">Notify when Short Term lots are promoted to Long Term (after 1 year).</div>
                   </div>
                   <Switch label="Capital gains alerts" checked={settings.capital_gains_alerts_enabled} onChange={v => { void setNotificationToggle('capital_gains_alerts_enabled', v) }} />
                 </div>
@@ -739,7 +739,7 @@ export default function Settings() {
         {/* Connected accounts */}
         <section className="mne-card" aria-labelledby="settings-plaid">
           <h2 id="settings-plaid" className="mne-section-title">Connected accounts</h2>
-          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+          <p className="mne-muted hidden sm:block" style={{ margin: '0 0 12px' }}>
             Connect brokerages and banks through Plaid with your own free developer credentials.
           </p>
           {editingPlaidCreds ? (
@@ -787,7 +787,7 @@ export default function Settings() {
               <div className="mne-row">
                 <div>
                   <div className="t">{plaidStatus.configured ? 'Plaid credentials configured' : 'Set up Plaid credentials'}</div>
-                  {!plaidStatus.configured && <div className="d">Required once, free. Connects accounts instead of manual entry.</div>}
+                  {!plaidStatus.configured && <div className="d hidden sm:block">Required once, free. Connects accounts instead of manual entry.</div>}
                 </div>
                 <button
                   type="button"
@@ -806,7 +806,7 @@ export default function Settings() {
                 <div className="mne-row">
                   <div>
                     <div className="t">Review {plaidPendingCount} synced position{plaidPendingCount !== 1 ? 's' : ''}</div>
-                    <div className="d">Nothing is added to your portfolio until you confirm each one</div>
+                    <div className="d hidden sm:block">Nothing is added to your portfolio until you confirm each one</div>
                   </div>
                   <button type="button" className="mne-btn is-sm" onClick={() => setPlaidReviewOpen(true)}>Review</button>
                 </div>
@@ -912,7 +912,7 @@ export default function Settings() {
         {/* Data */}
         <section className="mne-card" aria-labelledby="settings-data">
           <h2 id="settings-data" className="mne-section-title">Data</h2>
-          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+          <p className={`mne-muted${importLoading ? '' : ' hidden sm:block'}`} style={{ margin: '0 0 12px' }}>
             {importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Download a spreadsheet backup, or restore from one (.xlsx or .json).'}
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -969,7 +969,7 @@ export default function Settings() {
         {isAdmin && (
           <section className="mne-card" aria-labelledby="settings-admin">
             <h2 id="settings-admin" className="mne-section-title">Allowed users</h2>
-            <p className="mne-muted" style={{ margin: '0 0 12px' }}>Only these emails can sign up.</p>
+            <p className="mne-muted hidden sm:block" style={{ margin: '0 0 12px' }}>Only these emails can sign up.</p>
             {allowedEmails.length > 0 ? (
               <div className="mne-list">
                 {allowedEmails.map(e => (

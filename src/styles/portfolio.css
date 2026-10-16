@@ -52,10 +52,11 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 .mne-dd-menu .pf-dd-k { display: none; }
 @media (max-width: 640px) {
   .pf-toolbar .pf-search { flex-basis: 100%; }
-  .pf-toolbar .mne-dd { flex: 1 1 auto; min-width: 0; }
+  .pf-toolbar .mne-dd { flex: 1 1 0; min-width: 0; }
   .pf-toolbar .mne-dd-trigger { padding: 0 10px; gap: 4px; }
   .pf-toolbar .mne-dd-trigger::before { width: 16px; }
-  .pf-toolbar .pf-dd-k { margin-right: 4px; }
+  /* Keys ("Type", "Sort") are dropped on phones so all three controls fit one row. */
+  .pf-toolbar .pf-dd-k { display: none; }
 }
 
 /* Asset logo: small neutral rounded tile; image or type icon. */
@@ -81,3 +82,8 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 @media (max-width: 640px) { .pf-rowname { flex-basis: 100%; } }
 .pf-detail-head { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .pf-detail-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Asset detail header stats: two per row on phones. */
+@media (max-width: 640px) { .pf-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+/* List rows: icon tags are secondary on phones (the row is already tall). */
+@media (max-width: 640px) { .pf-rowtext .pf-tags { display: none; } }

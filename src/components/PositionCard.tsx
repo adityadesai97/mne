@@ -100,7 +100,7 @@ export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: n
           <div className="mne-help" style={{ marginTop: 6 }}>
             {qtyLabel ?? asset.asset_type}
             {(isStock || isTradable) && basis > 0 && (
-              <> · cost <span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span></>
+              <span className="max-sm:hidden"> · cost <span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span></span>
             )}
           </div>
         </>

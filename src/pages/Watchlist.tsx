@@ -218,7 +218,7 @@ export default function Watchlist() {
     <div className="mne-main">
       <PageHead title="Watchlist">
         {formatRelativeTime(pricesRefreshedAt) && (
-          <span className="mne-muted text-xs">Prices {formatRelativeTime(pricesRefreshedAt)}</span>
+          <span className="mne-muted text-xs max-sm:hidden">Prices {formatRelativeTime(pricesRefreshedAt)}</span>
         )}
       </PageHead>
 
@@ -283,7 +283,7 @@ export default function Watchlist() {
                   <th>Symbol</th>
                   <th className="r">Price</th>
                   <th className="r">Today</th>
-                  <th>Themes</th>
+                  <th className="max-sm:hidden">Themes</th>
                   <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -313,7 +313,7 @@ export default function Watchlist() {
                         </td>
                         <td className="r mne-num">${currentPrice.toFixed(2)}</td>
                         <td className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
-                        <td>
+                        <td className="max-sm:hidden">
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {t.ticker_themes?.map((tt: any) => (
                               <span key={tt.theme.id} className="mne-chip is-outline">{tt.theme.name}</span>

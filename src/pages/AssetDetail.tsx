@@ -415,7 +415,7 @@ export default function AssetDetail() {
               </div>
             )}
 
-            <div className="mne-stats" style={{ marginTop: 20 }}>
+            <div className="mne-stats pf-detail-stats" style={{ marginTop: 20 }}>
               {noPriceData ? (
                 <Stat label="Value" value={<span className="mne-muted">—</span>} sub="Price pending" subClassName="mne-muted" />
               ) : (
@@ -427,6 +427,7 @@ export default function AssetDetail() {
               )}
               {isStock && !noPriceData && (
                 <Stat
+                  className="max-sm:hidden"
                   label="Price"
                   value={<span className={hiddenValueClass(hideValues)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>}
                 />
@@ -453,7 +454,7 @@ export default function AssetDetail() {
       {isStock && (
         <section className="mne-card pf-fade">
           <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Tax lots</h3>
-          <p className="mne-help" style={{ marginBottom: 12 }}>
+          <p className="mne-help max-sm:hidden" style={{ marginBottom: 12 }}>
             {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
             {stockGrantCount > 0 && <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>}
           </p>

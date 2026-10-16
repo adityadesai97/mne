@@ -73,6 +73,8 @@ export default function Home() {
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [snapshotsLoaded, setSnapshotsLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  // Phone width: the secondary stat cards (Largest holding, Best performer) are dropped.
+  const [isPhone, setIsPhone] = useState(() => window.innerWidth < 640)
   const [firstName, setFirstName] = useState<string | null>(null)
   const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
     () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
@@ -120,7 +122,7 @@ export default function Home() {
   }, [assetsLoaded, assets.length])
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
+    const onResize = () => { setIsMobile(window.innerWidth < 768); setIsPhone(window.innerWidth < 640) }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -411,7 +413,7 @@ export default function Home() {
 
           {/* Rotating insight ticker */}
           {insights.length > 0 && (
-            <div className="mne-muted" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12, lineHeight: '16px', overflow: 'hidden' }}>
+            <div className="mne-muted hidden sm:flex" style={{ alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12, lineHeight: '16px', overflow: 'hidden' }}>
               <Lightbulb size={14} style={{ flex: 'none', color: 'var(--mne-accent)' }} aria-hidden="true" />
               <AnimatePresence mode="wait">
                 <motion.span
@@ -464,12 +466,14 @@ export default function Home() {
           <section className="mne-card">
             <div className="flex items-center justify-between gap-2">
               <CardEyebrow icon={Activity}>Daily movers</CardEyebrow>
+              <span className="hidden sm:inline-flex">
               <SegmentedControl
                 label="Sort movers"
                 value={moverSort}
                 options={[{ value: 'percent', label: 'By %' }, { value: 'value', label: 'By value' }] as const}
                 onChange={setMoverSort}
               />
+              </span>
             </div>
             <table className="mne-table is-compact" style={{ marginTop: 8 }}>
               <tbody>
@@ -492,7 +496,7 @@ export default function Home() {
         )}
 
         {/* LARGEST HOLDING */}
-        <section className="mne-card">
+        {!isPhone && <section className="mne-card">
           <CardEyebrow icon={Crown} accent>Largest holding</CardEyebrow>
           {largestAsset ? (
             <Link to={`/portfolio/${largestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -506,7 +510,7 @@ export default function Home() {
           ) : (
             <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
           )}
-        </section>
+        </section>}
 
         {/* P&L */}
         <section className="mne-card">
@@ -520,7 +524,7 @@ export default function Home() {
         </section>
 
         {/* BEST PERFORMER */}
-        <section className="mne-card">
+        {!isPhone && <section className="mne-card">
           <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best performer</CardEyebrow>
           {bestAsset ? (
             <Link to={`/portfolio/${bestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -533,7 +537,7 @@ export default function Home() {
           ) : (
             <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
           )}
-        </section>
+        </section>}
 
       </Masonry>
     </div>
