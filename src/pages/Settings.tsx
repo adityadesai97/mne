@@ -347,12 +347,6 @@ export default function Settings() {
     setAllowedEmails(prev => prev.filter(e => e.id !== id))
   }
 
-  async function handleSignOut() {
-    await getSupabaseClient().auth.signOut()
-    config.markSignedOut()
-    window.location.href = '/'
-  }
-
   async function handleImportFile(file: File) {
     if (!file || importLoading) return
 
@@ -937,14 +931,6 @@ export default function Settings() {
             {allowlistError && <span className="mne-help is-error" role="alert" style={{ display: 'block', marginTop: 8 }}>▼ {allowlistError}</span>}
           </section>
         )}
-
-        {/* Account */}
-        <section className="mne-card" aria-labelledby="settings-account">
-          <h2 id="settings-account" className="mne-section-title">Account</h2>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-            <button type="button" className="mne-btn is-quiet" onClick={handleSignOut}>Sign out</button>
-          </div>
-        </section>
       </div>
     </div>
   )
