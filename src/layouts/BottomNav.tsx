@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Sparkles } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { useHasAssets } from '@/hooks/useHasAssets'
 import { NAV_ITEMS } from './Sidebar'
 import '@/styles/shell.css'
@@ -29,7 +29,7 @@ export default function BottomNav({ onAsk }: { onAsk?: () => void }) {
         {tabs.slice(0, mid).map(renderTab)}
         {onAsk && (
           <button type="button" className="mne-nav-ask" onClick={onAsk} aria-label="Ask mne" aria-haspopup="dialog">
-            <Sparkles size={22} strokeWidth={1.5} aria-hidden="true" />
+            <AiMark size={24} aria-hidden="true" />
           </button>
         )}
         {tabs.slice(mid).map(renderTab)}

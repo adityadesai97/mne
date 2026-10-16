@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useId, Fragment, useCallback } from 'react'
 import '@/styles/cmdbar.css'
 import { createPortal } from 'react-dom'
-import { X, Paperclip, MessageSquare, Sparkles, SquarePen, ArrowUp, History, ChevronLeft, Trash2 } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
+import { X, Paperclip, MessageSquare, SquarePen, ArrowUp, History, ChevronLeft, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
@@ -892,7 +893,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
           />
         )}
         <div className="cmdk-head-row">
-          <Sparkles size={18} strokeWidth={1.5} className="cmdk-head-icon" aria-hidden="true" />
+          <AiMark size={20} className="cmdk-head-icon" aria-hidden="true" />
           <h2 className="cmdk-heading" id={`${panelId}-title`}>Ask mne</h2>
           {contextLabel && <span className="mne-chip cmdk-context">Viewing {contextLabel}</span>}
           <span className="flex-1" />
