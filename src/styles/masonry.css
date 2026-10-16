@@ -16,6 +16,8 @@
 
 /* Reposition animation, only once the first layout is in place. */
 .mne-masonry.is-ready > .mne-masonry-item { transition: transform var(--dur-standard, 180ms) var(--ease-standard, cubic-bezier(.4, 0, .2, 1)); }
+/* While a card's height is animating, items follow it frame by frame (restarting a 180ms transition every frame lags). */
+.mne-masonry.is-ready.is-tracking > .mne-masonry-item { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .mne-masonry.is-ready > .mne-masonry-item { transition: none; }
 }

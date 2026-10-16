@@ -51,6 +51,8 @@ export function columnsForWidth(width: number, minColumnWidth: number, gap: numb
 
 /** Slack above which a hole is worth filling by pulling a later card forward. */
 const EPS = 1
+/** Resize notifications closer together than this (ms) count as one continuous size animation. */
+const TRACKING_WINDOW_MS = 100
 /** How many following items are considered when filling a hole. */
 const LOOKAHEAD = 8
 
@@ -109,7 +111,9 @@ export function packMasonry(items: PackItem[], columns: number, gap = 0): { plac
           const newY = Math.max(y, newTop)
           let w = 0
           for (let c = start; c < start + span; c++) w += newY - (c === lowest ? newTop : tops[c])
-          if (w < pickWaste) { pickWaste = w; pick = j }
+          // A later candidate must beat the current pick by more than EPS: equally good fits (cards of the
+          // same height) stay in DOM order instead of flipping on sub-pixel measurement noise between repacks.
+          if (pick < 0 ? w < pickWaste : w < pickWaste - EPS) { pickWaste = w; pick = j }
         }
         if (pick < 0) break
         place(pick, lowest, 1, tops[lowest])
@@ -231,6 +235,9 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
   const [cols, setCols] = useState(1)
   const colsRef = useRef(1)
   const [ready, setReady] = useState(false)
+  const lastResizeRef = useRef(-Infinity)
+  const trackingTimerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(trackingTimerRef.current), [])
 
   const items = Children.toArray(children).map((child) => {
     if (isValidElement(child) && child.type === MasonryItem) {
@@ -300,7 +307,21 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
     const el = ref.current
     if (!el) return
     if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => pack())
+    const ro = new ResizeObserver(() => {
+      // A card that keeps resizing frame after frame (a disclosure animating open) re-targets every
+      // item each frame; restarting the 180ms transition each time keeps them stuck at its slow start
+      // and then releases them in a burst. While sizes stream in, follow the target directly. An
+      // isolated resize (a card appearing, one reflow) still animates.
+      const now = performance.now()
+      const streaming = now - lastResizeRef.current < TRACKING_WINDOW_MS
+      lastResizeRef.current = now
+      if (streaming) {
+        el.classList.add('is-tracking')
+        window.clearTimeout(trackingTimerRef.current)
+        trackingTimerRef.current = window.setTimeout(() => el.classList.remove('is-tracking'), TRACKING_WINDOW_MS)
+      }
+      pack()
+    })
     Array.from(el.children).forEach((k) => ro.observe(k))
     return () => ro.disconnect()
   })
