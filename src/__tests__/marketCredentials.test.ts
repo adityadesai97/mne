@@ -8,6 +8,8 @@ const tables: Record<string, Row[]> = {}
 const calls: string[] = []
 let failSecretWrites = false
 
+const NO_SELECT = new Set(['llm_credential_secrets', 'market_credential_secrets'])
+
 function makeQuery(table: string) {
   let filterUser: string | null = null
   let op: 'select' | 'update' | 'insert' | 'upsert' | null = null
@@ -32,9 +34,14 @@ function makeQuery(table: string) {
       if (i >= 0) rows[i] = { ...rows[i], ...patch }; else rows.push({ ...patch })
       return { data: null, error: null }
     }
-    if (op === 'insert') { rows.push({ ...patch }); return { data: null, error: null } }
+    if (op === 'insert') {
+      if (rows.some(r => r.user_id === patch.user_id)) {
+        return { data: null, error: new Error(`duplicate key value violates unique constraint "${table}_pkey"`), count: 0 }
+      }
+      rows.push({ ...patch }); return { data: null, error: null }
+    }
     if (op === 'update') {
-      const hit = rows.filter(r => r.user_id === filterUser)
+      const hit = NO_SELECT.has(table) ? [] : rows.filter(r => r.user_id === filterUser)
       hit.forEach(r => Object.assign(r, patch))
       return { data: null, error: null, ...(wantCount ? { count: hit.length } : {}) }
     }
@@ -44,16 +51,32 @@ function makeQuery(table: string) {
   return q
 }
 
+// The save_market_keys SQL function: upserts, keeping a key the call leaves null.
+function rpc(name: string, args: any) {
+  calls.push(`rpc.${name}`)
+  if (name !== 'save_market_keys') return Promise.resolve({ data: null, error: new Error('unknown function') })
+  if (failSecretWrites) return Promise.resolve({ data: null, error: new Error('permission denied') })
+  const creds = (tables.market_credentials ??= [])
+  const secrets = (tables.market_credential_secrets ??= [])
+  const c = creds.find(r => r.user_id === 'u1') ?? (creds.push({ user_id: 'u1', finnhub_set: false, coingecko_set: false }), creds[creds.length - 1])
+  const sec = secrets.find(r => r.user_id === 'u1') ?? (secrets.push({ user_id: 'u1' }), secrets[secrets.length - 1])
+  if (args.p_finnhub) { sec.finnhub_api_key = args.p_finnhub; c.finnhub_set = true }
+  if (args.p_coingecko) { sec.coingecko_api_key = args.p_coingecko; c.coingecko_set = true }
+  return Promise.resolve({ data: null, error: null })
+}
+
 vi.mock('@/lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     from: (t: string) => makeQuery(t),
+    rpc: (name: string, args: any) => rpc(name, args),
   }),
 }))
 vi.mock('../lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     from: (t: string) => makeQuery(t),
+    rpc: (name: string, args: any) => rpc(name, args),
   }),
 }))
 
@@ -66,13 +89,20 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-test('saving writes both keys with update-then-insert, never an upsert, and flags them', async () => {
+test('saving goes through save_market_keys and flags both keys', async () => {
   await saveMarketKeys({ finnhubApiKey: ' fh-1 ', coingeckoApiKey: 'CG-1' })
-  expect(calls).not.toContain('market_credential_secrets.upsert')
+  expect(calls).toContain('rpc.save_market_keys')
   expect(tables.market_credential_secrets[0]).toMatchObject({ finnhub_api_key: 'fh-1', coingecko_api_key: 'CG-1' })
   expect(tables.market_credentials[0]).toMatchObject({ finnhub_set: true, coingecko_set: true })
   expect(config.finnhubKeySet).toBe(true)
   expect(config.coingeckoKeySet).toBe(true)
+})
+
+test('replacing a saved key works and leaves the other key alone', async () => {
+  await saveMarketKeys({ finnhubApiKey: 'fh-1', coingeckoApiKey: 'CG-1' })
+  await saveMarketKeys({ finnhubApiKey: 'fh-2' })
+  expect(tables.market_credential_secrets).toHaveLength(1)
+  expect(tables.market_credential_secrets[0]).toMatchObject({ finnhub_api_key: 'fh-2', coingecko_api_key: 'CG-1' })
 })
 
 test('saving only Finnhub leaves CoinGecko untouched', async () => {

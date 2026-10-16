@@ -4,11 +4,10 @@ import { config } from '@/store/config'
 // The Claude API key is write-only from the browser: it is saved to
 // llm_credential_secrets (no select policy at all) and only the llm-proxy edge
 // function ever reads it. llm_credentials.secret_set is the one readable flag
-// that tells the client the key actually landed. Same shape as the Plaid
-// credential tables; see savePlaidCredentials for why this is a plain
-// update-then-insert and never an upsert (an upsert needs SELECT privilege,
-// which this table deliberately lacks, and the resulting 403 would sign the
-// user out).
+// that tells the client the key actually landed. Writes go through the
+// save_llm_key SQL function (security definer): an upsert needs SELECT (its
+// 403 would sign the user out) and an update-then-insert fails too, because
+// with no select policy the UPDATE sees no rows.
 
 export async function getLlmKeySet(): Promise<boolean> {
   const { data, error } = await getSupabaseClient()
@@ -22,33 +21,13 @@ export async function getLlmKeySet(): Promise<boolean> {
 export async function saveLlmKey(apiKey: string): Promise<void> {
   const key = apiKey.trim()
   if (!key) throw new Error('Enter a Claude API key.')
-  const { data: { user } } = await getSupabaseClient().auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-  const now = new Date().toISOString()
-
-  const { error: credError } = await getSupabaseClient()
-    .from('llm_credentials')
-    .upsert({ user_id: user.id, updated_at: now }, { onConflict: 'user_id' })
-  if (credError) throw credError
-
-  const { error: updateError, count } = await getSupabaseClient()
-    .from('llm_credential_secrets')
-    .update({ api_key: key, updated_at: now }, { count: 'exact' })
-    .eq('user_id', user.id)
-  if (updateError) throw updateError
-  if (!count) {
-    const { error: insertError } = await getSupabaseClient()
-      .from('llm_credential_secrets')
-      .insert({ user_id: user.id, api_key: key, updated_at: now })
-    if (insertError) throw insertError
-  }
-
-  const { error: flagError } = await getSupabaseClient()
-    .from('llm_credentials')
-    .update({ secret_set: true })
-    .eq('user_id', user.id)
-  if (flagError) throw flagError
-
+  // One server-side function writes the key and the flag together. A client
+  // side "update, else insert" cannot work here: with no select policy, an
+  // UPDATE ... WHERE user_id = ... matches no rows (RLS needs select access to
+  // see them), so replacing an existing key fell through to an INSERT and hit
+  // the primary key.
+  const { error } = await getSupabaseClient().rpc('save_llm_key', { p_key: key })
+  if (error) throw error
   config.save({ llmKeySet: true })
   config.clearLegacyClaudeApiKey()
 }

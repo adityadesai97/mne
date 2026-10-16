@@ -8,6 +8,11 @@ const tables: Record<string, Row[]> = {}
 const calls: string[] = []
 let failSecretWrites = false
 
+// What the real database does for a table with RLS on and no select policy:
+// an UPDATE ... WHERE user_id = ... sees no rows and silently changes nothing,
+// and an INSERT of an existing primary key is a duplicate-key error.
+const NO_SELECT = new Set(['llm_credential_secrets', 'market_credential_secrets'])
+
 function makeQuery(table: string) {
   let filterUser: string | null = null
   let op: 'select' | 'update' | 'insert' | 'upsert' | null = null
@@ -32,9 +37,14 @@ function makeQuery(table: string) {
       if (i >= 0) rows[i] = { ...rows[i], ...patch }; else rows.push({ ...patch })
       return { data: null, error: null }
     }
-    if (op === 'insert') { rows.push({ ...patch }); return { data: null, error: null } }
+    if (op === 'insert') {
+      if (rows.some(r => r.user_id === patch.user_id)) {
+        return { data: null, error: new Error(`duplicate key value violates unique constraint "${table}_pkey"`), count: 0 }
+      }
+      rows.push({ ...patch }); return { data: null, error: null }
+    }
     if (op === 'update') {
-      const hit = rows.filter(r => r.user_id === filterUser)
+      const hit = NO_SELECT.has(table) ? [] : rows.filter(r => r.user_id === filterUser)
       hit.forEach(r => Object.assign(r, patch))
       return { data: null, error: null, ...(wantCount ? { count: hit.length } : {}) }
     }
@@ -44,16 +54,32 @@ function makeQuery(table: string) {
   return q
 }
 
+// The save_llm_key SQL function: writes the key and flag together, upserting.
+function rpc(name: string, args: any) {
+  calls.push(`rpc.${name}`)
+  if (name !== 'save_llm_key') return Promise.resolve({ data: null, error: new Error('unknown function') })
+  if (failSecretWrites) return Promise.resolve({ data: null, error: new Error('permission denied') })
+  const creds = (tables.llm_credentials ??= [])
+  const secrets = (tables.llm_credential_secrets ??= [])
+  const c = creds.find(r => r.user_id === 'u1')
+  if (c) c.secret_set = true; else creds.push({ user_id: 'u1', secret_set: true })
+  const sec = secrets.find(r => r.user_id === 'u1')
+  if (sec) sec.api_key = String(args.p_key).trim(); else secrets.push({ user_id: 'u1', api_key: String(args.p_key).trim() })
+  return Promise.resolve({ data: null, error: null })
+}
+
 vi.mock('@/lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     from: (t: string) => makeQuery(t),
+    rpc: (name: string, args: any) => rpc(name, args),
   }),
 }))
 vi.mock('../lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     from: (t: string) => makeQuery(t),
+    rpc: (name: string, args: any) => rpc(name, args),
   }),
 }))
 
@@ -66,21 +92,18 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-test('saving writes the secret with update-then-insert, never an upsert, and flags it', async () => {
+test('saving goes through the save_llm_key function and flags the key', async () => {
   await saveLlmKey('  sk-ant-new  ')
+  expect(calls).toContain('rpc.save_llm_key')
   expect(calls).not.toContain('llm_credential_secrets.upsert')
-  expect(calls).toContain('llm_credential_secrets.update')
-  expect(calls).toContain('llm_credential_secrets.insert')
   expect(tables.llm_credential_secrets[0].api_key).toBe('sk-ant-new')
   expect(tables.llm_credentials[0].secret_set).toBe(true)
   expect(config.llmKeySet).toBe(true)
 })
 
-test('rotating an existing key updates it in place instead of inserting again', async () => {
+test('replacing an existing key works (regression: duplicate key on llm_credential_secrets_pkey)', async () => {
   await saveLlmKey('sk-ant-1')
-  calls.length = 0
   await saveLlmKey('sk-ant-2')
-  expect(calls).not.toContain('llm_credential_secrets.insert')
   expect(tables.llm_credential_secrets).toHaveLength(1)
   expect(tables.llm_credential_secrets[0].api_key).toBe('sk-ant-2')
 })
