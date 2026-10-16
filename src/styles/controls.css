@@ -49,6 +49,5 @@
   background: color-mix(in srgb, var(--mne-surface-300) 55%, transparent);
   border-radius: var(--mne-radius-md);
   padding-left: 12px; padding-right: 12px;
-  border-top-color: transparent;
 }
-.mne-list > .mne-row:nth-child(odd) { padding-left: 12px; padding-right: 12px; border-top-color: transparent; }
+.mne-list > .mne-row:nth-child(odd) { padding-left: 12px; padding-right: 12px; }
