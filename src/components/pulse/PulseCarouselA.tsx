@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight, Pause, Play, Sparkles } from 'lucide-react'
 import { Chip } from '@/components/mne'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import type { PulseCardModel } from './model'
-import { MaskedText, PulseFigure, PulseVisualView, SeenMark, useReducedMotion } from './parts'
+import { MaskedText, PulseFigure, PulseVisualView, SeenMark } from './parts'
+import { useReducedMotion } from './useReducedMotion'
 
 /** Matches the ring's CSS animation duration in pulse.css. */
 export const PULSE_AUTOPLAY_MS = 3200

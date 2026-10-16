@@ -11,7 +11,7 @@
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mne-accent); flex: none; }
 
 /* Big figure: a signed delta or a countdown, with a small caption under it. */
-.pulse-figure { display: inline-flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.pulse-figure { white-space: nowrap; display: inline-flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
 .pulse-figure small { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
 .pulse-figure.is-big { font: 500 24px/28px var(--mne-font-serif); }
 .pulse-figure.is-big small { font: 400 12px/16px var(--mne-font-sans); }
@@ -128,7 +128,8 @@
 
 @media (max-width: 640px) {
   .pulse-a-card { grid-template-columns: minmax(0, 1fr); padding: 16px 16px 14px; min-height: 0; }
-  .pulse-a-side { width: 100%; flex-direction: row; align-items: flex-end; }
+  .pulse-a-side { width: 100%; flex-direction: row; align-items: flex-end; justify-content: space-between; }
+  .pulse-a-side .pulse-figure { align-items: flex-start; }
   .pulse-a-side .pulse-vis { width: 130px; }
   .pulse-a-hit { font-size: 20px; line-height: 28px; }
   .pulse-pips { display: none; }
