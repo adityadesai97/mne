@@ -49,9 +49,10 @@ jobs:
         run: |
           supabase gen types typescript --local --schema public > /tmp/db.types.ts
           node -e "
-            const norm=s=>[...s.matchAll(/^\s{6}(\w+): \{\n\s+Row:/gm)].map(m=>m[1]).sort().join(',');
+            const norm=s=>[...s.matchAll(/(\w+):\s*\{\s*Row:/g)].map(m=>m[1]).sort().join(',');
             const fs=require('fs');
             const a=norm(fs.readFileSync('/tmp/db.types.ts','utf8')), b=norm(fs.readFileSync('src/lib/database.types.ts','utf8'));
-            const missing=a.split(',').filter(t=>!b.split(',').includes(t));
+            if(!a){console.error('could not read any tables from generated types');process.exit(1)}
+            const missing=a.split(',').filter(t=>t&&!b.split(',').includes(t));
             if(missing.length){console.error('database.types.ts is missing tables:',missing.join(', '));process.exit(1)}
           "
