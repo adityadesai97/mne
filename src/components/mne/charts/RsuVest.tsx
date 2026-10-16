@@ -31,7 +31,7 @@ export function RsuVestRail({ row }: { row: RsuTimelineRow }) {
         <Stat
           className="mne-rsu-next"
           label={row.ended ? 'Status' : 'Next vest'}
-          value={row.ended ? 'Ended' : row.nextVest ? `${monthDay(row.nextVest.ms)} · ${fmtN(row.nextVest.shares)} sh` : row.vestedShares >= row.totalShares ? 'Fully vested' : 'Ongoing'}
+          value={row.ended ? 'Ended' : row.nextVest ? `${monthDay(row.nextVest.ms)} · ${fmtN(row.nextVest.shares)} ${row.nextVest.shares === 1 ? 'share' : 'shares'}` : row.vestedShares >= row.totalShares ? 'Fully vested' : 'Ongoing'}
         />
       </div>
       <div className="mne-vest has-today-row" role="img" aria-label={`${row.label}: ${fmtN(row.vestedShares)} of ${fmtN(row.totalShares)} shares vested (${pctVested}%)`}>

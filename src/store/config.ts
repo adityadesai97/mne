@@ -14,6 +14,7 @@ const KEYS = {
   needsSignIn: 'mne_needs_signin',
   theme: 'mne_theme',
   assetView: 'mne_asset_view',
+  lotView: 'mne_lot_view',
   hideValues: 'mne_hide_values',
   plaidOnboardingSeen: 'mne_plaid_onboarding_seen',
 }
@@ -84,6 +85,11 @@ export const config = {
     return v === 'grid' || v === 'list' ? v : null
   },
   setAssetView(v: 'grid' | 'list') { localStorage.setItem(KEYS.assetView, v) },
+  /** How an asset's tax lots are laid out: 'default' (summary first) or 'timeline'. */
+  get lotView(): 'default' | 'timeline' {
+    try { return localStorage.getItem(KEYS.lotView) === 'timeline' ? 'timeline' : 'default' } catch { return 'default' }
+  },
+  setLotView(v: 'default' | 'timeline') { try { localStorage.setItem(KEYS.lotView, v) } catch { /* private mode */ } },
   get hideValues(): boolean {
     return localStorage.getItem(KEYS.hideValues) === 'true'
   },
