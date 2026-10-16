@@ -1,7 +1,9 @@
 // Shared icon + uppercase caption used at the top of every bento-style card
 // (Home, Charts, Portfolio, Watchlist …). Renders the design system's
 // `.mne-eyebrow` so the header treatment is identical everywhere.
-import type { LucideIcon } from 'lucide-react'
+import type { ComponentType } from 'react'
+
+type EyebrowIcon = ComponentType<{ size?: number; strokeWidth?: number; className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
 
 export function CardEyebrow({
   icon: Icon,
@@ -9,7 +11,7 @@ export function CardEyebrow({
   accent = false,
   children,
 }: {
-  icon: LucideIcon
+  icon: EyebrowIcon
   /** Colour utility applied to the icon only (e.g. `text-gain`). */
   className?: string
   /** Terracotta label, as on the design's "Largest holding" card. */

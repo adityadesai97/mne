@@ -13,7 +13,8 @@ import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Delta, PageHead } from '@/components/mne'
 import { computeThemeDistribution } from '@/lib/charts'
-import { Info, Plus, Sparkles, Star, Trash2 } from 'lucide-react'
+import { Info, Plus, Star, Trash2 } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { Tooltip } from '@/components/mne/Tooltip'
 import '@/styles/watchlist.css'
 import { finnhubFetch } from '@/lib/marketData'
@@ -471,7 +472,7 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Pro
           {adding ? 'Cancel' : '+ theme'}
         </button>
         <button type="button" className="mne-btn is-quiet is-sm" onClick={handleAutoAssign} disabled={autoAssigning || saving}>
-          <Sparkles size={12} aria-hidden="true" style={{ display: 'inline', marginRight: 4 }} />
+          <AiMark size={12} aria-hidden="true" style={{ display: 'inline', marginRight: 4 }} />
           {autoAssigning ? 'Assigning…' : 'AI themes'}
         </button>
       </div>

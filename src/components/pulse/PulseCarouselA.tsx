@@ -3,7 +3,8 @@
 // autoplay timer and its pause/play button. Autoplay is off under reduced
 // motion and pauses while the pointer or focus is inside.
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Pause, Play, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react'
+import { AiMark } from '@/components/mne/AiMark'
 import { Chip } from '@/components/mne'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import type { PulseCardModel } from './model'
@@ -50,7 +51,7 @@ export function PulseCarouselA({ cards, onOpen, hidden }: {
       onBlur={() => setHold(false)}
     >
       <div className="pulse-head">
-        <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
+        <CardEyebrow icon={AiMark}>Portfolio Pulse</CardEyebrow>
         {unseen > 0 && <span className="pulse-newcount">{unseen} new</span>}
       </div>
 
