@@ -31,12 +31,14 @@ const useIsoLayoutEffect =
 import { cn } from "@/lib/utils";
 import { useIcon } from "@/lib/fluid/icon-context";
 import type { IconName } from "@/lib/fluid/icon-context";
-import { spring } from "@/lib/fluid/springs";
 import { fontWeights } from "@/lib/fluid/font-weight";
 import { useShape } from "@/lib/fluid/shape-context";
 import { SizeProvider, useSize, type SizeVariant } from "@/lib/fluid/size-context";
 import { Badge } from "@/components/fluid/badge";
 import type { BadgeColor } from "@/components/fluid/badge";
+
+// mne design system motion: one standard 180ms curve, no springs/bounce.
+const STD = { duration: 0.18, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] };
 
 // ─── Shared collapsible parts ───────────────────────────────────────────────
 //
@@ -77,7 +79,7 @@ const TriggerRow = forwardRef<HTMLButtonElement, TriggerRowProps>(
               className={`absolute inset-0 ${shape.bg} bg-hover pointer-events-none`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: spring.fast.exit }}
+              exit={{ opacity: 0, transition: STD }}
               transition={{ duration: 0.08 }}
             />
           )}
@@ -123,7 +125,7 @@ const TriggerRow = forwardRef<HTMLButtonElement, TriggerRowProps>(
           <motion.span
             className="shrink-0 inline-flex items-center justify-center"
             animate={{ rotate: open ? 90 : 0 }}
-            transition={spring.fast}
+            transition={STD}
           >
             <ChevronRight
               size={sizeClasses.icon}
@@ -218,12 +220,7 @@ function CollapsePanel({ open, children }: CollapsePanelProps) {
           className="overflow-hidden"
           initial={{ height: open ? "auto" : 0 }}
           animate={{ height: open ? contentHeight ?? 0 : 0 }}
-          // bounce: 0 — pure height looks better without overshoot.
-          transition={
-            needsSnap.current
-              ? { duration: 0 }
-              : { ...spring.moderate, bounce: 0 }
-          }
+          transition={needsSnap.current ? { duration: 0 } : STD}
           onAnimationComplete={() => {
             if (!open) setExitComplete(true);
           }}
@@ -306,24 +303,24 @@ ThinkingStepsHeader.displayName = "ThinkingStepsHeader";
 
 // ─── ThinkingStepsContent ───────────────────────────────────────────────────
 
-interface ThinkingStepsContentProps extends HTMLAttributes<HTMLDivElement> {
+interface ThinkingStepsContentProps extends HTMLAttributes<HTMLUListElement> {
   children: ReactNode;
 }
 
 const ThinkingStepsContent = forwardRef<
-  HTMLDivElement,
+  HTMLUListElement,
   ThinkingStepsContentProps
 >(({ children, className, ...props }, ref) => {
   const isOpen = useContext(ThinkingStepsOpenContext);
   return (
     <CollapsePanel open={isOpen}>
-      <div
+      <ul
         ref={ref}
-        className={cn("flex flex-col", className)}
+        className={cn("mne-steps", className)}
         {...props}
       >
         {children}
-      </div>
+      </ul>
     </CollapsePanel>
   );
 });
@@ -346,84 +343,39 @@ interface ThinkingStepProps {
 }
 
 function ThinkingStep({
-  icon = "dot",
-  showIcon = true,
   label,
   description,
   status = "complete",
-  delay = 0.08,
-  isLast = false,
   children,
   className,
 }: ThinkingStepProps) {
-    const Icon = useIcon(icon);
-    const shape = useShape();
+    // mne ThinkingSteps: a list of rows with a leading status dot —
+    // done = filled accent check, run = spinning ring, pending = empty ring.
     const sizeClasses = useSize();
-
-    if (status === "pending") return null;
-
-    const isActive = status === "active";
+    const stateClass =
+      status === "complete" ? "is-done" : status === "active" ? "is-run" : undefined;
 
     return (
-      /* Outer: animates height to create space smoothly */
-      <motion.div
-        className={cn("relative z-10 overflow-hidden", className)}
-        initial={{ height: 0 }}
-        animate={{ height: "auto" }}
-        transition={spring.slow}
+      <motion.li
+        className={cn(stateClass, "flex-wrap", className)}
+        style={{ fontSize: sizeClasses.variant === "compact" ? 13 : undefined }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={STD}
+        aria-current={status === "active" ? "step" : undefined}
       >
-        {/* Inner: fades content in after space starts opening */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.24, delay, ease: "easeOut" }}
-        >
-          {/* Content row — this is the proximity hover target */}
-          <div className={cn("flex gap-2.5 px-2 py-1.5", shape.item)}>
-            {/* Icon column with continuous connector line */}
-            <div className="flex flex-col items-center shrink-0 w-[14px]">
-              <div className="pt-0.5">
-                {showIcon ? (
-                  <Icon
-                    size={sizeClasses.variant === "compact" ? 12 : 14}
-                    strokeWidth={1.5}
-                    className="text-muted-foreground"
-                  />
-                ) : (
-                  <div className="w-[14px] h-[14px] flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
-                  </div>
-                )}
-              </div>
-              {/* Line stretches from icon to bottom of this step */}
-              {!isLast && (
-                <div className="flex-1 w-px bg-border/60 mt-1" />
-              )}
-            </div>
-
-            {/* Text content */}
-            <div className="flex-1 flex flex-col gap-1 min-w-0">
-              <span
-                className={cn(
-                  sizeClasses.text,
-                  "leading-tight text-foreground",
-                  isActive && "shimmer-text"
-                )}
-                style={{ fontVariationSettings: fontWeights.medium }}
-              >
-                {label}
-                {isActive && "…"}
-              </span>
-              {description && (
-                <span className={cn(sizeClasses.text, "text-muted-foreground leading-snug")}>
-                  {description}
-                </span>
-              )}
-              {children}
-            </div>
-          </div>
-        </motion.div>
-      </motion.div>
+        <span className="dot" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className={cn(status === "active" && "shimmer-text")}>
+            {label}
+            {status === "active" && "…"}
+          </span>
+          {description && (
+            <span className="block text-xs font-normal text-muted-foreground">{description}</span>
+          )}
+          {children}
+        </span>
+      </motion.li>
     );
 }
 
@@ -509,13 +461,9 @@ interface ThinkingStepSourceProps {
 function ThinkingStepSource({ color = "gray", delay = 0, children, className }: ThinkingStepSourceProps) {
   return (
     <motion.span
-      initial={{ opacity: 0, scale: 0.85, filter: "blur(4px)" }}
-      animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-      transition={{
-        ...spring.moderate,
-        delay,
-        filter: { duration: 0.12, delay },
-      }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ ...STD, delay }}
     >
       <Badge variant="solid" size="sm" color={color} className={className}>
         {children}

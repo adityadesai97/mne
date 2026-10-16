@@ -1,18 +1,19 @@
+import '@/styles/cmdbar.css'
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium tabular-nums transition-colors',
+  'ui-chip-text inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] tabular-nums',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground',
-        secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        tag: 'border-transparent bg-amber text-amber-foreground',
-        accent: 'border-primary bg-card text-primary',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground',
-        outline: 'border-border-strong text-foreground',
+        default: 'bg-primary text-primary-foreground',
+        secondary: 'bg-secondary text-foreground',
+        tag: 'bg-amber text-amber-foreground',
+        accent: 'border border-primary bg-card text-primary',
+        destructive: 'bg-destructive text-destructive-foreground',
+        outline: 'border border-border-strong text-foreground',
       },
     },
     defaultVariants: { variant: 'default' },

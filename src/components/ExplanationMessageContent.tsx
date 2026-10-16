@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react'
 import { ExternalLink } from 'lucide-react'
+import { Delta } from '@/components/mne'
 import type { ConversationMessageExplanationDetail } from '@/lib/db/conversations'
 import type { PortfolioExplanationMover, PortfolioExplanationThemeMove } from '@/lib/db/portfolioExplanations'
 
@@ -8,33 +9,39 @@ type HighlightTarget =
   | { kind: 'theme'; theme: string; move: PortfolioExplanationThemeMove }
 
 function fmtDollars(n: number): string {
-  return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  return `$${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 }
-function fmtPercent(n: number): string {
-  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+
+function Change({ dollars, percent }: { dollars?: number; percent: number }) {
+  return (
+    <>
+      <Delta value={percent} />
+      {dollars !== undefined && <> · {dollars >= 0 ? '+' : '−'}{fmtDollars(dollars)}</>}
+    </>
+  )
 }
 
 function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: () => void }) {
   if (target.kind === 'mover') {
     const { mover } = target
     return (
-      <div className="mt-2 rounded-md bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
-        <div className="flex items-center justify-between">
-          <p className="font-medium text-foreground">{mover.symbol} — {mover.name}</p>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">Close</button>
+      <div className="mne-expl-detail is-open">
+        <div className="flex items-center justify-between gap-2">
+          <b>{mover.symbol} — {mover.name}</b>
+          <button type="button" onClick={onClose} className="mne-btn is-quiet is-sm">Close</button>
         </div>
-        <p className="text-muted-foreground">
-          {fmtDollars(mover.dollarChange)} ({fmtPercent(mover.percentChange)}) · {mover.contributionPct}% of that day's swing
+        <div>
+          <Change dollars={mover.dollarChange} percent={mover.percentChange} /> · {mover.contributionPct}% of that day's swing
           {mover.theme ? ` · ${mover.theme}` : ''}
-        </p>
+        </div>
         {mover.headlines.length > 0 && (
-          <ul className="space-y-1 pt-1">
+          <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
             {mover.headlines.map((h, i) => (
               <li key={i}>
-                <a href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                  {h.title} <ExternalLink size={10} />
+                <a href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">
+                  {h.title} <ExternalLink size={12} aria-hidden="true" />
                 </a>
-                <span className="text-muted-foreground"> — {h.source}</span>
+                <span className="mne-muted"> · {h.source}</span>
               </li>
             ))}
           </ul>
@@ -45,15 +52,15 @@ function DetailPanel({ target, onClose }: { target: HighlightTarget; onClose: ()
 
   const { move } = target
   return (
-    <div className="mt-2 rounded-md bg-muted/40 border border-border/60 p-3 text-xs space-y-1.5">
-      <div className="flex items-center justify-between">
-        <p className="font-medium text-foreground">{move.theme}</p>
-        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">Close</button>
+    <div className="mne-expl-detail is-open">
+      <div className="flex items-center justify-between gap-2">
+        <b>{move.theme}</b>
+        <button type="button" onClick={onClose} className="mne-btn is-quiet is-sm">Close</button>
       </div>
-      <p className="text-muted-foreground">
-        {move.memberSymbols.length} holdings moved {move.direction} together, avg {fmtPercent(move.avgPercentChange)}
-      </p>
-      <p className="text-muted-foreground">{move.memberSymbols.join(', ')}</p>
+      <div>
+        {move.memberSymbols.length} holdings moved {move.direction} together, avg <Change percent={move.avgPercentChange} />
+      </div>
+      <div className="mne-muted">{move.memberSymbols.join(', ')}</div>
     </div>
   )
 }
@@ -87,7 +94,7 @@ export function ExplanationMessageContent({ content, detail }: { content: string
 
   return (
     <div>
-      <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+      <div className="mne-expl whitespace-pre-wrap break-words">
         {pieces.map((piece, i) =>
           typeof piece === 'string'
             ? <Fragment key={i}>{piece}</Fragment>
@@ -95,23 +102,28 @@ export function ExplanationMessageContent({ content, detail }: { content: string
               <button
                 key={piece.key}
                 type="button"
+                aria-expanded={selected === piece.target}
                 onClick={() => setSelected(selected === piece.target ? null : piece.target)}
-                className="font-medium text-primary hover:underline underline-offset-2"
+                className="mne-hl"
               >
                 {piece.text}
               </button>
             ),
         )}
-      </p>
+      </div>
 
       {detail.marketHeadlines.length > 0 && (
-        <div className="mt-2 text-xs text-muted-foreground space-y-1">
-          <p className="uppercase tracking-widest text-xs">Market context</p>
-          {detail.marketHeadlines.map((h, i) => (
-            <a key={i} href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-              {h.title} <ExternalLink size={10} />
-            </a>
-          ))}
+        <div style={{ marginTop: 12 }}>
+          <div className="mne-eyebrow">Market context</div>
+          <ol className="mne-sources">
+            {detail.marketHeadlines.map((h, i) => (
+              <li key={i}>
+                <a href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">
+                  {h.title} <ExternalLink size={12} aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 

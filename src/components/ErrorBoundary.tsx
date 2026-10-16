@@ -31,22 +31,17 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="min-h-screen flex items-center justify-center px-6" style={{ minHeight: '100dvh' }}>
-          <div className="max-w-sm text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-              <AlertTriangle size={20} className="text-destructive" />
+        <div className="min-h-screen flex items-center justify-center px-4" style={{ minHeight: '100dvh' }}>
+          <section className="mne-card max-w-sm w-full" role="alert">
+            <div className="mne-empty is-error">
+              <span className="ico"><AlertTriangle size={20} aria-hidden="true" /></span>
+              <h3>Something went wrong</h3>
+              <p>The app hit an unexpected error. Reloading usually fixes it.</p>
+              <button className="mne-btn is-ghost" onClick={() => window.location.reload()}>
+                Reload
+              </button>
             </div>
-            <h1 className="font-display text-xl font-medium text-foreground mb-2">Something went wrong</h1>
-            <p className="text-sm text-muted-foreground mb-5">
-              The app hit an unexpected error. Reloading usually fixes it.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              Reload
-            </button>
-          </div>
+          </section>
         </div>
       )
     }

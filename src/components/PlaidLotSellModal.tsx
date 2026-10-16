@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { dismissHeldLotSell, resolveHeldLotSell, type HeldLotSell } from '@/lib/db/plaid'
 import { oldestFirstAllocation, validateAllocation } from '@/lib/plaidLotAllocation'
 
@@ -70,42 +69,51 @@ export function PlaidLotSellModal({ sell, onClose, onChanged }: Props) {
         <DialogHeader>
           <DialogTitle>Which lots did you sell?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
+        <p className="mne-muted" style={{ margin: 0 }}>
           Plaid reports {sell.quantity} {unit} of {sell.symbol ?? sell.assetName} sold on {sell.date}
           {sell.price != null ? ` at $${sell.price}` : ''}, but not which purchase they came from. Say how many
-          came out of each lot — it has to add up to {sell.quantity}.
+          came out of each lot. It has to add up to {sell.quantity}.
         </p>
         {sell.lots.length === 0 ? (
-          <p className="text-sm text-destructive">No regular lots are tracked for this position, so there is nothing to reduce.</p>
+          <span className="mne-help is-error" role="alert">▼ No regular lots are tracked for this position, so there is nothing to reduce.</span>
         ) : (
-          <div className="space-y-2">
-            {sell.lots.map((lot) => (
-              <label key={lot.id} className="flex items-center gap-3 rounded-md border border-border/60 p-2 text-sm">
-                <span className="flex-1">
-                  <span className="block">{lot.purchase_date}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {lot.count} {unit} @ ${lot.cost_price}
-                  </span>
-                </span>
-                <Input
-                  className="w-28"
-                  type="number"
-                  min={0}
-                  step="any"
-                  max={lot.count}
-                  placeholder="0"
-                  value={amounts[lot.id] ?? ''}
-                  onChange={(e) => setAmounts((prev) => ({ ...prev, [lot.id]: e.target.value }))}
-                />
-              </label>
-            ))}
-            <div className="flex items-center justify-between text-xs">
-              <span className={problem ? 'text-muted-foreground' : 'text-green-600'}>
-                {problem ?? 'Adds up'} ({Math.round(assigned * 1e8) / 1e8} of {sell.quantity})
-              </span>
+          <>
+            <table className="mne-table is-compact">
+              <thead>
+                <tr><th>Lot</th><th className="r">Held</th><th className="r">Sold</th></tr>
+              </thead>
+              <tbody>
+                {sell.lots.map((lot) => (
+                  <tr key={lot.id}>
+                    <td>{lot.purchase_date} · ${lot.cost_price}</td>
+                    <td className="r">{lot.count}</td>
+                    <td className="r">
+                      <input
+                        className="mne-input mne-num"
+                        style={{ width: 90, textAlign: 'right' }}
+                        type="number"
+                        min={0}
+                        step="any"
+                        max={lot.count}
+                        placeholder="0"
+                        aria-label={`${unit} sold from ${lot.purchase_date} lot`}
+                        value={amounts[lot.id] ?? ''}
+                        onChange={(e) => setAmounts((prev) => ({ ...prev, [lot.id]: e.target.value }))}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              {problem ? (
+                <span className="mne-help is-error">▼ {problem} ({Math.round(assigned * 1e8) / 1e8} of {sell.quantity})</span>
+              ) : (
+                <span className="mne-help mne-up">Adds up ({Math.round(assigned * 1e8) / 1e8} of {sell.quantity})</span>
+              )}
               <button
                 type="button"
-                className="text-primary hover:underline"
+                className="mne-btn is-quiet is-sm"
                 onClick={() =>
                   setAmounts(
                     Object.fromEntries(
@@ -117,25 +125,15 @@ export function PlaidLotSellModal({ sell, onClose, onChanged }: Props) {
                 Fill oldest first
               </button>
             </div>
-          </div>
+          </>
         )}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            disabled={busy || !!problem || sell.lots.length === 0}
-            onClick={() => void apply()}
-            className="flex-1 bg-primary text-primary-foreground rounded-md py-1.5 text-xs font-medium disabled:opacity-50"
-          >
-            {busy ? 'Saving…' : 'Apply to these lots'}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void ignore()}
-            className="flex-1 bg-muted text-muted-foreground rounded-md py-1.5 text-xs hover:bg-muted/80 disabled:opacity-50"
-          >
+        {error && <span className="mne-help is-error" role="alert">▼ {error}</span>}
+        <div className="mne-dialog-actions">
+          <button type="button" className="mne-btn is-quiet" disabled={busy} onClick={() => void ignore()}>
             Leave lots as they are
+          </button>
+          <button type="button" className="mne-btn" disabled={busy || !!problem || sell.lots.length === 0} onClick={() => void apply()}>
+            {busy ? 'Saving…' : 'Apply to these lots'}
           </button>
         </div>
       </DialogContent>

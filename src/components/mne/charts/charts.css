@@ -1,0 +1,15 @@
+/* Additions to the design's chart classes for the live (variable-length) Charts page. */
+.mne-bars.is-wide .mne-bar-row { grid-template-columns: minmax(80px, 140px) 1fr minmax(96px, auto); }
+.mne-bars.is-wide .mne-bar-row .v { white-space: nowrap; }
+.mne-rsu-list { display: flex; flex-direction: column; }
+.mne-rsu-grant { padding: 16px 0 4px; }
+.mne-rsu-grant + .mne-rsu-grant { border-top: 1px solid var(--mne-line); margin-top: 12px; }
+.mne-rsu-grant:first-child { padding-top: 12px; }
+.mne-rsu-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.mne-rsu-next { text-align: right; }
+.mne-rsu-pct { font-size: 14px; }
+.mne-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mne-chart-head .mne-eyebrow { min-width: 0; }
+.mne-chart-blur { filter: blur(12px); user-select: none; pointer-events: none; transform: translateZ(0); }
+.mne-seg.is-multi button[aria-pressed="false"] { color: var(--mne-ink-muted); }
+@media (max-width: 760px) { .mne-bars.is-wide .mne-bar-row { grid-template-columns: 76px 1fr minmax(88px, auto); } }

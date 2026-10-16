@@ -16,18 +16,26 @@ export function MiniSparkline({ values, color, height = 28 }: { values: number[]
   // reaching its natural high/low point.
   const vPadding = height * 0.18
   const drawableHeight = height - vPadding * 2
-  const points = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * width
-      const y = vPadding + (drawableHeight - ((v - min) / range) * drawableHeight)
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
+  const coords = values.map((v, i) => ({
+    x: (i / (values.length - 1)) * width,
+    y: vPadding + (drawableHeight - ((v - min) / range) * drawableHeight),
+  }))
+  const points = coords.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')
+  const last = coords[coords.length - 1]
 
+  // Design-system Sparkline: 2px round line in the trend colour plus a dot on
+  // the latest point (an absolutely positioned span, so the stretched viewBox
+  // doesn't squash it into an ellipse).
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }} aria-hidden="true">
-      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.55} />
-    </svg>
+    <div className="mne-spark relative w-full" style={{ height }} aria-hidden="true">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+        <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span
+        className="absolute rounded-full"
+        style={{ width: 7, height: 7, background: color, left: `${(last.x / width) * 100}%`, top: last.y, transform: 'translate(-50%, -50%)' }}
+      />
+    </div>
   )
 }
 
@@ -41,7 +49,7 @@ export function MiniRing({ pct, color, size = 30 }: { pct: number; color: string
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity={0.12} strokeWidth={strokeWidth} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--mne-surface-300)" strokeWidth={strokeWidth} />
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -53,7 +61,7 @@ export function MiniRing({ pct, color, size = 30 }: { pct: number; color: string
         strokeDasharray={c}
         strokeDashoffset={offset}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.25, 0.1, 0.25, 1)' }}
+        style={{ transition: 'stroke-dashoffset var(--mne-dur-layout) var(--mne-ease)' }}
       />
     </svg>
   )
@@ -70,11 +78,11 @@ export function RingStat({ pct, color, label, size = 44 }: { pct: number; color:
     <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
       <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
         <MiniRing pct={pct} color={color} size={size} />
-        <span className="absolute text-xs font-bold tabular-nums" style={{ color }}>
+        <span className="absolute text-xs font-semibold tabular-nums" style={{ color }}>
           {Math.round(pct)}%
         </span>
       </div>
-      <span className="text-xs uppercase tracking-wide text-muted-foreground leading-none">{label}</span>
+      <span className="mne-eyebrow" style={{ lineHeight: 1 }}>{label}</span>
     </div>
   )
 }

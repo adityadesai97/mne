@@ -1,282 +1,137 @@
 // src/components/PositionCard.tsx
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Briefcase, Landmark, Banknote, Shield, Wallet, Bitcoin, ChartNoAxesCombined, ArrowUpRight, ArrowDownRight, ChevronRight, Link2 } from 'lucide-react'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset, getPlaidSyncInfo } from '@/lib/portfolio'
-import { colorForAssetType, colorForTicker } from '@/lib/typeColors'
-import { getLogoColor } from '@/lib/logoColor'
+import { Link, useNavigate } from 'react-router-dom'
+import { computeAssetValue, computeCostBasis, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset, getPlaidSyncInfo } from '@/lib/portfolio'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { Delta } from '@/components/mne'
+import '@/styles/portfolio.css'
 
-function AssetIcon({ asset, accent }: { asset: any; accent: string }) {
-  if (isTickerAsset(asset)) {
-    if (asset.ticker?.logo) {
-      // Opaque white backing regardless of the tile's own color — a logo
-      // that IS that color (which it usually is, since the tile's color was
-      // very likely sampled from this same logo) would otherwise disappear
-      // into its own background.
-      return (
-        <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm p-1.5">
-          <img src={asset.ticker.logo} className="w-full h-full object-contain" alt={asset.ticker?.symbol ?? ''} />
-        </div>
-      )
-    }
-    // No logo on file yet (still backfilling, or the profile fetch never
-    // found one) — a generic "this is a stock" glyph reads better here than
-    // ticker-symbol initials, which look like a broken-logo placeholder
-    // rather than an intentional choice.
-    return (
-      <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-        {asset.asset_type === 'Crypto' ? <Bitcoin size={19} style={{ color: accent }} /> : <ChartNoAxesCombined size={19} style={{ color: accent }} />}
-      </div>
-    )
-  }
+const LINK_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+    <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+  </svg>
+)
 
-  const iconMap: Record<string, React.ElementType> = {
-    '401k': Briefcase,
-    'Fixed Income': Landmark,
-    'Cash': Banknote,
-    'HSA': Shield,
-  }
-  const IconComponent = iconMap[asset.asset_type] ?? Wallet
-
-  return (
-    <div className="w-11 h-11 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-      <IconComponent size={19} style={{ color: accent }} />
-    </div>
-  )
+/** Percent move vs the ticker's previous close (24h for crypto); null when unknown. */
+function todayPct(asset: any): number | null {
+  const price = asset.ticker?.current_price
+  const prev = asset.ticker?.previous_close
+  if (price == null || prev == null || Number(prev) === 0) return null
+  return ((Number(price) - Number(prev)) / Number(prev)) * 100
 }
 
-/** Compact icon chip for the simplified list layout — same per-asset accent
- *  identity as the grid tile's icon (src/lib/typeColors.ts / logoColor.ts:
- *  the ticker's own sampled logo color, or a color hashed from the type/
- *  symbol), just on a smaller neutral chip instead of a full block-color
- *  tile — keeping that layout's calmer, lower-chrome row look. */
-function LegacyAssetIcon({ asset, accent }: { asset: any; accent: string }) {
-  if (isTickerAsset(asset)) {
-    if (asset.ticker?.logo) {
-      return (
-        <img
-          src={asset.ticker.logo}
-          className="w-9 h-9 rounded-md object-contain bg-muted flex-shrink-0"
-          alt={asset.ticker?.symbol ?? ''}
-        />
-      )
-    }
-    return (
-      <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-        {asset.asset_type === 'Crypto' ? <Bitcoin size={16} style={{ color: accent }} /> : <ChartNoAxesCombined size={16} style={{ color: accent }} />}
-      </div>
-    )
+function stockPlanTags(asset: any): string[] {
+  const tags = new Set<string>()
+  for (const st of asset.stock_subtypes ?? []) {
+    if ((st.subtype === 'RSU' || st.subtype === 'ESPP') && ((st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0)) tags.add(st.subtype)
   }
+  return Array.from(tags)
+}
 
-  const iconMap: Record<string, React.ElementType> = {
-    '401k': Briefcase,
-    'Fixed Income': Landmark,
-    'Cash': Banknote,
-    'HSA': Shield,
-  }
-  const IconComponent = iconMap[asset.asset_type] ?? Wallet
-
-  return (
-    <div className="w-9 h-9 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-      <IconComponent size={17} style={{ color: accent }} />
-    </div>
-  )
+function caption(asset: any): string {
+  const parts: string[] = []
+  if (isTickerAsset(asset) && asset.ticker?.symbol) parts.push(asset.ticker.symbol)
+  if (asset.location?.name) parts.push(asset.location.name)
+  if (asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype) parts.push(asset.fixed_income_subtype)
+  else if (!isTickerAsset(asset)) parts.push(asset.asset_type)
+  if (asset.ownership) parts.push(asset.ownership)
+  return parts.join(' · ')
 }
 
 /**
- * A position in the Portfolio view. `'grid'` (default) is a large square
- * tile with a solid block-color background: non-stock assets get the
- * shared per-asset-type color (src/lib/typeColors.ts); stocks get their
- * own company's color, sampled from the ticker's logo (src/lib/logoColor.ts)
- * when that succeeds, or a color hashed from the ticker symbol otherwise
- * (rather than one flat Stock-type blue for every unlogo'd ticker — mostly
- * ETFs in practice). A tile renders immediately on its fallback color and
- * may recolor a moment later once its logo's sampled color resolves.
- *
- * `'list'` is the simplified/legacy view (Settings → Appearance → Asset
- * view): a plain compact row with no block-color tile, for users who'd
- * rather scan a calm list than a wall of colored tiles — but its icon chip
- * still carries the same per-asset accent (and logo-color sampling) as the
- * grid tile, just as a small tint instead of a full-tile background.
+ * A position in the Portfolio view, in the design system's PositionTiles
+ * shape: a `mne-card` tile (grid) or a `mne-table` row (list). No per-asset
+ * colour; direction is carried by sign + arrow + colour via <Delta>.
  */
-export function PositionCard({ asset, index = 0, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
+export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: number; layout?: 'grid' | 'list' }) {
   const isStock = isTickerAsset(asset)
+  const isCrypto = asset.asset_type === 'Crypto'
   const isTradable = isTradableFixedIncome(asset)
   const noPriceData = isStock && asset.ticker?.current_price == null
   const value = computeAssetValue(asset)
-  const gain = computeUnrealizedGain(asset)
   const basis = computeCostBasis(asset)
-  const gainPct = basis > 0 ? (gain / basis) * 100 : 0
-  const isGain = gain >= 0
   const shareCount = isStock ? computeShareCount(asset) : 0
   const unitCount = isTradable ? computeFixedIncomeLotCount(asset) : 0
   const plaidSync = getPlaidSyncInfo(asset)
+  const pct = isStock ? todayPct(asset) : null
+  const tags = isStock ? stockPlanTags(asset) : []
   const [hideValues] = useHideValues()
-
-  const fallbackColor = isStock
-    ? colorForTicker(asset.ticker?.symbol ?? asset.name ?? String(index))
-    : colorForAssetType(asset.asset_type, index)
-  const logoUrl = asset.ticker?.logo as string | undefined
-  const [accent, setAccent] = useState(fallbackColor)
-
-  useEffect(() => {
-    setAccent(fallbackColor)
-    if (!isStock || !logoUrl) return
-    let cancelled = false
-    getLogoColor(logoUrl).then((color) => {
-      if (!cancelled && color) setAccent(color)
-    })
-    return () => { cancelled = true }
-  }, [isStock, logoUrl, fallbackColor])
+  const navigate = useNavigate()
+  const href = `/portfolio/${asset.id}`
+  const syncTitle = plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'
+  const qtyLabel = isStock
+    ? `${fmtShares(shareCount, isCrypto ? 8 : 2)} ${isCrypto ? 'units' : 'shares'}`
+    : isTradable ? `${fmtShares(unitCount)} units` : null
 
   if (layout === 'list') {
+    const gain = isStock && basis > 0 && !noPriceData ? value - basis : null
     return (
-      <motion.div
-        className="mx-4 mb-2"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] as const }}
-        whileTap={{ scale: 0.99, transition: { duration: 0.1 } }}
-      >
-        <Link to={`/portfolio/${asset.id}`} className="block">
-          {/* A hover tint gives rows the same "this is clickable" affordance
-              a tile gets from lifting on hover, without the lift itself
-              reading oddly on something this thin. */}
-          <Card className="hover:bg-muted/40">
-            <CardContent className="p-3.5">
-              <div className="flex gap-3 items-center">
-                <LegacyAssetIcon asset={asset} accent={accent} />
-                <div className="flex-1 text-left min-w-0">
-                  <p className="font-medium truncate">{asset.name}</p>
-                  <p className="text-muted-foreground text-xs truncate">
-                    {/* Share count comes from owned lots, not the quote, so it's
-                        worth printing even while the price itself is pending. */}
-                    {asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}{isStock ? ` · ${fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} ${asset.asset_type === 'Crypto' ? 'coins' : 'shares'}` : ''}{isTradable ? ` · ${fmtShares(unitCount)} units` : ''}
-                  </p>
-                  {plaidSync.synced && (
-                    <Badge
-                      variant="secondary"
-                      className="mt-1 gap-0.5 text-xs px-1.5 py-0"
-                      title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
-                    >
-                      <Link2 size={10} /> Synced
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <div className="text-right">
-                    {isStock ? (
-                      noPriceData ? (
-                        <>
-                          <p className="font-semibold text-lg text-muted-foreground">—</p>
-                          <p className="text-xs text-muted-foreground">Price pending</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className={`font-medium font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-                          <p
-                            className={`text-sm tabular-nums ${isGain ? 'text-gain' : 'text-loss'} ${hiddenValueClass(hideValues)}`}
-                            title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
-                          >
-                            {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
-                          </p>
-                        </>
-                      )
-                    ) : (
-                      <p className={`font-medium font-display tabular-nums ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-                    )}
-                  </div>
-                  <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </motion.div>
+      <tr className="pf-table-row" onClick={() => navigate(href)}>
+        <td>
+          <Link to={href} onClick={e => e.stopPropagation()}>
+            {asset.name}
+            <span className="sub">{caption(asset)}</span>
+          </Link>
+          {(plaidSync.synced || tags.length > 0) && (
+            <span className="pf-card-chips" style={{ justifyContent: 'flex-start', marginTop: 4 }}>
+              {plaidSync.synced && <span className="mne-chip is-synced is-outline" title={syncTitle}>{LINK_ICON}Synced</span>}
+              {tags.map(t => <span key={t} className="mne-chip is-tag">{t}</span>)}
+            </span>
+          )}
+        </td>
+        <td className="r pf-hide-sm">{qtyLabel ? qtyLabel.split(' ')[0] : '—'}</td>
+        <td className="r">
+          {noPriceData ? <span className="mne-muted">Price pending</span> : <span className={hiddenValueClass(hideValues)}>{fmt(value)}</span>}
+        </td>
+        <td className="r pf-hide-sm">
+          {gain != null
+            ? <span className={hiddenValueClass(hideValues)}><Delta value={gain} format={abs => fmt(abs)} /></span>
+            : <span className="mne-muted">—</span>}
+        </td>
+        <td className="r">{pct != null ? <Delta value={pct} digits={1} /> : <span className="mne-muted">—</span>}</td>
+      </tr>
     )
   }
 
   return (
-    <motion.div
-      // True square from `sm:` up, where 3-4 columns leave enough width (and
-      // therefore square-derived height) to fit a stock's icon + name +
-      // value + shares/gain line comfortably. Below that, 2 columns on a
-      // narrow phone make a true square too short for that same content —
-      // it was spilling out past the tile's bottom edge — so mobile gets a
-      // taller-than-wide ratio instead of a literal square.
-      className="aspect-[3/4] sm:aspect-square"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] as const }}
-      whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
-    >
-      <Link to={`/portfolio/${asset.id}`} className="block h-full">
-        <div
-          className="h-full rounded-lg shadow-card transition-[box-shadow,background-color] duration-200 ease-out hover:shadow-card-hover p-4 flex flex-col text-white"
-          style={{ backgroundColor: accent }}
-        >
-          <AssetIcon asset={asset} accent={accent} />
-
-          <div className="mt-3 min-w-0">
-            <p className="font-semibold truncate [text-shadow:0_1px_2px_rgba(0,0,0,0.15)]">{asset.name}</p>
-            <p className="text-white/70 text-xs truncate">{asset.location?.name} · {asset.asset_type}{asset.asset_type === 'Fixed Income' && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}</p>
-            {plaidSync.synced && (
-              <span
-                className="inline-flex items-center gap-0.5 text-xs font-medium bg-white/20 rounded-full px-1.5 py-0.5 mt-1"
-                title={plaidSync.institutionName ? `Synced via Plaid (${plaidSync.institutionName})` : 'Synced via Plaid'}
-              >
-                <Link2 size={9} /> Synced
-              </span>
-            )}
-          </div>
-
-          <div className="mt-auto pt-3">
-            {isStock ? (
-              noPriceData ? (
-                <>
-                  <p className="font-medium text-xl font-display leading-tight text-white/70">—</p>
-                  <p className="text-xs text-white/70 mt-0.5">Price pending</p>
-                </>
-              ) : (
-                <>
-                  <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <span className="text-xs text-white/70 tabular-nums">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
-                    {/* Direction is carried by the arrow icon + sign, not by a
-                        green/red hue — a hue picked to signal gain/loss could
-                        easily collide with (or vanish into) the tile's own
-                        block color. */}
-                    <span
-                      className="inline-flex items-center gap-0.5 text-xs font-semibold bg-white/20 rounded-full pl-1 pr-1.5 py-0.5"
-                      title={hideValues ? undefined : `Cost basis ${fmt(basis)}`}
-                    >
-                      {isGain ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
-                      {gainPct.toFixed(1)}%
-                    </span>
-                  </div>
-                </>
-              )
-            ) : isTradable ? (
-              <>
-                <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-                <span className="text-xs text-white/70 tabular-nums mt-1.5 block">{fmtShares(unitCount)} units</span>
-              </>
-            ) : (
-              <p className={`font-medium text-xl font-display tabular-nums leading-tight ${hiddenValueClass(hideValues)}`}>{fmt(value)}</p>
-            )}
-          </div>
+    <Link to={href} className="mne-card pf-card pf-fade">
+      <div className="pf-card-head">
+        <div>
+          <b>{asset.name}</b>
+          <div className="mne-muted pf-cap">{caption(asset)}</div>
         </div>
-      </Link>
-    </motion.div>
+        {(plaidSync.synced || tags.length > 0) && (
+          <div className="pf-card-chips">
+            {plaidSync.synced && <span className="mne-chip is-synced is-outline" title={syncTitle}>{LINK_ICON}Synced</span>}
+            {tags.map(t => <span key={t} className="mne-chip is-tag">{t}</span>)}
+          </div>
+        )}
+      </div>
+      {noPriceData ? (
+        <>
+          <div className="mne-hero-figure mne-muted" style={{ fontSize: 34, lineHeight: '40px' }}>—</div>
+          <div className="mne-help" style={{ marginTop: 6 }}>Price pending{qtyLabel ? ` · ${qtyLabel}` : ''}</div>
+        </>
+      ) : (
+        <>
+          <div className={`mne-hero-figure ${hiddenValueClass(hideValues)}`} style={{ fontSize: 34, lineHeight: '40px' }}>{fmt(value)}</div>
+          {pct != null && (
+            <div><Delta value={pct} digits={1} suffix={isCrypto ? 'in 24h' : 'today'} /></div>
+          )}
+          <div className="mne-help" style={{ marginTop: 6 }}>
+            {qtyLabel ?? asset.asset_type}
+            {(isStock || isTradable) && basis > 0 && (
+              <> · cost <span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span></>
+            )}
+          </div>
+        </>
+      )}
+    </Link>
   )
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
 function fmtShares(n: number, maximumFractionDigits = 2) {

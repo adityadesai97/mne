@@ -1,10 +1,6 @@
 // src/pages/AssetDetail.tsx
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, Pencil, Trash2, Link2 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
 import { TaxLotList } from '@/components/TaxLotList'
 import { FixedIncomeLotList } from '@/components/FixedIncomeLotList'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
@@ -17,7 +13,8 @@ import {
   getPlaidSyncInfo,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
-import { revealUp } from '@/lib/motionPresets'
+import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
+import '@/styles/portfolio.css'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 
@@ -207,35 +204,39 @@ export default function AssetDetail() {
 
   if (loading) {
     return (
-      <div className="flex flex-col min-h-full">
-        <header className="sticky top-0 bg-background z-10 flex items-center px-4 py-3 border-b border-border">
-          <Skeleton className="h-4 w-14" />
-        </header>
-        <main className="px-4 pt-6 pb-24 space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-7 w-2/3" />
-            <Skeleton className="h-4 w-1/3" />
-          </div>
-          <Skeleton className="h-10 w-1/2" />
-          <Skeleton className="h-40 w-full rounded-md" />
-        </main>
-      </div>
+      <PageBody>
+        <div aria-busy="true" aria-label="Loading" className="contents">
+          <div className="mne-skel is-pill" style={{ height: 32, width: 110 }} />
+          <section className="mne-card" style={{ display: 'grid', gap: 12 }}>
+            <div className="mne-skel" style={{ height: 34, width: '45%' }} />
+            <div className="mne-skel is-pill" style={{ height: 14, width: '30%' }} />
+            <div className="mne-skel" style={{ height: 64, marginTop: 8 }} />
+          </section>
+          <div className="mne-skel" style={{ height: 160, borderRadius: 24 }} />
+        </div>
+      </PageBody>
     )
   }
 
   if (error || !asset) {
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex items-center justify-center h-full pt-20"
-      >
-        <p className="text-destructive">{error ?? 'Asset not found.'}</p>
-      </motion.div>
+      <PageBody>
+        <section className="mne-card">
+          <div className="mne-empty is-error">
+            <span className="ico">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.1" /></svg>
+            </span>
+            <h3>Something went wrong</h3>
+            <p>{error ?? 'Asset not found.'}</p>
+            <button type="button" className="mne-btn is-ghost" onClick={() => navigate('/portfolio')}>Back to portfolio</button>
+          </div>
+        </section>
+      </PageBody>
     )
   }
 
   const isStock = isTickerAsset(asset)
+  const isCrypto = asset.asset_type === 'Crypto'
   const isFixedIncome = asset.asset_type === 'Fixed Income'
   const isTradable = isTradableFixedIncome(asset)
   const plaidSync = getPlaidSyncInfo(asset)
@@ -247,19 +248,10 @@ export default function AssetDetail() {
   const gain = computeUnrealizedGain(asset)
   const basis = computeCostBasis(asset)
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
-  const isGain = gain >= 0
   const noPriceData = isStock && asset.ticker?.current_price == null
-  // Live per-share quote, colored the same way as the Watchlist row: green/red
-  // against the ticker's last-refreshed previous close, neutral until one exists.
   const tickerPrice = Number(asset.ticker?.current_price ?? 0)
   const tickerPreviousClose = asset.ticker?.previous_close != null ? Number(asset.ticker.previous_close) : null
-  const tickerPriceChangeClass = tickerPreviousClose == null
-    ? ''
-    : tickerPrice > tickerPreviousClose
-      ? 'text-gain'
-      : tickerPrice < tickerPreviousClose
-        ? 'text-loss'
-        : ''
+  const todayPct = tickerPreviousClose ? ((tickerPrice - tickerPreviousClose) / tickerPreviousClose) * 100 : null
   const stockTransactionCount = isStock
     ? (asset.stock_subtypes ?? []).reduce(
       (sum: number, st: any) => sum + (st.transactions?.length ?? 0),
@@ -274,331 +266,246 @@ export default function AssetDetail() {
     : 0
   const hasStockActivity = stockTransactionCount + stockGrantCount > 0
 
-  return (
-    <div className="flex flex-col min-h-full">
-      {/* Sticky header */}
-      <header className="sticky top-0 bg-background/85 backdrop-blur-md z-10 flex items-center px-4 py-3 border-b border-border">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm transition-colors"
-          aria-label="Go back"
-        >
-          <ChevronLeft size={16} aria-hidden="true" />
-          Back
-        </button>
-        <h1 className="flex-1 text-center font-semibold pr-8 truncate">{asset.name}</h1>
-        <div className="flex items-center gap-3">
-          <motion.button
-            whileTap={{ scale: 0.85 }}
-            onClick={() => {
-              setEditing(true)
-              setEditValues({
-                name: asset.name,
-                ownership: asset.ownership ?? 'Individual',
-                notes: asset.notes ?? '',
-                price: String(asset.price ?? ''),
-                fixedIncomeSubtype: asset.fixed_income_subtype ?? 'CD',
-                interestRate: asset.interest_rate != null ? String(asset.interest_rate) : '',
-                maturityDate: asset.maturity_date ?? '',
-                faceValue: asset.face_value != null ? String(asset.face_value) : '',
-              })
-            }}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Edit asset"
-          >
-            <Pencil size={16} />
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.85 }}
-            onClick={handleDeleteAsset}
-            className="text-muted-foreground hover:text-destructive transition-colors"
-            aria-label="Delete asset"
-          >
-            <Trash2 size={16} />
-          </motion.button>
-        </div>
-      </header>
+  const subtitle = [
+    isStock && asset.ticker?.symbol ? asset.ticker.symbol : null,
+    asset.location?.name,
+    asset.asset_type + (isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''),
+    asset.ownership,
+  ].filter(Boolean).join(' · ')
 
-      {/* Main content */}
-      <motion.main
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="px-4 pt-6 pb-24 space-y-3"
-      >
-        {/* Hero card: title/type/ownership + value. AnimatePresence here is
-            a single, standalone one (not nested inside another) — safe per
-            the pattern used everywhere else in the app. */}
-        <motion.div {...revealUp(0)} className="bg-card shadow-card rounded-lg p-5 relative overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none">
-            <div className={`absolute -top-8 left-1/4 w-64 h-32 rounded-full blur-3xl ${isStock ? (isGain ? 'bg-gain/[0.12]' : 'bg-loss/[0.12]') : 'bg-brand-subtle'}`} />
-          </div>
-          <AnimatePresence mode="wait">
-            {editing ? (
-              <motion.div
-                key="edit"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="relative space-y-2"
-              >
-                <input
-                  value={editValues.name}
-                  onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))}
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xl font-bold focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <select
-                  value={editValues.ownership}
-                  onChange={e => setEditValues(v => ({ ...v, ownership: e.target.value }))}
-                  className="bg-card border border-border rounded-sm px-2 py-1 text-sm"
-                >
+  function startEditing() {
+    setEditing(true)
+    setEditValues({
+      name: asset.name,
+      ownership: asset.ownership ?? 'Individual',
+      notes: asset.notes ?? '',
+      price: String(asset.price ?? ''),
+      fixedIncomeSubtype: asset.fixed_income_subtype ?? 'CD',
+      interestRate: asset.interest_rate != null ? String(asset.interest_rate) : '',
+      maturityDate: asset.maturity_date ?? '',
+      faceValue: asset.face_value != null ? String(asset.face_value) : '',
+    })
+  }
+
+  return (
+    <PageBody>
+      <PageHead title="Asset detail" />
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="mne-btn is-quiet is-sm" aria-label="Go back" onClick={() => navigate(-1)}>
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: '-4px', marginRight: 2 }}><path d="M15 5l-7 7 7 7" /></svg>
+          Portfolio
+        </button>
+      </div>
+
+      <section className="mne-card pf-fade">
+        {editing ? (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div className="mne-field">
+              <label htmlFor="asset-name">Name</label>
+              <input id="asset-name" className="mne-input" value={editValues.name}
+                onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))} />
+            </div>
+            <div className="mne-field">
+              <label htmlFor="asset-ownership">Ownership</label>
+              <div className="mne-select-wrap">
+                <select id="asset-ownership" className="mne-input" value={editValues.ownership}
+                  onChange={e => setEditValues(v => ({ ...v, ownership: e.target.value }))}>
                   <option value="Individual">Individual</option>
                   <option value="Joint">Joint</option>
                 </select>
-                {!isStock && !isTradable && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Value ($)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editValues.price}
-                      onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                )}
-                {isTradable && (
-                  <p className="text-xs text-muted-foreground">
-                    Value is computed from lots below — add or edit a lot to change it.
-                  </p>
-                )}
-                {isFixedIncome && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="text-xs text-muted-foreground">Subtype</label>
-                      <select
-                        value={editValues.fixedIncomeSubtype}
-                        onChange={e => setEditValues(v => ({ ...v, fixedIncomeSubtype: e.target.value }))}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        <option value="CD">CD</option>
-                        <option value="Deposit">Deposit</option>
-                        <option value="Bond">Bond</option>
-                        <option value="T-Bill">T-Bill</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Rate (%)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editValues.interestRate}
-                        onChange={e => setEditValues(v => ({ ...v, interestRate: e.target.value }))}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Maturity</label>
-                      <input
-                        type="date"
-                        value={editValues.maturityDate}
-                        onChange={e => setEditValues(v => ({ ...v, maturityDate: e.target.value }))}
-                        className="w-full bg-background border border-border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  </div>
-                )}
-                {isFixedIncome && (editValues.fixedIncomeSubtype === 'T-Bill' || editValues.fixedIncomeSubtype === 'Bond') && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Face Value ($) — paid out at maturity; Value above is what was paid for it</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editValues.faceValue}
-                      onChange={e => setEditValues(v => ({ ...v, faceValue: e.target.value }))}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className="text-xs text-muted-foreground">Notes</label>
-                  <textarea
-                    value={editValues.notes}
-                    onChange={e => setEditValues(v => ({ ...v, notes: e.target.value }))}
-                    rows={3}
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveAsset}
-                    className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditing(false)}
-                    className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="view"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="relative"
-              >
-                <p className="text-muted-foreground text-xs uppercase tracking-widest mb-2 font-medium">
-                  {asset.location?.name} · {asset.asset_type}{isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''}
-                </p>
-                <h2 className="font-display text-2xl font-medium tracking-tight">{asset.name}</h2>
-                {isStock && asset.ticker && !noPriceData && (
-                  <p className="text-sm mt-1 flex items-center gap-1.5">
-                    <span className="text-muted-foreground">{asset.ticker.symbol}</span>
-                    <span className={hiddenValueClass(hideValues, `font-medium tabular-nums ${tickerPriceChangeClass}`)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>
-                  </p>
-                )}
-                {(asset.ownership || plaidSync.synced || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {asset.ownership && <Badge variant="secondary">{asset.ownership}</Badge>}
-                    {plaidSync.synced && (
-                      <Badge variant="secondary" className="gap-1">
-                        <Link2 size={11} />
-                        Synced via Plaid{plaidSync.institutionName ? ` (${plaidSync.institutionName})` : ''}
-                      </Badge>
-                    )}
-                    {isFixedIncome && asset.interest_rate != null && (
-                      <Badge variant="secondary">{Number(asset.interest_rate).toFixed(2)}% rate</Badge>
-                    )}
-                    {isFixedIncome && asset.maturity_date && (
-                      <Badge variant="secondary">Matures {formatDateMDY(asset.maturity_date)}</Badge>
-                    )}
-                    {isFixedIncome && asset.face_value != null && (
-                      <Badge variant="secondary" className={hiddenValueClass(hideValues)}>Face {fmt(Number(asset.face_value))}</Badge>
-                    )}
-                  </div>
-                )}
-
-                <div className={asset.ownership ? 'mt-4' : 'mt-3'}>
-                  {noPriceData ? (
-                    <>
-                      <p className="text-3xl font-bold text-muted-foreground">—</p>
-                      <p className="text-sm text-muted-foreground mt-1">Price pending</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-3xl font-medium tabular-nums font-display">
-                        <span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>
-                        {isStock && (
-                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(shareCount, asset.asset_type === 'Crypto' ? 8 : 2)} {asset.asset_type === 'Crypto' ? 'coins' : 'shares'}</span>
-                        )}
-                        {isTradable && (
-                          <span className="text-base text-muted-foreground font-normal ml-2">{fmtShares(lotUnits)} units</span>
-                        )}
-                      </p>
-                      {isStock && (
-                        <p className={hiddenValueClass(hideValues, `text-base mt-1 tabular-nums ${isGain ? 'text-gain' : 'text-loss'}`)}>
-                          {isGain ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              </motion.div>
+              </div>
+            </div>
+            {!isStock && !isTradable && (
+              <div className="mne-field">
+                <label htmlFor="asset-price">Value ($)</label>
+                <input id="asset-price" className="mne-input" type="number" step="0.01" value={editValues.price}
+                  onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))} />
+              </div>
             )}
-          </AnimatePresence>
-        </motion.div>
+            {isTradable && (
+              <p className="mne-help">Value is computed from lots below — add or edit a lot to change it.</p>
+            )}
+            {isFixedIncome && (
+              <div className="pf-lot-edit-grid">
+                <div className="mne-field">
+                  <label htmlFor="asset-fi-subtype">Subtype</label>
+                  <div className="mne-select-wrap">
+                    <select id="asset-fi-subtype" className="mne-input" value={editValues.fixedIncomeSubtype}
+                      onChange={e => setEditValues(v => ({ ...v, fixedIncomeSubtype: e.target.value }))}>
+                      <option value="CD">CD</option>
+                      <option value="Deposit">Deposit</option>
+                      <option value="Bond">Bond</option>
+                      <option value="T-Bill">T-Bill</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mne-field">
+                  <label htmlFor="asset-fi-rate">Rate (%)</label>
+                  <input id="asset-fi-rate" className="mne-input" type="number" step="0.01" value={editValues.interestRate}
+                    onChange={e => setEditValues(v => ({ ...v, interestRate: e.target.value }))} />
+                </div>
+                <div className="mne-field">
+                  <label htmlFor="asset-fi-maturity">Maturity</label>
+                  <input id="asset-fi-maturity" className="mne-input" type="date" value={editValues.maturityDate}
+                    onChange={e => setEditValues(v => ({ ...v, maturityDate: e.target.value }))} />
+                </div>
+              </div>
+            )}
+            {isFixedIncome && (editValues.fixedIncomeSubtype === 'T-Bill' || editValues.fixedIncomeSubtype === 'Bond') && (
+              <div className="mne-field">
+                <label htmlFor="asset-fi-face">Face Value ($)</label>
+                <input id="asset-fi-face" className="mne-input" type="number" step="0.01" value={editValues.faceValue}
+                  onChange={e => setEditValues(v => ({ ...v, faceValue: e.target.value }))} />
+                <span className="mne-help">Paid out at maturity; Value above is what was paid for it.</span>
+              </div>
+            )}
+            <div className="mne-field">
+              <label htmlFor="asset-notes">Notes</label>
+              <textarea id="asset-notes" className="mne-input" rows={3} value={editValues.notes}
+                onChange={e => setEditValues(v => ({ ...v, notes: e.target.value }))} />
+            </div>
+            <div className="pf-actions">
+              <button type="button" className="mne-btn" onClick={handleSaveAsset}>Save</button>
+              <button type="button" className="mne-btn is-ghost" onClick={() => setEditing(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <h2 className="mne-section-title" style={{ fontSize: 28, lineHeight: '34px' }}>{asset.name}</h2>
+                <div className="mne-muted">{subtitle}</div>
+              </div>
+              <div className="pf-actions" style={{ alignSelf: 'flex-start' }}>
+                <button type="button" className="mne-btn is-ghost is-sm" onClick={startEditing} aria-label="Edit asset">Edit</button>
+                <button type="button" className="mne-btn is-ghost is-sm" onClick={handleDeleteAsset} aria-label="Delete asset">Delete</button>
+              </div>
+            </div>
 
-        {/* Stock activity */}
-        {isStock && hasStockActivity && (
-          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-lg p-5">
-            <div className="mb-3">
-              <p className="text-muted-foreground text-xs uppercase tracking-widest font-medium">Stock Activity</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
-                {stockGrantCount > 0 && (
-                  <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>
+            {(plaidSync.synced || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
+              <div className="pf-card-chips" style={{ justifyContent: 'flex-start', marginTop: 12 }}>
+                {plaidSync.synced && (
+                  <span className="mne-chip is-synced is-outline">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg>
+                    Synced via Plaid{plaidSync.institutionName ? ` (${plaidSync.institutionName})` : ''}
+                  </span>
                 )}
-              </p>
-            </div>
-            <TaxLotList
-              subtypes={asset.stock_subtypes}
-              ticker={asset.ticker}
-              onDeleteTransaction={handleDeleteTransaction}
-              onEditTransaction={handleEditTransaction}
-              onEndGrant={handleEndGrant}
-              onDeleteGrant={handleDeleteGrant}
-            />
-          </motion.div>
-        )}
+                {isFixedIncome && asset.interest_rate != null && (
+                  <span className="mne-chip is-outline">{Number(asset.interest_rate).toFixed(2)}% rate</span>
+                )}
+                {isFixedIncome && asset.maturity_date && (
+                  <span className="mne-chip is-outline">Matures {formatDateMDY(asset.maturity_date)}</span>
+                )}
+                {isFixedIncome && asset.face_value != null && (
+                  <span className={`mne-chip is-outline ${hiddenValueClass(hideValues)}`}>Face {fmt(Number(asset.face_value))}</span>
+                )}
+              </div>
+            )}
 
-        {/* Fixed Income lots (Bond/T-Bill) — units bought over time, mirroring stock tax lots */}
-        {isTradable && (
-          <motion.div {...revealUp(0.06)} className="bg-card shadow-card rounded-lg p-5">
-            <div className="mb-3">
-              <p className="text-muted-foreground text-xs uppercase tracking-widest font-medium">Lots</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {fixedIncomeLots.length} lot{fixedIncomeLots.length === 1 ? '' : 's'} · {fmtShares(lotUnits)} units total
-              </p>
-            </div>
-            <FixedIncomeLotList
-              lots={fixedIncomeLots}
-              faceValue={asset.face_value ?? null}
-              onAddLot={handleAddLot}
-              onEditLot={handleEditLot}
-              onDeleteLot={handleDeleteLot}
-            />
-          </motion.div>
-        )}
-
-        {/* Expected pretax return if held to maturity — a projection (coupon
-            income + discount/premium to face value), not a mark-to-market
-            gain, so it lives in its own card rather than next to the hero
-            value the way a stock's unrealized gain does. */}
-        {expectedReturn && (
-          <motion.div {...revealUp(0.08)} className="bg-card shadow-card rounded-lg p-5">
-            <p className="text-muted-foreground text-xs uppercase tracking-widest mb-3 font-medium">Expected Return to Maturity</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <Metric label="Cost basis" value={fmt(expectedReturn.costBasis)} hidden={hideValues} />
-              <Metric label="Face value at maturity" value={fmt(expectedReturn.faceValueTotal)} hidden={hideValues} />
-              {asset.fixed_income_subtype === 'Bond' && (
-                <Metric label="Coupon income" value={fmt(expectedReturn.interestIncome)} hidden={hideValues} />
+            <div className="mne-stats" style={{ marginTop: 20 }}>
+              {noPriceData ? (
+                <Stat label="Value" value={<span className="mne-muted">—</span>} sub="Price pending" subClassName="mne-muted" />
+              ) : (
+                <Stat
+                  label="Value"
+                  value={<span className={hiddenValueClass(hideValues, '', 'lg')}>{fmt(value)}</span>}
+                  sub={isStock && todayPct != null ? <Delta value={todayPct} suffix={isCrypto ? 'in 24h' : 'today'} /> : undefined}
+                />
               )}
-              <Metric
-                label={asset.fixed_income_subtype === 'Bond' ? 'Price gain/loss' : 'Discount captured'}
-                value={`${expectedReturn.capitalGain >= 0 ? '+' : ''}${fmt(expectedReturn.capitalGain)}`}
-                className={expectedReturn.capitalGain >= 0 ? 'text-gain' : 'text-loss'}
-                hidden={hideValues}
-              />
-              <Metric
-                label="Total expected return"
-                value={`${expectedReturn.totalExpectedReturn >= 0 ? '+' : ''}${fmt(expectedReturn.totalExpectedReturn)}${expectedReturn.expectedReturnPct != null ? ` (${expectedReturn.expectedReturnPct.toFixed(1)}%)` : ''}`}
-                className={expectedReturn.totalExpectedReturn >= 0 ? 'text-gain' : 'text-loss'}
-                hidden={hideValues}
-              />
-              {expectedReturn.annualizedYieldPct != null && (
-                <Metric label="Annualized yield" value={`${expectedReturn.annualizedYieldPct.toFixed(2)}%`} />
+              {isStock && !noPriceData && (
+                <Stat
+                  label="Price"
+                  value={<span className={hiddenValueClass(hideValues)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>}
+                />
+              )}
+              {isStock && (
+                <Stat label={isCrypto ? 'Units' : 'Shares'} value={fmtShares(shareCount, isCrypto ? 8 : 2)} />
+              )}
+              {isTradable && <Stat label="Units" value={fmtShares(lotUnits)} />}
+              {(isStock || isTradable) && basis > 0 && (
+                <Stat label="Cost basis" value={<span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span>} />
+              )}
+              {isStock && !noPriceData && basis > 0 && (
+                <Stat
+                  label="Unrealized gain"
+                  value={<span className={hiddenValueClass(hideValues)}>{fmt(gain)}</span>}
+                  sub={<Delta value={gainPct} digits={1} />}
+                />
               )}
             </div>
-          </motion.div>
+          </>
         )}
+      </section>
 
-        {/* Notes (read mode only) */}
-        {!editing && asset.notes && (
-          <motion.div {...revealUp(0.1)} className="bg-card shadow-card rounded-lg p-5">
-            <p className="text-muted-foreground text-xs uppercase tracking-widest mb-2 font-medium">Notes</p>
-            <p className="text-foreground/90 text-sm whitespace-pre-wrap">{asset.notes}</p>
-          </motion.div>
-        )}
+      {isStock && hasStockActivity && (
+        <section className="mne-card pf-fade">
+          <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Tax lots</h3>
+          <p className="mne-help" style={{ marginBottom: 12 }}>
+            {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
+            {stockGrantCount > 0 && <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>}
+          </p>
+          <TaxLotList
+            subtypes={asset.stock_subtypes}
+            ticker={asset.ticker}
+            onDeleteTransaction={handleDeleteTransaction}
+            onEditTransaction={handleEditTransaction}
+            onEndGrant={handleEndGrant}
+            onDeleteGrant={handleDeleteGrant}
+          />
+        </section>
+      )}
 
-      </motion.main>
-    </div>
+      {isTradable && (
+        <section className="mne-card pf-fade">
+          <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Lots</h3>
+          <p className="mne-help" style={{ marginBottom: 12 }}>
+            {fixedIncomeLots.length} lot{fixedIncomeLots.length === 1 ? '' : 's'} · {fmtShares(lotUnits)} units total
+          </p>
+          <FixedIncomeLotList
+            lots={fixedIncomeLots}
+            faceValue={asset.face_value ?? null}
+            onAddLot={handleAddLot}
+            onEditLot={handleEditLot}
+            onDeleteLot={handleDeleteLot}
+          />
+        </section>
+      )}
+
+      {/* Expected pretax return if held to maturity: a projection, not a
+          mark-to-market gain, so it gets its own card. */}
+      {expectedReturn && (
+        <section className="mne-card pf-fade">
+          <h3 className="mne-card-title">Expected return to maturity</h3>
+          <div className="mne-stats">
+            <Stat label="Cost basis" value={<Hidden hidden={hideValues}>{fmt(expectedReturn.costBasis)}</Hidden>} />
+            <Stat label="Face value at maturity" value={<Hidden hidden={hideValues}>{fmt(expectedReturn.faceValueTotal)}</Hidden>} />
+            {asset.fixed_income_subtype === 'Bond' && (
+              <Stat label="Coupon income" value={<Hidden hidden={hideValues}>{fmt(expectedReturn.interestIncome)}</Hidden>} />
+            )}
+            <Stat
+              label={asset.fixed_income_subtype === 'Bond' ? 'Price gain/loss' : 'Discount captured'}
+              value={<Hidden hidden={hideValues}><Delta value={expectedReturn.capitalGain} format={abs => fmt(abs)} /></Hidden>}
+            />
+            <Stat
+              label="Total expected return"
+              value={<Hidden hidden={hideValues}><Delta value={expectedReturn.totalExpectedReturn} format={abs => fmt(abs)} /></Hidden>}
+              sub={expectedReturn.expectedReturnPct != null ? <Delta value={expectedReturn.expectedReturnPct} digits={1} /> : undefined}
+            />
+            {expectedReturn.annualizedYieldPct != null && (
+              <Stat label="Annualized yield" value={`${expectedReturn.annualizedYieldPct.toFixed(2)}%`} />
+            )}
+          </div>
+        </section>
+      )}
+
+      {!editing && asset.notes && (
+        <section className="mne-card pf-fade">
+          <h3 className="mne-card-title">Notes</h3>
+          <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{asset.notes}</p>
+        </section>
+      )}
+    </PageBody>
   )
 }
 
@@ -610,11 +517,6 @@ function fmtShares(n: number, maximumFractionDigits = 2) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits }).format(n)
 }
 
-function Metric({ label, value, className = '', hidden = false }: { label: string; value: string; className?: string; hidden?: boolean }) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={hiddenValueClass(hidden, `text-sm font-medium tabular-nums mt-0.5 ${className}`)}>{value}</p>
-    </div>
-  )
+function Hidden({ hidden, children }: { hidden: boolean; children: React.ReactNode }) {
+  return <span className={hiddenValueClass(hidden)}>{children}</span>
 }

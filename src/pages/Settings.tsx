@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { getSettings, saveSettings } from '@/lib/db/settings'
 import { saveLlmKey } from '@/lib/db/llmCredentials'
 import { saveMarketKeys } from '@/lib/db/marketCredentials'
-import { Input } from '@/components/ui/input'
+import '@/styles/settings.css'
+import { Field, PageHead, SegmentedControl, Switch } from '@/components/mne'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { config } from '@/store/config'
 import { exportData, importData, setActiveImportController, type ExportScope } from '@/lib/importExport'
@@ -14,7 +15,7 @@ import { useHideValues } from '@/hooks/useHideValues'
 import { listConversations, deleteConversation, type ConversationSummary } from '@/lib/db/conversations'
 import { resumeConversationInCommandBar } from '@/lib/commandBarBridge'
 import { formatDateMDY } from '@/lib/dates'
-import { ChevronRight, Bell, Database, LogOut, Key, Sun, ExternalLink, Loader2, Sparkles, Info, Shield, Trash2, Plus, Link2 } from 'lucide-react'
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react'
 import {
   getPlaidCredentialsStatus,
   savePlaidCredentials,
@@ -40,83 +41,6 @@ import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 import { PlaidLotSellModal } from '@/components/PlaidLotSellModal'
 import { PlaidDisconnectDialog } from '@/components/PlaidDisconnectDialog'
 import { notifyPlaidPendingChanged } from '@/lib/plaidEvents'
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs font-semibold text-foreground/70 px-1 mb-2 mt-14 first:mt-0">
-      {children}
-    </p>
-  )
-}
-
-function Row({ label, hint, right, onClick, destructive, disabled }: {
-  label: string
-  hint?: string
-  right?: React.ReactNode
-  onClick?: () => void
-  destructive?: boolean
-  disabled?: boolean
-}) {
-  const cls = `flex items-center gap-3 px-4 py-4 bg-card rounded-md ${onClick && !disabled ? 'cursor-pointer hover:bg-muted/40 active:bg-muted/60 transition-colors' : ''} ${disabled ? 'opacity-80' : ''}`
-  return (
-    <div className={cls} onClick={onClick && !disabled ? onClick : undefined}>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium ${destructive ? 'text-destructive' : ''}`}>{label}</p>
-        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
-      </div>
-      {right}
-      {onClick && !right && <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />}
-    </div>
-  )
-}
-
-
-function Toggle({ enabled, onEnable, onDisable }: { enabled: boolean; onEnable: () => void; onDisable: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      onClick={enabled ? onDisable : onEnable}
-      className={`relative h-7 w-[46px] flex-shrink-0 cursor-pointer rounded-full border-[1.5px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${enabled ? 'border-primary bg-primary' : 'border-border-strong bg-muted'}`}
-    >
-      <span className={`absolute left-[3px] top-[3px] h-[19px] w-[19px] rounded-full transition-transform duration-200 ${enabled ? 'translate-x-[18px] bg-primary-foreground' : 'translate-x-0 bg-muted-foreground'}`} />
-    </button>
-  )
-}
-
-function ThemePicker({ value, onChange }: { value: 'light' | 'dark' | 'system'; onChange: (v: 'light' | 'dark' | 'system') => void }) {
-  const options: { v: 'light' | 'dark' | 'system'; label: string }[] = [
-    { v: 'light', label: 'Light' },
-    { v: 'dark', label: 'Dark' },
-    { v: 'system', label: 'System' },
-  ]
-  return (
-    <div className="flex gap-1 bg-muted rounded-full p-1">
-      {options.map(opt => (
-        <button
-          key={opt.v}
-          type="button"
-          onClick={() => onChange(opt.v)}
-          className={`flex-1 text-xs py-1 rounded-full transition-colors ${value === opt.v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function Hint({ text }: { text: string }) {
-  return (
-    <div className="relative group/hint inline-flex items-center">
-      <Info size={11} className="text-muted-foreground cursor-help" />
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs whitespace-nowrap shadow-md opacity-0 group-hover/hint:opacity-100 transition-opacity pointer-events-none z-50">
-        {text}
-      </div>
-    </div>
-  )
-}
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -509,565 +433,570 @@ export default function Settings() {
     }
   }
 
+  const pushToggleBusy = pushLoading
+
+  async function enablePush() {
+    setPushEnabled(true)
+    setPushLoading(true)
+    try {
+      await subscribeToPush()
+      const next = { ...settingsRef.current, price_alerts_enabled: true, vest_alerts_enabled: true, capital_gains_alerts_enabled: true }
+      setSettings(next)
+      settingsRef.current = next
+      await saveSettings(next)
+    } catch (e: any) {
+      console.error('Push subscribe failed:', e.message)
+      setPushEnabled(false)
+    } finally {
+      setPushLoading(false)
+    }
+  }
+
+  async function disablePush() {
+    setPushEnabled(false)
+    setPushLoading(true)
+    try { await unsubscribeFromPush() } catch { setPushEnabled(true) } finally { setPushLoading(false) }
+  }
+
+  const keyLink = (href: string) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="mne-link">
+      Get key <ExternalLink size={11} aria-hidden="true" style={{ display: 'inline' }} />
+    </a>
+  )
+
   return (
-    <div className="pt-6 pb-8 px-4 max-w-2xl mx-auto">
-      <h1 className="font-display text-3xl font-medium tracking-tight mb-5">Settings</h1>
+    <div className="mne-main">
+      <PageHead title="Settings" />
+      <div style={{ display: 'grid', gap: 24, maxWidth: 760 }}>
 
-      {/* Appearance */}
-      <SectionHeader><Sun size={10} className="inline mr-1.5 mb-0.5" />Appearance</SectionHeader>
-      <div className="space-y-2">
-        <div className="bg-card rounded-md px-4 py-4 space-y-2">
-          <p className="text-sm font-medium">Theme</p>
-          <ThemePicker value={theme} onChange={handleThemeChange} />
-        </div>
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Privacy mode</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Blur dollar amounts on Home, Portfolio, and Charts
-            </p>
-          </div>
-          <Toggle
-            enabled={hideValues}
-            onEnable={() => setHideValues(true)}
-            onDisable={() => setHideValues(false)}
-          />
-        </div>
-      </div>
-
-      {/* AI */}
-      <SectionHeader><Sparkles size={10} className="inline mr-1.5 mb-0.5" />AI</SectionHeader>
-      <div className="space-y-2">
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Auto-assign themes</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Use AI to suggest themes when new tickers are created
-            </p>
-          </div>
-          <Toggle
-            enabled={settings.auto_theme_assignment_enabled !== false}
-            onEnable={() => { void setAutoThemeAssignmentEnabled(true) }}
-            onDisable={() => { void setAutoThemeAssignmentEnabled(false) }}
-          />
-        </div>
-        <Row
-          label="Conversation History"
-          hint="View and continue past command bar conversations"
-          onClick={openConversationHistory}
-        />
-      </div>
-
-      <Dialog
-        open={showConversationHistory}
-        onOpenChange={(open) => { if (!open) setShowConversationHistory(false) }}
-      >
-        <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Conversation History</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
-            {conversationsLoading && (
-              <p className="text-xs text-muted-foreground px-2 py-2">Loading…</p>
-            )}
-            {conversationsError && (
-              <p className="text-xs text-destructive px-2 py-1">{conversationsError}</p>
-            )}
-            {!conversationsLoading && !conversationsError && conversations.length === 0 && (
-              <p className="text-xs text-muted-foreground px-2 py-2">No conversations yet.</p>
-            )}
-            {conversations.map(c => (
-              <div key={c.id} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-muted/40 transition-colors">
-                <button
-                  type="button"
-                  onClick={() => handleContinueConversation(c.id)}
-                  className="flex-1 min-w-0 text-left cursor-pointer"
-                >
-                  <p className="text-sm font-medium truncate">{c.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {formatDateMDY(c.updated_at)}
-                    {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
-                      <span className="tabular-nums"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
-                    )}
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteConversation(c.id)}
-                  className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 p-1"
-                  aria-label="Delete conversation"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Notifications */}
-      <SectionHeader><Bell size={10} className="inline mr-1.5 mb-0.5" />Notifications</SectionHeader>
-      <div className="space-y-2">
-        <div className="flex items-center gap-3 px-4 py-4 bg-card rounded-md">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Push notifications</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {pushEnabled ? 'Enabled' : 'Allow price and vest alerts'}
-            </p>
-          </div>
-          {pushLoading && (
-            <svg className="w-4 h-4 text-muted-foreground animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          )}
-          <Toggle
-            enabled={pushEnabled}
-            onEnable={async () => {
-              setPushEnabled(true)
-              setPushLoading(true)
-              try {
-                await subscribeToPush()
-                const next = { ...settingsRef.current, price_alerts_enabled: true, vest_alerts_enabled: true, capital_gains_alerts_enabled: true }
-                setSettings(next)
-                settingsRef.current = next
-                await saveSettings(next)
-              }
-              catch (e: any) { console.error('Push subscribe failed:', e.message); setPushEnabled(false) }
-              finally { setPushLoading(false) }
-            }}
-            onDisable={async () => {
-              setPushEnabled(false)
-              setPushLoading(true)
-              try { await unsubscribeFromPush() }
-              catch { setPushEnabled(true) }
-              finally { setPushLoading(false) }
-            }}
-          />
-        </div>
-
-        {pushEnabled && (
-          <div className="ml-3 pl-3 border-l-2 border-border/40 space-y-1.5">
-            {/* Price alerts */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <p className="text-sm font-medium">Price alerts</p>
-                <Hint text="Alert when price moves by this %" />
-              </div>
-              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.price_alerts_enabled ? '' : 'opacity-35'}`}>
-                <Input
-                  type="number"
-                  value={settings.price_alert_threshold}
-                  onChange={e => setSettings(s => ({ ...s, price_alert_threshold: Number(e.target.value) }))}
-                  onBlur={() => saveSettings(settingsRef.current)}
-                  disabled={!settings.price_alerts_enabled}
-                  className="w-14 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
-                />
-                <span className="text-xs text-muted-foreground">%</span>
-              </div>
-              <Toggle
-                enabled={settings.price_alerts_enabled}
-                onEnable={() => { void setNotificationToggle('price_alerts_enabled', true) }}
-                onDisable={() => { void setNotificationToggle('price_alerts_enabled', false) }}
-              />
-            </div>
-
-            {/* RSU vest reminders */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <p className="text-sm font-medium">RSU vest reminders</p>
-                <Hint text="Days before vest end to notify" />
-              </div>
-              <div className={`flex items-center gap-1.5 ml-auto transition-opacity ${settings.vest_alerts_enabled ? '' : 'opacity-35'}`}>
-                <Input
-                  type="number"
-                  value={settings.rsu_alert_days_before}
-                  onChange={e => setSettings(s => ({ ...s, rsu_alert_days_before: Number(e.target.value) }))}
-                  onBlur={() => saveSettings(settingsRef.current)}
-                  disabled={!settings.vest_alerts_enabled}
-                  className="w-14 h-7 text-sm text-right border-border/60 bg-muted/40 px-2"
-                />
-                <span className="text-xs text-muted-foreground">days</span>
-              </div>
-              <Toggle
-                enabled={settings.vest_alerts_enabled}
-                onEnable={() => { void setNotificationToggle('vest_alerts_enabled', true) }}
-                onDisable={() => { void setNotificationToggle('vest_alerts_enabled', false) }}
-              />
-            </div>
-
-            {/* Capital gains alerts */}
-            <div className="flex items-center gap-3 px-4 py-3.5 bg-card rounded-md">
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <p className="text-sm font-medium">Capital gains alerts</p>
-                <Hint text="Notify when Short Term lots are promoted to Long Term (after 1 year)." />
-              </div>
-              <div className="ml-auto" />
-              <Toggle
-                enabled={settings.capital_gains_alerts_enabled}
-                onEnable={() => { void setNotificationToggle('capital_gains_alerts_enabled', true) }}
-                onDisable={() => { void setNotificationToggle('capital_gains_alerts_enabled', false) }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Data */}
-      <SectionHeader><Database size={10} className="inline mr-1.5 mb-0.5" />Data</SectionHeader>
-      <div className="space-y-2">
-        <Row label="Export" hint="Download a spreadsheet backup of your portfolio" onClick={() => setExportDialogOpen(true)} />
-        <Row
-          label={importLoading ? 'Importing…' : 'Import'}
-          hint={importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Restore from a backup (.xlsx or .json)'}
-          right={importLoading ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
-          disabled={importLoading}
-          onClick={() => fileInputRef.current?.click()}
-        />
-        <input
-          id="import-file"
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.json"
-          className="hidden"
-          onChange={e => {
-            const f = e.target.files?.[0]
-            if (f) void handleImportFile(f)
-          }}
-        />
-      </div>
-
-      <Dialog open={exportDialogOpen} onOpenChange={(open) => { if (!exportingScope) setExportDialogOpen(open) }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Export data</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground -mt-2">Choose what to include in the spreadsheet.</p>
-          <div className="space-y-2 pt-1">
-            <Row
-              label={exportingScope === 'all' ? 'Exporting…' : 'All data'}
-              hint="Net worth history, AI conversation history, and all asset details"
-              right={exportingScope === 'all' ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
-              disabled={!!exportingScope}
-              onClick={() => void handleExport('all')}
-            />
-            <Row
-              label={exportingScope === 'assets' ? 'Exporting…' : 'Only assets'}
-              hint="Only your asset, account, and transaction details"
-              right={exportingScope === 'assets' ? <Loader2 size={14} className="text-muted-foreground animate-spin flex-shrink-0" /> : undefined}
-              disabled={!!exportingScope}
-              onClick={() => void handleExport('assets')}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* API Keys */}
-      <SectionHeader><Key size={10} className="inline mr-1.5 mb-0.5" />API Keys</SectionHeader>
-      {editingKeys ? (
-        <div className="bg-card rounded-md p-4 space-y-3 animate-slideDown">
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Claude API Key</label>
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder={config.llmKeySet ? 'Saved. Enter a new key to replace it.' : 'sk-ant-...'}
-              value={keyDraft.claudeApiKey}
-              onChange={e => setKeyDraft(d => ({ ...d, claudeApiKey: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finnhub API Key</label>
-              <a href="https://finnhub.io/dashboard" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder={config.hasFinnhubKey ? 'Saved. Enter a new key to replace it.' : 'your_key'}
-              value={keyDraft.finnhubApiKey}
-              onChange={e => setKeyDraft(d => ({ ...d, finnhubApiKey: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CoinGecko API Key <span className="normal-case tracking-normal">(optional)</span></label>
-              <a href="https://www.coingecko.com/en/api/pricing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors">
-                Get key <ExternalLink size={9} />
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder={config.coingeckoKeySet ? 'Saved. Enter a new key to replace it.' : 'CG-...'}
-              value={keyDraft.coingeckoApiKey}
-              onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-            <p className="text-xs text-muted-foreground">Crypto prices work without one, but a free Demo key avoids CoinGecko's tight keyless rate limit and powers crypto price alerts.</p>
-          </div>
-          {keyError && <p className="text-xs text-destructive">{keyError}</p>}
-          <div className="flex gap-2">
-            <button
-              onClick={handleSaveKeys}
-              disabled={keySaving}
-              className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {keySaving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={() => { setEditingKeys(false); setKeyError('') }}
-              className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-card rounded-md overflow-hidden">
-          <div
-            className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
-            onClick={() => { setKeyDraft({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
-          >
-            <p className="text-sm font-medium flex-1">Update API keys</p>
-            <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
-          </div>
-        </div>
-      )}
-
-      {/* Plaid */}
-      <SectionHeader><Link2 size={10} className="inline mr-1.5 mb-0.5" />Connected Accounts (Plaid)</SectionHeader>
-      {editingPlaidCreds ? (
-        <div className="bg-card rounded-md p-4 space-y-3 animate-slideDown">
-          <p className="text-xs text-muted-foreground">
-            Your own free Plaid developer credentials — not shared with other mne users. Get them at{' '}
-            <a href="https://dashboard.plaid.com/team/keys" target="_blank" rel="noopener noreferrer" className="text-primary/70 hover:text-primary underline underline-offset-2">
-              dashboard.plaid.com
-            </a>.
+        {/* API keys */}
+        <section className="mne-card" aria-labelledby="settings-keys">
+          <h2 id="settings-keys" className="mne-section-title">API keys</h2>
+          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+            Saved write-only on the server. They never come back to your browser.
           </p>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Plaid Client ID</label>
-            <input
-              type="password"
-              placeholder={plaidStatus.configured ? '•••••••• (unchanged)' : '66...'}
-              value={plaidCredsDraft.clientId}
-              onChange={e => setPlaidCredsDraft(d => ({ ...d, clientId: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Plaid Secret</label>
-            <input
-              type="password"
-              placeholder={plaidStatus.configured ? '•••••••• (leave blank to keep current)' : 'production secret'}
-              value={plaidCredsDraft.secret}
-              onChange={e => setPlaidCredsDraft(d => ({ ...d, secret: e.target.value }))}
-              className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-            />
-          </div>
-          {plaidCredsError && <p className="text-xs text-destructive">{plaidCredsError}</p>}
-          <div className="flex gap-2">
-            <button
-              onClick={handleSavePlaidCreds}
-              disabled={plaidCredsSaving}
-              className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {plaidCredsSaving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={() => { setEditingPlaidCreds(false); setPlaidCredsError('') }}
-              className="flex-1 bg-muted text-muted-foreground rounded-lg py-2 text-sm hover:bg-muted/80 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-card rounded-md overflow-hidden">
-          <Row
-            label={plaidStatus.configured ? 'Plaid credentials configured' : 'Set up Plaid credentials'}
-            hint={plaidStatus.configured ? undefined : 'Required once, free — connects accounts instead of manual entry'}
-            onClick={() => { setPlaidCredsDraft({ clientId: '', secret: '' }); setPlaidCredsError(''); setEditingPlaidCreds(true) }}
-          />
-        </div>
-      )}
-
-      {plaidStatus.configured && (
-        <div className="bg-card rounded-md overflow-hidden mt-2 divide-y divide-border/60">
-          {plaidPendingCount > 0 && (
-            <Row
-              label={`Review ${plaidPendingCount} synced position${plaidPendingCount !== 1 ? 's' : ''}`}
-              hint="Nothing is added to your portfolio until you confirm each one"
-              onClick={() => setPlaidReviewOpen(true)}
-            />
+          {editingKeys ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div className="mne-form-grid">
+                <Field id="key-claude" label="Claude API key" help={<>{keyLink('https://console.anthropic.com/settings/keys')}</>}>
+                  <input
+                    id="key-claude"
+                    className="mne-input"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={config.llmKeySet ? 'Saved. Enter a new key to replace it.' : 'sk-ant-...'}
+                    value={keyDraft.claudeApiKey}
+                    onChange={e => setKeyDraft(d => ({ ...d, claudeApiKey: e.target.value }))}
+                  />
+                </Field>
+                <Field id="key-finnhub" label="Finnhub API key" help={<>{keyLink('https://finnhub.io/dashboard')}</>}>
+                  <input
+                    id="key-finnhub"
+                    className="mne-input"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={config.hasFinnhubKey ? 'Saved. Enter a new key to replace it.' : 'your_key'}
+                    value={keyDraft.finnhubApiKey}
+                    onChange={e => setKeyDraft(d => ({ ...d, finnhubApiKey: e.target.value }))}
+                  />
+                </Field>
+                <Field
+                  id="key-coingecko"
+                  label="CoinGecko API key (optional)"
+                  help={<>Crypto prices work without one, but a free Demo key avoids CoinGecko's tight keyless rate limit and powers crypto price alerts. {keyLink('https://www.coingecko.com/en/api/pricing')}</>}
+                >
+                  <input
+                    id="key-coingecko"
+                    className="mne-input"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={config.coingeckoKeySet ? 'Saved. Enter a new key to replace it.' : 'CG-...'}
+                    value={keyDraft.coingeckoApiKey}
+                    onChange={e => setKeyDraft(d => ({ ...d, coingeckoApiKey: e.target.value }))}
+                  />
+                </Field>
+              </div>
+              {keyError && <span className="mne-help is-error" role="alert">▼ {keyError}</span>}
+              <div className="mne-dialog-actions" style={{ justifyContent: 'flex-start' }}>
+                <button type="button" className="mne-btn" onClick={handleSaveKeys} disabled={keySaving}>
+                  {keySaving ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="mne-btn is-ghost" onClick={() => { setEditingKeys(false); setKeyError('') }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mne-list">
+              <div className="mne-row">
+                <div>
+                  <div className="t">Claude, Finnhub and CoinGecko</div>
+                  <div className="d">
+                    Claude {config.llmKeySet ? 'saved' : 'not set'} · Finnhub {config.hasFinnhubKey ? 'saved' : 'not set'} · CoinGecko {config.coingeckoKeySet ? 'saved' : 'optional'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="mne-btn is-ghost is-sm"
+                  onClick={() => { setKeyDraft({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' }); setKeyError(''); setEditingKeys(true) }}
+                >
+                  Update API keys
+                </button>
+              </div>
+            </div>
           )}
-          {plaidHeldSells.map(sell => (
-            <Row
-              key={sell.id}
-              label={`Match lots for ${sell.symbol ?? sell.assetName} sale`}
-              hint={`Plaid shows ${sell.quantity} ${sell.isCrypto ? 'units' : 'shares'} sold on ${sell.date} — choose which lots they came from`}
-              right={
-                <button
-                  type="button"
-                  onClick={() => setPlaidMatchingSell(sell)}
-                  className="text-primary hover:underline flex-shrink-0 text-xs"
-                >
-                  Choose lots
-                </button>
-              }
-            />
-          ))}
-          {plaidDrift.map(pos => (
-            <Row
-              key={pos.id}
-              label={`${pos.symbol ?? pos.assetName} differs from Plaid`}
-              hint={`Plaid shows ${pos.plaidQuantity} ${pos.isCrypto ? 'units' : 'shares'}, ${Math.abs(pos.driftShares)} ${pos.driftShares > 0 ? 'more' : 'fewer'} than mne tracks`}
-              right={
-                <button
-                  type="button"
-                  disabled={plaidResolvingId === pos.id}
-                  onClick={() => void handleResolvePlaidDrift(pos)}
-                  className="text-primary hover:underline flex-shrink-0 text-xs disabled:opacity-50"
-                >
-                  {plaidResolvingId === pos.id ? 'Updating…' : 'Match Plaid'}
-                </button>
-              }
-            />
-          ))}
-          {plaidItems.map(item => (
-            <Row
-              key={item.id}
-              label={item.institution_name || 'Connected account'}
-              hint={
-                item.status !== 'active'
-                  ? `Needs attention${item.last_error ? `: ${item.last_error}` : ` (${item.status})`}`
-                  : item.last_synced_at
-                    ? `Last synced ${formatDateMDY(item.last_synced_at)}`
-                    : 'Not yet synced'
-              }
-              right={
-                <button
-                  type="button"
-                  disabled={plaidRemovingId === item.id}
-                  onClick={() => void startDisconnectPlaidItem(item)}
-                  className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 text-xs disabled:opacity-50"
-                >
-                  {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
-                </button>
-              }
-            />
-          ))}
-          <Row
-            label={plaidConnecting ? 'Opening…' : 'Connect another account'}
-            hint={plaidItems.length >= PLAID_ITEM_LIMIT ? `Free-plan limit reached (${PLAID_ITEM_LIMIT}/${PLAID_ITEM_LIMIT})` : `${plaidItems.length}/${PLAID_ITEM_LIMIT} connected`}
-            disabled={plaidConnecting || plaidItems.length >= PLAID_ITEM_LIMIT}
-            onClick={() => void handleConnectPlaidAccount()}
-          />
-          <Row
-            label={plaidSyncing ? 'Syncing…' : 'Sync now'}
-            disabled={plaidSyncing || plaidItems.length === 0}
-            onClick={() => void handleSyncPlaidNow()}
-          />
-        </div>
-      )}
-      {plaidError && <p className="text-xs text-destructive mt-2 px-1">{plaidError}</p>}
-      {plaidDisconnecting && (
-        <PlaidDisconnectDialog
-          institutionName={plaidDisconnecting.item.institution_name || 'this account'}
-          assets={plaidDisconnecting.assets}
-          busy={plaidRemovingId === plaidDisconnecting.item.id}
-          onUnlink={() => void handleDisconnectPlaidItem(false)}
-          onDelete={() => void handleDisconnectPlaidItem(true)}
-          onCancel={() => setPlaidDisconnecting(null)}
-        />
-      )}
-      <PlaidLotSellModal
-        sell={plaidMatchingSell}
-        onClose={() => setPlaidMatchingSell(null)}
-        onChanged={() => void refreshPlaidData()}
-      />
-      <PlaidReviewModal
-        open={plaidReviewOpen}
-        onClose={() => setPlaidReviewOpen(false)}
-        onChanged={() => void refreshPlaidData()}
-      />
+        </section>
 
-      {/* Admin */}
-      {isAdmin && (
-        <>
-          <SectionHeader><Shield size={10} className="inline mr-1.5 mb-0.5" />Admin — Allowed Users</SectionHeader>
-          <div className="bg-card rounded-md p-4 space-y-3">
-            {allowedEmails.length > 0 && (
-              <div className="space-y-1">
-                {allowedEmails.map(e => (
-                  <div key={e.id} className="flex items-center gap-2 px-1 py-1">
-                    <span className="text-sm flex-1 truncate">{e.email}</span>
+        {/* Appearance */}
+        <section className="mne-card" aria-labelledby="settings-appearance">
+          <h2 id="settings-appearance" className="mne-section-title">Appearance</h2>
+          <SegmentedControl<'light' | 'dark' | 'system'>
+            label="Theme"
+            value={theme}
+            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }]}
+            onChange={handleThemeChange}
+          />
+          <div className="mne-list" style={{ marginTop: 12 }}>
+            <div className="mne-row">
+              <div>
+                <div className="t">Privacy mode</div>
+                <div className="d">Blur dollar amounts on Home, Portfolio, and Charts</div>
+              </div>
+              <Switch label="Privacy mode" checked={hideValues} onChange={setHideValues} />
+            </div>
+          </div>
+        </section>
+
+        {/* AI */}
+        <section className="mne-card" aria-labelledby="settings-ai">
+          <h2 id="settings-ai" className="mne-section-title">AI</h2>
+          <div className="mne-list">
+            <div className="mne-row">
+              <div>
+                <div className="t">Auto-assign themes</div>
+                <div className="d">Use AI to suggest themes when new tickers are created</div>
+              </div>
+              <Switch
+                label="Auto-assign themes"
+                checked={settings.auto_theme_assignment_enabled !== false}
+                onChange={v => { void setAutoThemeAssignmentEnabled(v) }}
+              />
+            </div>
+            <div className="mne-row">
+              <div>
+                <div className="t">Conversation history</div>
+                <div className="d">View and continue past command bar conversations</div>
+              </div>
+              <button type="button" className="mne-btn is-ghost is-sm" onClick={openConversationHistory}>Open</button>
+            </div>
+          </div>
+        </section>
+
+        <Dialog
+          open={showConversationHistory}
+          onOpenChange={(open) => { if (!open) setShowConversationHistory(false) }}
+        >
+          <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Conversation History</DialogTitle>
+            </DialogHeader>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {conversationsLoading && <p className="mne-muted">Loading…</p>}
+              {conversationsError && <span className="mne-help is-error" role="alert">▼ {conversationsError}</span>}
+              {!conversationsLoading && !conversationsError && conversations.length === 0 && (
+                <p className="mne-muted">No conversations yet.</p>
+              )}
+              <div className="mne-list">
+                {conversations.map(c => (
+                  <div key={c.id} className="mne-row">
                     <button
                       type="button"
-                      onClick={() => void handleToggleAdmin(e.id, !e.is_admin)}
-                      className={`text-xs px-1.5 py-0.5 rounded-sm font-medium transition-colors flex-shrink-0 ${e.is_admin ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-                      title={e.is_admin ? 'Remove admin' : 'Make admin'}
+                      onClick={() => handleContinueConversation(c.id)}
+                      style={{ all: 'unset', cursor: 'pointer', flex: 1, minWidth: 0 }}
                     >
-                      Admin
+                      <div className="t" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                      <div className="d">
+                        {formatDateMDY(c.updated_at)}
+                        {((c.total_input_tokens ?? 0) > 0 || (c.total_output_tokens ?? 0) > 0) && (
+                          <span className="mne-num"> · {(c.total_input_tokens ?? 0).toLocaleString()} in · {(c.total_output_tokens ?? 0).toLocaleString()} out tokens</span>
+                        )}
+                      </div>
                     </button>
                     <button
                       type="button"
-                      onClick={() => void handleRemoveAllowedEmail(e.id)}
-                      className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0"
-                      aria-label="Remove"
+                      className="mne-btn is-quiet is-sm"
+                      onClick={() => void handleDeleteConversation(c.id)}
+                      aria-label="Delete conversation"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} aria-hidden="true" />
                     </button>
                   </div>
                 ))}
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Notifications */}
+        <section className="mne-card" aria-labelledby="settings-notifications">
+          <h2 id="settings-notifications" className="mne-section-title">Notifications</h2>
+          <div className="mne-list">
+            <div className="mne-row">
+              <div>
+                <div className="t">Push notifications</div>
+                <div className="d">{pushEnabled ? 'Enabled' : 'Allow price and vest alerts'}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {pushToggleBusy && <Loader2 size={16} className="animate-spin mne-muted" aria-label="Updating" />}
+                <Switch label="Push notifications" checked={pushEnabled} onChange={v => { void (v ? enablePush() : disablePush()) }} />
+              </div>
+            </div>
+            {pushEnabled && (
+              <>
+                <div className="mne-row">
+                  <div>
+                    <div className="t">Price alerts</div>
+                    <div className="d">Alert when a price moves by this %</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: settings.price_alerts_enabled ? 1 : 0.6 }}>
+                    <input
+                      className="mne-input mne-num"
+                      type="number"
+                      aria-label="Price alert threshold percent"
+                      value={settings.price_alert_threshold}
+                      onChange={e => setSettings(s => ({ ...s, price_alert_threshold: Number(e.target.value) }))}
+                      onBlur={() => saveSettings(settingsRef.current)}
+                      disabled={!settings.price_alerts_enabled}
+                      style={{ width: 72, textAlign: 'right' }}
+                    />
+                    <span className="mne-muted">%</span>
+                    <Switch label="Price alerts" checked={settings.price_alerts_enabled} onChange={v => { void setNotificationToggle('price_alerts_enabled', v) }} />
+                  </div>
+                </div>
+                <div className="mne-row">
+                  <div>
+                    <div className="t">RSU vest reminders</div>
+                    <div className="d">Days before a vest to notify</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: settings.vest_alerts_enabled ? 1 : 0.6 }}>
+                    <input
+                      className="mne-input mne-num"
+                      type="number"
+                      aria-label="Vest reminder days before"
+                      value={settings.rsu_alert_days_before}
+                      onChange={e => setSettings(s => ({ ...s, rsu_alert_days_before: Number(e.target.value) }))}
+                      onBlur={() => saveSettings(settingsRef.current)}
+                      disabled={!settings.vest_alerts_enabled}
+                      style={{ width: 72, textAlign: 'right' }}
+                    />
+                    <span className="mne-muted">days</span>
+                    <Switch label="RSU vest reminders" checked={settings.vest_alerts_enabled} onChange={v => { void setNotificationToggle('vest_alerts_enabled', v) }} />
+                  </div>
+                </div>
+                <div className="mne-row">
+                  <div>
+                    <div className="t">Capital gains alerts</div>
+                    <div className="d">Notify when Short Term lots are promoted to Long Term (after 1 year).</div>
+                  </div>
+                  <Switch label="Capital gains alerts" checked={settings.capital_gains_alerts_enabled} onChange={v => { void setNotificationToggle('capital_gains_alerts_enabled', v) }} />
+                </div>
+              </>
             )}
-            {allowedEmails.length === 0 && (
-              <p className="text-xs text-muted-foreground">No allowed emails yet.</p>
+          </div>
+        </section>
+
+        {/* Connected accounts */}
+        <section className="mne-card" aria-labelledby="settings-plaid">
+          <h2 id="settings-plaid" className="mne-section-title">Connected accounts</h2>
+          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+            Connect brokerages and banks through Plaid with your own free developer credentials.
+          </p>
+          {editingPlaidCreds ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <p className="mne-muted" style={{ margin: 0 }}>
+                Your own free Plaid developer credentials, not shared with other mne users. Get them at{' '}
+                <a href="https://dashboard.plaid.com/team/keys" target="_blank" rel="noopener noreferrer" className="mne-link">dashboard.plaid.com</a>.
+              </p>
+              <div className="mne-form-grid">
+                <Field id="plaid-client-id" label="Plaid client ID">
+                  <input
+                    id="plaid-client-id"
+                    className="mne-input"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={plaidStatus.configured ? '•••••••• (unchanged)' : '66...'}
+                    value={plaidCredsDraft.clientId}
+                    onChange={e => setPlaidCredsDraft(d => ({ ...d, clientId: e.target.value }))}
+                  />
+                </Field>
+                <Field id="plaid-secret" label="Plaid secret">
+                  <input
+                    id="plaid-secret"
+                    className="mne-input"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={plaidStatus.configured ? '•••••••• (leave blank to keep current)' : 'production secret'}
+                    value={plaidCredsDraft.secret}
+                    onChange={e => setPlaidCredsDraft(d => ({ ...d, secret: e.target.value }))}
+                  />
+                </Field>
+              </div>
+              {plaidCredsError && <span className="mne-help is-error" role="alert">▼ {plaidCredsError}</span>}
+              <div className="mne-dialog-actions" style={{ justifyContent: 'flex-start' }}>
+                <button type="button" className="mne-btn" onClick={handleSavePlaidCreds} disabled={plaidCredsSaving}>
+                  {plaidCredsSaving ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="mne-btn is-ghost" onClick={() => { setEditingPlaidCreds(false); setPlaidCredsError('') }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mne-list">
+              <div className="mne-row">
+                <div>
+                  <div className="t">{plaidStatus.configured ? 'Plaid credentials configured' : 'Set up Plaid credentials'}</div>
+                  {!plaidStatus.configured && <div className="d">Required once, free. Connects accounts instead of manual entry.</div>}
+                </div>
+                <button
+                  type="button"
+                  className="mne-btn is-ghost is-sm"
+                  onClick={() => { setPlaidCredsDraft({ clientId: '', secret: '' }); setPlaidCredsError(''); setEditingPlaidCreds(true) }}
+                >
+                  {plaidStatus.configured ? 'Edit' : 'Set up'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {plaidStatus.configured && !editingPlaidCreds && (
+            <div className="mne-list" style={{ marginTop: 4 }}>
+              {plaidPendingCount > 0 && (
+                <div className="mne-row">
+                  <div>
+                    <div className="t">Review {plaidPendingCount} synced position{plaidPendingCount !== 1 ? 's' : ''}</div>
+                    <div className="d">Nothing is added to your portfolio until you confirm each one</div>
+                  </div>
+                  <button type="button" className="mne-btn is-sm" onClick={() => setPlaidReviewOpen(true)}>Review</button>
+                </div>
+              )}
+              {plaidHeldSells.map(sell => (
+                <div key={sell.id} className="mne-row">
+                  <div>
+                    <div className="t">Match lots for {sell.symbol ?? sell.assetName} sale</div>
+                    <div className="d">Plaid shows {sell.quantity} {sell.isCrypto ? 'units' : 'shares'} sold on {sell.date}. Choose which lots they came from.</div>
+                  </div>
+                  <button type="button" className="mne-btn is-ghost is-sm" onClick={() => setPlaidMatchingSell(sell)}>Choose lots</button>
+                </div>
+              ))}
+              {plaidDrift.map(pos => (
+                <div key={pos.id} className="mne-row">
+                  <div>
+                    <div className="t">{pos.symbol ?? pos.assetName} differs from Plaid</div>
+                    <div className="d">Plaid shows {pos.plaidQuantity} {pos.isCrypto ? 'units' : 'shares'}, {Math.abs(pos.driftShares)} {pos.driftShares > 0 ? 'more' : 'fewer'} than mne tracks</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="mne-btn is-ghost is-sm"
+                    disabled={plaidResolvingId === pos.id}
+                    onClick={() => void handleResolvePlaidDrift(pos)}
+                  >
+                    {plaidResolvingId === pos.id ? 'Updating…' : 'Match Plaid'}
+                  </button>
+                </div>
+              ))}
+              {plaidItems.map(item => (
+                <div key={item.id} className="mne-row">
+                  <div>
+                    <div className="t">{item.institution_name || 'Connected account'}</div>
+                    <div className="d">
+                      {item.status !== 'active'
+                        ? `Needs attention${item.last_error ? `: ${item.last_error}` : ` (${item.status})`}`
+                        : item.last_synced_at
+                          ? `Last synced ${formatDateMDY(item.last_synced_at)}`
+                          : 'Not yet synced'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="mne-btn is-quiet is-sm"
+                    disabled={plaidRemovingId === item.id}
+                    onClick={() => void startDisconnectPlaidItem(item)}
+                  >
+                    {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
+                  </button>
+                </div>
+              ))}
+              <div className="mne-row">
+                <div>
+                  <div className="d">
+                    {plaidItems.length >= PLAID_ITEM_LIMIT ? `Free-plan limit reached (${PLAID_ITEM_LIMIT}/${PLAID_ITEM_LIMIT})` : `${plaidItems.length}/${PLAID_ITEM_LIMIT} connected`}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="mne-btn is-ghost is-sm"
+                    disabled={plaidSyncing || plaidItems.length === 0}
+                    onClick={() => void handleSyncPlaidNow()}
+                  >
+                    {plaidSyncing ? 'Syncing…' : 'Sync now'}
+                  </button>
+                  <button
+                    type="button"
+                    className="mne-btn is-ghost is-sm"
+                    disabled={plaidConnecting || plaidItems.length >= PLAID_ITEM_LIMIT}
+                    onClick={() => void handleConnectPlaidAccount()}
+                  >
+                    {plaidConnecting ? 'Opening…' : 'Connect another account'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {plaidError && <span className="mne-help is-error" role="alert" style={{ display: 'block', marginTop: 8 }}>▼ {plaidError}</span>}
+        </section>
+
+        {plaidDisconnecting && (
+          <PlaidDisconnectDialog
+            institutionName={plaidDisconnecting.item.institution_name || 'this account'}
+            assets={plaidDisconnecting.assets}
+            busy={plaidRemovingId === plaidDisconnecting.item.id}
+            onUnlink={() => void handleDisconnectPlaidItem(false)}
+            onDelete={() => void handleDisconnectPlaidItem(true)}
+            onCancel={() => setPlaidDisconnecting(null)}
+          />
+        )}
+        <PlaidLotSellModal
+          sell={plaidMatchingSell}
+          onClose={() => setPlaidMatchingSell(null)}
+          onChanged={() => void refreshPlaidData()}
+        />
+        <PlaidReviewModal
+          open={plaidReviewOpen}
+          onClose={() => setPlaidReviewOpen(false)}
+          onChanged={() => void refreshPlaidData()}
+        />
+
+        {/* Data */}
+        <section className="mne-card" aria-labelledby="settings-data">
+          <h2 id="settings-data" className="mne-section-title">Data</h2>
+          <p className="mne-muted" style={{ margin: '0 0 12px' }}>
+            {importLoading ? 'Import in progress. Do not refresh or leave this page.' : 'Download a spreadsheet backup, or restore from one (.xlsx or .json).'}
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="mne-btn is-ghost" onClick={() => setExportDialogOpen(true)}>Export</button>
+            <button type="button" className="mne-btn is-ghost" disabled={importLoading} onClick={() => fileInputRef.current?.click()}>
+              {importLoading ? 'Importing…' : 'Import'}
+            </button>
+            {importLoading && <Loader2 size={16} className="animate-spin mne-muted" style={{ alignSelf: 'center' }} aria-hidden="true" />}
+          </div>
+          <input
+            id="import-file"
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.json"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) void handleImportFile(f)
+            }}
+          />
+        </section>
+
+        <Dialog open={exportDialogOpen} onOpenChange={(open) => { if (!exportingScope) setExportDialogOpen(open) }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Export data</DialogTitle>
+            </DialogHeader>
+            <p className="mne-muted" style={{ margin: 0 }}>Choose what to include in the spreadsheet.</p>
+            <div style={{ display: 'grid', gap: 8, paddingTop: 4 }}>
+              {([
+                { scope: 'all' as const, label: 'All data', busy: 'Exporting…', hint: 'Net worth history, AI conversation history, and all asset details' },
+                { scope: 'assets' as const, label: 'Only assets', busy: 'Exporting…', hint: 'Only your asset, account, and transaction details' },
+              ]).map(o => (
+                <button
+                  key={o.scope}
+                  type="button"
+                  className="mne-item"
+                  disabled={!!exportingScope}
+                  onClick={() => void handleExport(o.scope)}
+                  style={{ border: 0, textAlign: 'left', cursor: exportingScope ? 'default' : 'pointer', color: 'inherit', font: 'inherit' }}
+                >
+                  <div className="mne-item-head">
+                    <b>{exportingScope === o.scope ? o.busy : o.label}</b>
+                    {exportingScope === o.scope && <Loader2 size={14} className="animate-spin mne-muted" aria-hidden="true" />}
+                  </div>
+                  <span className="mne-help">{o.hint}</span>
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Admin */}
+        {isAdmin && (
+          <section className="mne-card" aria-labelledby="settings-admin">
+            <h2 id="settings-admin" className="mne-section-title">Allowed users</h2>
+            <p className="mne-muted" style={{ margin: '0 0 12px' }}>Only these emails can sign up.</p>
+            {allowedEmails.length > 0 ? (
+              <div className="mne-list">
+                {allowedEmails.map(e => (
+                  <div key={e.id} className="mne-row">
+                    <div className="t" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.email}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        className={`mne-chip ${e.is_admin ? 'is-accent' : 'is-outline'}`}
+                        aria-pressed={e.is_admin}
+                        onClick={() => void handleToggleAdmin(e.id, !e.is_admin)}
+                        title={e.is_admin ? 'Remove admin' : 'Make admin'}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        Admin
+                      </button>
+                      <button type="button" className="mne-btn is-quiet is-sm" onClick={() => void handleRemoveAllowedEmail(e.id)} aria-label={`Remove ${e.email}`}>
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mne-muted" style={{ margin: 0 }}>No allowed emails yet.</p>
             )}
-            <div className="flex gap-2 pt-1">
-              <input
-                type="email"
-                placeholder="user@example.com"
-                value={newAllowedEmail}
-                onChange={e => setNewAllowedEmail(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') void handleAddAllowedEmail() }}
-                className="flex-1 bg-muted/40 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
-              />
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground flex-shrink-0 cursor-pointer select-none">
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 16 }}>
+              <div className="mne-field" style={{ flex: 1, minWidth: 200 }}>
+                <label htmlFor="allowed-email">Add an email</label>
                 <input
-                  type="checkbox"
-                  checked={newAllowedEmailIsAdmin}
-                  onChange={e => setNewAllowedEmailIsAdmin(e.target.checked)}
-                  
+                  id="allowed-email"
+                  className="mne-input"
+                  type="email"
+                  placeholder="user@example.com"
+                  value={newAllowedEmail}
+                  onChange={e => setNewAllowedEmail(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void handleAddAllowedEmail() }}
                 />
-                Admin
+              </div>
+              <label className="mne-check" style={{ paddingBottom: 10 }}>
+                <input type="checkbox" checked={newAllowedEmailIsAdmin} onChange={e => setNewAllowedEmailIsAdmin(e.target.checked)} />
+                <span>Admin</span>
               </label>
-              <button
-                type="button"
-                onClick={() => void handleAddAllowedEmail()}
-                disabled={allowlistLoading || !newAllowedEmail.trim()}
-                className="flex items-center gap-1 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {allowlistLoading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                Add
+              <button type="button" className="mne-btn" onClick={() => void handleAddAllowedEmail()} disabled={allowlistLoading || !newAllowedEmail.trim()}>
+                {allowlistLoading ? 'Adding…' : 'Add'}
               </button>
             </div>
-            {allowlistError && <p className="text-xs text-destructive">{allowlistError}</p>}
-          </div>
-        </>
-      )}
+            {allowlistError && <span className="mne-help is-error" role="alert" style={{ display: 'block', marginTop: 8 }}>▼ {allowlistError}</span>}
+          </section>
+        )}
 
-      {/* Account */}
-      <SectionHeader><LogOut size={10} className="inline mr-1.5 mb-0.5" />Account</SectionHeader>
-      <div className="space-y-2">
-        <Row label="Sign out" onClick={handleSignOut} destructive />
+        {/* Account */}
+        <section className="mne-card" aria-labelledby="settings-account">
+          <h2 id="settings-account" className="mne-section-title">Account</h2>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button type="button" className="mne-btn is-quiet" onClick={handleSignOut}>Sign out</button>
+          </div>
+        </section>
       </div>
     </div>
   )

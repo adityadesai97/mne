@@ -7,7 +7,6 @@
 import { forwardRef, type HTMLAttributes } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import { useShape } from "@/lib/fluid/shape-context";
 import { useSizeVariant } from "@/lib/fluid/size-context";
 
 const badgeColors = {
@@ -33,17 +32,17 @@ const badgeColors = {
 type BadgeColor = keyof typeof badgeColors;
 
 const badgeVariants = cva(
-  "inline-flex items-center font-medium whitespace-nowrap",
+  "mne-chip whitespace-nowrap",
   {
     variants: {
       variant: {
         solid: "",
-        dot: "border border-border text-foreground",
+        dot: "is-outline",
       },
       // The two-step size ladder shared by every control — see /docs/sizes.
       size: {
-        default: "h-6 px-2.5 text-[12px] gap-1.5",
-        compact: "h-5 px-2 text-[11px] gap-1",
+        default: "text-xs",
+        compact: "text-xs",
       },
     },
     defaultVariants: {
@@ -88,7 +87,6 @@ const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
     },
     ref
   ) => {
-    const shape = useShape();
     // Resolve the size: explicit prop (legacy aliases mapped onto the
     // canonical ladder) > surrounding SizeProvider > default.
     const contextSize = useSizeVariant();
@@ -106,7 +104,7 @@ const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
     // the source repo's tokens — wrap each in hsl() before use.
     const colorStyle = isSolid
       ? color === "gray"
-        ? { backgroundColor: "hsl(var(--accent))", color: "hsl(var(--foreground))" }
+        ? {}
         : {
             color: "hsl(var(--foreground))",
             backgroundColor: `color-mix(in srgb, ${colorValue} 15%, hsl(var(--background)))`,
@@ -118,7 +116,7 @@ const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
     return (
       <span
         ref={ref}
-        className={cn(badgeVariants({ variant, size }), shape.item, className)}
+        className={cn(badgeVariants({ variant, size }), className)}
         style={{ ...colorStyle, ...style }}
         {...props}
       >

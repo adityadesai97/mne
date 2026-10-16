@@ -1,6 +1,5 @@
 // src/pages/Watchlist.tsx
-import { useCallback, useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { deleteTicker, getAllTickers, refreshAllPrices, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { isTickerAsset } from '@/lib/portfolio'
@@ -12,19 +11,12 @@ import { getAllThemes, getOrCreateTheme, addTickerTheme, removeTickerTheme } fro
 import { autoAssignThemesForTicker, autoAssignThemesForTickerIfEnabled } from '@/lib/autoThemes'
 import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { ChartNoAxesCombined, ChevronDown, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react'
+import { Delta, PageHead } from '@/components/mne'
+import { computeThemeDistribution } from '@/lib/charts'
+import { Sparkles, Star, Trash2 } from 'lucide-react'
 import { finnhubFetch } from '@/lib/marketData'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
-
-const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  transition: { delay, duration: 0.25, ease: [0.25, 0.1, 0.25, 1] as const },
-})
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -40,7 +32,8 @@ function formatRelativeTime(isoString: string | null): string | null {
 export default function Watchlist() {
   const [tickers, setTickers] = useState<any[]>([])
   const [loaded, setLoaded] = useState(false)
-  const [showForm, setShowForm] = useState(false)
+  const [assets, setAssets] = useState<any[]>([])
+  const [themes, setThemes] = useState<any[]>([])
   const [symbol, setSymbol] = useState('')
   const [isCrypto, setIsCrypto] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -59,7 +52,9 @@ export default function Watchlist() {
   }, [])
 
   const loadTickers = async () => {
-    const [allTickers, allAssets] = await Promise.all([getAllTickers(), getAllAssets()])
+    const [allTickers, allAssets, allThemes] = await Promise.all([getAllTickers(), getAllAssets(), getAllThemes().catch(() => [])])
+    setAssets(allAssets ?? [])
+    setThemes(allThemes ?? [])
     const stockCountsByTicker = new Map<string, number>()
     for (const asset of allAssets ?? []) {
       if (!isTickerAsset(asset) || !asset.ticker_id) continue
@@ -102,7 +97,6 @@ export default function Watchlist() {
         // quote, history and theme all live in ensureCryptoTicker.
         await ensureCryptoTicker(user.id, trimmed, { watchlistOnly: true })
         setSymbol('')
-        setShowForm(false)
         await loadTickers()
         return
       }
@@ -134,7 +128,6 @@ export default function Watchlist() {
         })(),
       ])
       setSymbol('')
-      setShowForm(false)
       await loadTickers()
     } catch (err: any) {
       setError(err.message ?? 'Failed to add ticker')
@@ -185,187 +178,171 @@ export default function Watchlist() {
     }
   }
 
+  const themeRows = (() => {
+    const totals = new Map<string, number>()
+    for (const row of computeThemeDistribution(assets)) totals.set(row.name, row.value)
+    const sum = Array.from(totals.values()).reduce((a, b) => a + b, 0)
+    return themes.map((th: any) => {
+      const tg = Array.isArray(th.theme_targets) ? th.theme_targets.find((x: any) => x.is_active !== false) : th.theme_targets
+      const target = tg?.target_percentage
+      const share = sum > 0 && totals.has(th.name) ? ((totals.get(th.name) ?? 0) / sum) * 100 : null
+      return { id: th.id as string, name: th.name as string, target: target != null ? Number(target) : null, share }
+    })
+  })()
+
   return (
     <>
     <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
-    <div className="pt-6 pb-4">
-      <div className="flex items-center justify-between px-4 mb-4">
-        <div>
-          <h1 className="font-display text-3xl font-medium tracking-tight">Watchlist</h1>
-          {formatRelativeTime(pricesRefreshedAt) && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Prices {formatRelativeTime(pricesRefreshedAt)}
-            </p>
-          )}
-        </div>
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={() => { setShowForm(v => !v); setError(null); setSymbol(''); setIsCrypto(false) }}
-          className="bg-primary/10 hover:bg-primary/20 text-foreground rounded-full p-1.5 transition-colors"
-          aria-label={showForm ? 'Cancel' : 'Add ticker'}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={showForm ? 'close' : 'open'}
-              initial={{ rotate: -90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: 90, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex"
-            >
-              {showForm ? <X size={18} /> : <Plus size={18} />}
-            </motion.span>
-          </AnimatePresence>
-        </motion.button>
-      </div>
-
-      <AnimatePresence>
-        {showForm && (
-          <motion.form
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            onSubmit={handleSubmit}
-            className="mx-4 mb-4 overflow-hidden"
-          >
-            <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2 shadow-card">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={symbol}
-                    onChange={e => setSymbol(e.target.value)}
-                    placeholder={isCrypto ? 'Symbol, e.g. BTC' : 'Symbol, e.g. AAPL'}
-                    className="w-full bg-muted/60 rounded-lg pl-8 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground border border-transparent focus:border-primary/40 focus:bg-background transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={submitting || !symbol.trim()}
-                  className="bg-primary text-primary-foreground text-sm font-medium px-4 rounded-lg transition-all duration-150 active:scale-[0.97] hover:opacity-90 disabled:opacity-50 disabled:active:scale-100"
-                >
-                  {submitting ? 'Adding…' : 'Add'}
-                </button>
-              </div>
-              <label className="flex items-center gap-2 text-xs text-muted-foreground select-none">
-                <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
-                Cryptocurrency (priced via CoinGecko)
-              </label>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-            </div>
-          </motion.form>
+    <div className="mne-main">
+      <PageHead title="Watchlist">
+        {formatRelativeTime(pricesRefreshedAt) && (
+          <span className="mne-muted text-xs">Prices {formatRelativeTime(pricesRefreshedAt)}</span>
         )}
-      </AnimatePresence>
+      </PageHead>
+
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="mne-field" style={{ flex: 1, minWidth: 200, maxWidth: 320 }}>
+            <label htmlFor="watchlist-symbol">Add a ticker</label>
+            <input
+              id="watchlist-symbol"
+              className="mne-input"
+              type="text"
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              placeholder={isCrypto ? 'BTC' : 'AAPL or BTC'}
+              aria-invalid={error ? true : undefined}
+              autoComplete="off"
+            />
+          </div>
+          <button type="submit" className="mne-btn" disabled={submitting || !symbol.trim()}>
+            {submitting ? 'Adding…' : 'Add to watchlist'}
+          </button>
+        </div>
+        <label className="mne-check">
+          <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
+          <span>Cryptocurrency<small>Priced via CoinGecko instead of Finnhub.</small></span>
+        </label>
+        {error && <span className="mne-help is-error" role="alert">▼ {error}</span>}
+      </form>
 
       {!loaded && (
-        <div className="px-4 space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[68px] w-full rounded-md" />
-          ))}
+        <div className="mne-bento">
+          <section className="mne-card s4" aria-busy="true">
+            <h3 className="mne-card-title">Tickers</h3>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="mne-skel" style={{ height: 44 }} />)}
+            </div>
+          </section>
+          <section className="mne-card s2"><h3 className="mne-card-title">Themes</h3><div className="mne-skel" style={{ height: 44 }} /></section>
         </div>
       )}
 
-      {loaded && tickers.map((t, i) => {
-        const currentPrice = Number(t.current_price ?? 0)
-        const previousClose = t.previous_close != null ? Number(t.previous_close) : null
-        const priceChangeClass = previousClose == null
-          ? ''
-          : currentPrice > previousClose
-            ? 'text-gain'
-            : currentPrice < previousClose
-              ? 'text-loss'
-              : ''
-        const percentChange = previousClose != null && previousClose !== 0
-          ? ((currentPrice - previousClose) / previousClose) * 100
-          : null
-        return (
-        <motion.div key={t.id} {...fadeUp(Math.min(i, 10) * 0.03)} whileHover={{ y: -2 }} whileTap={{ scale: 0.99 }} className="mx-4 mb-2">
-          <Card>
-          <CardContent className="p-4 cursor-pointer" onClick={() => toggleExpanded(t.id)}>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3 min-w-0">
-                {t.logo
-                  ? <img src={t.logo} className="w-9 h-9 rounded-lg object-contain bg-muted flex-shrink-0 ring-1 ring-border/50" alt={t.symbol} />
-                  : (
-                    <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                      <ChartNoAxesCombined size={16} className="text-muted-foreground" />
-                    </div>
+      {loaded && tickers.length === 0 && (
+        <div className="mne-empty">
+          <div className="ico"><Star aria-hidden="true" /></div>
+          <h3>No tickers yet</h3>
+          <p>No tickers in watchlist yet. Add one above to track its price.</p>
+        </div>
+      )}
+
+      {loaded && tickers.length > 0 && (
+        <div className="mne-bento">
+          <section className="mne-card s4">
+            <h3 className="mne-card-title">Tickers</h3>
+            <div style={{ overflowX: 'auto' }}>
+            <table className="mne-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th className="r">Price</th>
+                  <th className="r">Today</th>
+                  <th>Themes</th>
+                  <th><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickers.map(t => {
+                  const currentPrice = Number(t.current_price ?? 0)
+                  const previousClose = t.previous_close != null ? Number(t.previous_close) : null
+                  const percentChange = previousClose != null && previousClose !== 0
+                    ? ((currentPrice - previousClose) / previousClose) * 100
+                    : null
+                  const isOpen = expanded.has(t.id)
+                  return (
+                    <Fragment key={t.id}>
+                      <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpanded(t.id)}>
+                        <td>
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-label={`${t.symbol} themes`}
+                            onClick={e => { e.stopPropagation(); toggleExpanded(t.id) }}
+                            style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                          >
+                            {t.logo && <img src={t.logo} alt="" width={20} height={20} style={{ borderRadius: 6, objectFit: 'contain' }} />}
+                            {t.symbol}
+                            {t.is_owned && <span className="mne-chip is-outline">Owned</span>}
+                          </button>
+                        </td>
+                        <td className="r mne-num">${currentPrice.toFixed(2)}</td>
+                        <td className="r">{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {t.ticker_themes?.map((tt: any) => (
+                              <span key={tt.theme.id} className="mne-chip is-outline">{tt.theme.name}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="r">
+                          {!t.is_owned && (
+                            <button
+                              type="button"
+                              className="mne-btn is-quiet is-sm"
+                              onClick={e => handleDeleteTicker(t, e)}
+                              disabled={deletingTickerId === t.id}
+                              aria-label={`Delete ${t.symbol}`}
+                              title={`Delete ${t.symbol}`}
+                            >
+                              <Trash2 size={14} aria-hidden="true" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={5} onClick={e => e.stopPropagation()}>
+                            <ThemeManager ticker={t} onUpdated={loadTickers} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
-                }
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{t.symbol}</p>
-                    {t.is_owned && <Badge variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">Owned</Badge>}
-                  </div>
-                  {/* On mobile this compact preview is hidden — themes only
-                      show once the row is expanded (ThemeManager below
-                      renders the same badges, with add/remove controls).
-                      Desktop keeps this always-visible preview since there's
-                      room for it without crowding the row. */}
-                  {!isMobile && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {t.ticker_themes?.map((tt: any) => (
-                        <Badge key={tt.theme.id} variant="secondary" className="text-xs font-medium bg-muted/60 text-muted-foreground">{tt.theme.name}</Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="flex flex-col items-end leading-tight">
-                  <p className={`font-medium tabular-nums ${priceChangeClass}`}>${currentPrice.toFixed(2)}</p>
-                  {percentChange != null && (
-                    <p className={`text-xs tabular-nums ${priceChangeClass || 'text-muted-foreground'}`}>
-                      {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
-                    </p>
-                  )}
-                </div>
-                <ChevronDown
-                  size={14}
-                  className={`text-muted-foreground transition-transform duration-200 ${expanded.has(t.id) ? 'rotate-180' : ''}`}
-                  aria-hidden="true"
-                />
-                {!t.is_owned && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteTicker(t, e)}
-                    disabled={deletingTickerId === t.id}
-                    className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                    aria-label={`Delete ${t.symbol}`}
-                    title={`Delete ${t.symbol}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
+                })}
+              </tbody>
+            </table>
             </div>
-            <AnimatePresence initial={false}>
-              {expanded.has(t.id) && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                  onClick={e => e.stopPropagation()}
-                  className="overflow-hidden"
-                >
-                  <ThemeManager ticker={t} onUpdated={loadTickers} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </CardContent>
-          </Card>
-        </motion.div>
-        )
-      })}
-      {loaded && tickers.length === 0 && !showForm && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center mt-16 px-4">
-          <Star size={22} className="text-muted-foreground mb-3" />
-          <p className="text-muted-foreground text-center text-sm">No tickers in watchlist yet.</p>
-        </motion.div>
+          </section>
+
+          <section className="mne-card s2">
+            <h3 className="mne-card-title">Themes</h3>
+            {themeRows.length === 0 ? (
+              <p className="mne-muted" style={{ margin: 0 }}>No themes yet. Expand a ticker to add one.</p>
+            ) : (
+              <div className="mne-list">
+                {themeRows.map(th => (
+                  <div key={th.id} className="mne-row">
+                    <div>
+                      <div className="t">{th.name}</div>
+                      {th.target != null && <div className="d">Target {th.target}%</div>}
+                    </div>
+                    {th.share != null && <span className="mne-chip">{th.share.toFixed(0)}%</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       )}
     </div>
     </>
@@ -445,56 +422,46 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Pro
   }
 
   return (
-    <div className="pt-2 border-t border-border mt-2">
-      <div className="flex flex-wrap gap-1 mb-2">
+    <div style={{ display: 'grid', gap: 12, padding: '4px 0 8px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         {ticker.ticker_themes?.map((tt: any) => (
-          <span key={tt.theme.id} className="inline-flex items-center gap-1 bg-muted/60 text-muted-foreground text-xs font-medium px-2 py-0.5 rounded-full">
+          <span key={tt.theme.id} className="mne-chip is-outline">
             {tt.theme.name}
-            <button onClick={() => handleRemove(tt.theme.id)} className="text-muted-foreground hover:text-foreground">×</button>
+            <button type="button" onClick={() => handleRemove(tt.theme.id)} aria-label={`Remove ${tt.theme.name}`} style={{ all: 'unset', cursor: 'pointer', padding: '0 2px' }}>×</button>
           </span>
         ))}
-        <button onClick={() => setAdding(v => !v)} className="text-xs text-muted-foreground hover:text-foreground px-1">
-          {adding ? '–' : '+ theme'}
+        <button type="button" className="mne-btn is-quiet is-sm" onClick={() => setAdding(v => !v)}>
+          {adding ? 'Cancel' : '+ theme'}
         </button>
-        <button
-          type="button"
-          onClick={handleAutoAssign}
-          disabled={autoAssigning || saving}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-1 disabled:opacity-50"
-        >
-          <Sparkles size={12} />
+        <button type="button" className="mne-btn is-quiet is-sm" onClick={handleAutoAssign} disabled={autoAssigning || saving}>
+          <Sparkles size={12} aria-hidden="true" style={{ display: 'inline', marginRight: 4 }} />
           {autoAssigning ? 'Assigning…' : 'AI themes'}
         </button>
       </div>
-      {autoAssignNote && <p className="text-xs text-muted-foreground mb-2">{autoAssignNote}</p>}
+      {autoAssignNote && <span className="mne-help">{autoAssignNote}</span>}
       {adding && (
-        <div>
+        <div style={{ display: 'grid', gap: 8 }}>
           {availableThemes.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {availableThemes.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => handleAddExisting(t.id)}
-                  className="text-xs border border-border text-muted-foreground hover:border-primary hover:text-foreground px-2 py-0.5 rounded-full transition-colors"
-                >
+                <button key={t.id} type="button" className="mne-btn is-ghost is-sm" onClick={() => handleAddExisting(t.id)}>
                   {t.name}
                 </button>
               ))}
             </div>
           )}
-          <form onSubmit={handleAdd} className="flex gap-1">
+          <form onSubmit={handleAdd} style={{ display: 'flex', gap: 8 }}>
             <input
-            autoFocus
-            type="text"
-            value={newTheme}
-            onChange={e => setNewTheme(e.target.value)}
-            placeholder="Theme name"
-            className="flex-1 bg-background border border-border rounded-sm px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          <button type="submit" disabled={saving} className="text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-sm transition-colors disabled:opacity-50">
-            Add
-          </button>
+              autoFocus
+              className="mne-input"
+              type="text"
+              value={newTheme}
+              onChange={e => setNewTheme(e.target.value)}
+              placeholder="Theme name"
+              aria-label="Theme name"
+              style={{ flex: 1 }}
+            />
+            <button type="submit" className="mne-btn is-ghost" disabled={saving}>Add</button>
           </form>
         </div>
       )}
