@@ -2,8 +2,8 @@ name: Database (real Supabase)
 
 # The fast in-process Postgres tests (src/__tests__/db) already run in CI on
 # every PR. This workflow additionally starts a full local Supabase stack, runs
-# the self-host bootstrap and every migration against it, and checks the
-# generated types have not drifted. It only runs when schema files change.
+# the self-host bootstrap against it (twice, to prove it is idempotent). Type
+# drift is checked by src/__tests__/db/schema.test.ts and supabase-types-check.yml. It only runs when schema files change.
 
 on:
   pull_request:
@@ -44,15 +44,3 @@ jobs:
         run: |
           DB_URL=$(supabase status -o env | grep '^DB_URL=' | cut -d= -f2- | tr -d '"')
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/sql/self_host_bootstrap.sql
-
-      - name: Generated types match the schema
-        run: |
-          supabase gen types typescript --local --schema public > /tmp/db.types.ts
-          node -e "
-            const norm=s=>[...s.matchAll(/(\w+):\s*\{\s*Row:/g)].map(m=>m[1]).sort().join(',');
-            const fs=require('fs');
-            const a=norm(fs.readFileSync('/tmp/db.types.ts','utf8')), b=norm(fs.readFileSync('src/lib/database.types.ts','utf8'));
-            if(!a){console.error('could not read any tables from generated types');process.exit(1)}
-            const missing=a.split(',').filter(t=>t&&!b.split(',').includes(t));
-            if(missing.length){console.error('database.types.ts is missing tables:',missing.join(', '));process.exit(1)}
-          "
