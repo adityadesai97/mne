@@ -13,6 +13,7 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { CardEyebrow } from '@/components/CardEyebrow'
+import { AskChip } from '@/components/AskChip'
 import { NetWorthChart } from '@/components/NetWorthChart'
 import { Delta, PageHead, SegmentedControl, Stat } from '@/components/mne'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -370,6 +371,7 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <CardEyebrow icon={Wallet}>Net worth</CardEyebrow>
             <span className="mne-live"><i />live</span>
+            <AskChip className="ml-auto" prompt="What changed in my net worth this month?" />
           </div>
 
           <div>
@@ -434,7 +436,10 @@ export default function Home() {
 
         {/* ALLOCATION */}
         <section className="mne-card">
-          <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
+            {typeEntries.length > 0 && <AskChip className="ml-auto" prompt="Explain my allocation" />}
+          </div>
           {typeEntries.length === 0 ? (
             <p className="mne-muted" style={{ marginTop: 14 }}>No assets yet</p>
           ) : (
