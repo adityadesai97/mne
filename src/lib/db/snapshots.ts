@@ -1,7 +1,7 @@
 import { getSupabaseClient } from '../supabase'
 import { isTickerAsset } from '../portfolio'
 import { getTickerPriceHistory } from './tickerPriceHistory'
-import { estimateNetWorthOn, MAX_PRICE_STALENESS_DAYS } from '../snapshotBackfill'
+import { estimateNetWorthOn, findDipOutliers, isNetWorthComplete, MAX_PRICE_STALENESS_DAYS } from '../snapshotBackfill'
 
 // Fills in a snapshot for each stock/crypto purchase date that has none (the
 // days the app wasn't opened). Each is estimated from the nearest earlier real
@@ -19,10 +19,14 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
     .select('date, value')
     .eq('user_id', user.id)
     .order('date')
-  const real = (existing ?? []).map((r: any) => ({ date: r.date as string, value: Number(r.value) }))
-  if (real.length === 0) return
-  const existingDates = new Set(real.map(r => r.date))
-  const earliestReal = real[0].date
+  const all = (existing ?? []).map((r: any) => ({ date: r.date as string, value: Number(r.value) }))
+  if (all.length === 0) return
+  const existingDates = new Set(all.map(r => r.date))
+  const earliestReal = all[0].date
+  // Never anchor on a row that is itself a lone dip (a zero/partial snapshot
+  // or an earlier bad backfill): estimates built on it inherit the dip.
+  const badAnchors = findDipOutliers(all)
+  const real = all.filter(r => r.value > 0 && !badAnchors.has(r.date))
 
   // Candidate dates: purchase dates inside real history with no snapshot.
   const today = new Date().toISOString().split('T')[0]
@@ -46,8 +50,9 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
   for (const date of [...candidates].sort()) {
     // Nearest earlier real snapshot (real[] is date-sorted).
     let anchor: { date: string; value: number } | undefined
-    for (const r of real) { if (r.date < date) anchor = r; else break }
-    const value = estimateNetWorthOn(date, anchor, assets, priceHistory)
+    let next: { date: string; value: number } | undefined
+    for (const r of real) { if (r.date < date) anchor = r; else { next = r; break } }
+    const value = estimateNetWorthOn(date, anchor, assets, priceHistory, next)
     if (value != null) toInsert.push({ user_id: user.id, date, value })
   }
 
@@ -57,7 +62,13 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
   }
 }
 
-export async function recordDailySnapshot(value: number) {
+// `assets` (optional) lets the caller prove the total is complete: if any
+// ticker holding had no price the total silently undercounts it, and recording
+// that would draw a false cliff. Zero/negative/non-finite totals are never
+// recorded either (a failed or empty load, not a real net worth).
+export async function recordDailySnapshot(value: number, assets?: any[]) {
+  if (!Number.isFinite(value) || value <= 0) return
+  if (assets && !isNetWorthComplete(assets)) return
   const supabase = getSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
