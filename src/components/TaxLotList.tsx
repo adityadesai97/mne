@@ -9,7 +9,7 @@ import { computeRsuVestEvents } from '@/lib/charts'
 import { useHideValues } from '@/hooks/useHideValues'
 import { Stat } from '@/components/mne'
 import {
-  buildStockLot, daysBetween, fmtMoney, fmtMoney0, fmtQty, parseIsoDate, plural, qtyText, startOfToday, toIsoKey,
+  buildStockLot, daysBetween, fmtMoney, fmtMoney0, fmtQty, parseIsoDate, plural, qtyText, sortRsuGrants, startOfToday, toIsoKey,
   type StockLot,
 } from '@/components/lots/lotMath'
 import {
@@ -235,7 +235,7 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
     <div className="lot-stack">
       {subtypesWithActivity.map((st: any) => {
         const transactions = st.transactions ?? []
-        const rsuGrants = st.rsu_grants ?? []
+        const rsuGrants = sortRsuGrants(st.rsu_grants ?? [])
         const isRsuSubtype = st.subtype === 'RSU'
         const rsuGrantGroups = isRsuSubtype ? groupRsuActivityByGrant(rsuGrants, transactions) : null
         const isSubtypeOpen = !collapsedSubtypeIds.has(st.id)
@@ -294,8 +294,7 @@ function nextVestEvent(grant: any, today: Date) {
 }
 
 function groupRsuActivityByGrant(grants: any[], transactions: any[]) {
-  const grantGroups = [...grants]
-    .sort((a, b) => String(b.grant_date).localeCompare(String(a.grant_date)))
+  const grantGroups = sortRsuGrants(grants)
     .map(grant => ({ grant, transactions: [] as any[] }))
 
   const unassignedTransactions: any[] = []

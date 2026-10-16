@@ -11,6 +11,12 @@ export function parseIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+/** RSU grants oldest to newest: grant_date, then vest_start, then id. Returns a new array. */
+export function sortRsuGrants<T extends { id?: string | null; grant_date?: string | null; vest_start?: string | null }>(grants: readonly T[]): T[] {
+  const cmp = (a?: string | null, b?: string | null) => String(a ?? '').localeCompare(String(b ?? ''))
+  return [...grants].sort((a, b) => cmp(a.grant_date, b.grant_date) || cmp(a.vest_start, b.vest_start) || cmp(a.id, b.id))
+}
+
 export function startOfToday(): Date {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
