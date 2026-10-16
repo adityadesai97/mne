@@ -17,6 +17,19 @@ test.describe('signed in', () => {
     await expect(page.locator('body')).toContainText('2,000', { timeout: 15_000 })
   })
 
+  test('the watchlist add form stays hidden until the + button opens it', async ({ page }) => {
+    await signedInApp(page)
+    await page.goto('/watchlist')
+    await expect(page.getByLabel('Add a ticker')).toHaveCount(0)
+    await expect(page.getByRole('checkbox', { name: 'Crypto' })).toHaveCount(0)
+    const toggle = page.getByRole('button', { name: 'Add ticker' })
+    await toggle.click()
+    await expect(page.getByLabel('Add a ticker')).toBeVisible()
+    await expect(page.getByRole('checkbox', { name: 'Crypto' })).toBeVisible()
+    await page.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByLabel('Add a ticker')).toHaveCount(0)
+  })
+
   test('every main page loads without the error screen', async ({ page }) => {
     await signedInApp(page)
     for (const path of ['/', '/portfolio', '/charts', '/watchlist', '/settings']) {
@@ -130,9 +143,25 @@ test.describe('signed in', () => {
     const sheet = page.getByRole('dialog', { name: 'Ask mne' })
     await expect(sheet).toBeVisible()
     await expect(sheet).toHaveAttribute('data-detent', 'half')
-    await sheet.getByRole('button', { name: 'Full', exact: true }).click()
+    await expect(sheet.getByRole('button', { name: 'Full', exact: true })).toHaveCount(0)
+    // Drag the sheet's top edge up to full height, then back down to half.
+    const head = sheet.locator('.cmdk-head')
+    await page.waitForTimeout(700) // let the sheet finish sliding in
+    const box = (await head.boundingBox())!
+    const x = box.x + 40
+    await page.mouse.move(x, box.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(x, box.y - 120, { steps: 6 })
+    await page.mouse.up()
     await expect(sheet).toHaveAttribute('data-detent', 'full')
-    await page.keyboard.press('Escape')
+    await page.waitForTimeout(700) // height transition
+    const box2 = (await head.boundingBox())!
+    await page.mouse.move(x, box2.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(x, box2.y + 160, { steps: 6 })
+    await page.mouse.up()
+    await expect(sheet).toHaveAttribute('data-detent', 'half')
+    await sheet.getByRole('button', { name: 'Close' }).click()
     await expect(sheet).toHaveCount(0)
   })
 

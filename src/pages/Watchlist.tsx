@@ -13,7 +13,7 @@ import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Delta, PageHead } from '@/components/mne'
 import { computeThemeDistribution } from '@/lib/charts'
-import { Info, Sparkles, Star, Trash2 } from 'lucide-react'
+import { Info, Plus, Sparkles, Star, Trash2 } from 'lucide-react'
 import { Tooltip } from '@/components/mne/Tooltip'
 import '@/styles/watchlist.css'
 import { finnhubFetch } from '@/lib/marketData'
@@ -44,6 +44,8 @@ export default function Watchlist() {
   // symbol that may be shared by several) is what gets added.
   const [pickedCoin, setPickedCoin] = useState<SymbolSuggestion | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // The add form stays hidden until the + button in the page header opens it.
+  const [addOpen, setAddOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [deletingTickerId, setDeletingTickerId] = useState<string | null>(null)
@@ -51,6 +53,10 @@ export default function Watchlist() {
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
+
+  useEffect(() => {
+    if (addOpen) document.getElementById('watchlist-symbol')?.focus()
+  }, [addOpen])
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
@@ -119,6 +125,7 @@ export default function Watchlist() {
         setSymbol('')
         setPickedCoin(null)
         await loadTickers()
+        setAddOpen(false)
         return
       }
       const newTicker = await upsertTicker({ user_id: user.id, symbol: trimmed, watchlist_only: true })
@@ -151,6 +158,7 @@ export default function Watchlist() {
       setSymbol('')
       setPickedCoin(null)
       await loadTickers()
+      setAddOpen(false)
     } catch (err: any) {
       setError(err.message ?? 'Failed to add ticker')
     } finally {
@@ -220,9 +228,20 @@ export default function Watchlist() {
         {formatRelativeTime(pricesRefreshedAt) && (
           <span className="mne-muted text-xs max-sm:hidden">Prices {formatRelativeTime(pricesRefreshedAt)}</span>
         )}
+        <button
+          type="button"
+          className={`mne-btn is-sm wl-add-toggle${addOpen ? ' is-quiet' : ''}`}
+          aria-expanded={addOpen}
+          aria-controls="watchlist-add-form"
+          onClick={() => { setAddOpen(o => !o); setError(null) }}
+        >
+          <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+          <span>{addOpen ? 'Close' : 'Add ticker'}</span>
+        </button>
       </PageHead>
 
-      <form onSubmit={handleSubmit} className="wl-add">
+      {addOpen && (
+      <form onSubmit={handleSubmit} className="wl-add" id="watchlist-add-form">
         <div className="mne-field wl-add-input">
           <label htmlFor="watchlist-symbol">Add a ticker</label>
           <SymbolCombobox
@@ -251,6 +270,7 @@ export default function Watchlist() {
         </button>
         {error && <span className="mne-help is-error wl-add-error" role="alert">▼ {error}</span>}
       </form>
+      )}
 
       {!loaded && (
         <div className="mne-bento wl-bento">
@@ -268,7 +288,7 @@ export default function Watchlist() {
         <div className="mne-empty">
           <div className="ico"><Star aria-hidden="true" /></div>
           <h3>No tickers yet</h3>
-          <p>No tickers in watchlist yet. Add one above to track its price.</p>
+          <p>No tickers in watchlist yet. Use Add ticker to track its price.</p>
         </div>
       )}
 
@@ -478,8 +498,7 @@ function ThemeManager({ ticker, onUpdated }: { ticker: any; onUpdated: () => Pro
           )}
           <form onSubmit={handleAdd} style={{ display: 'flex', gap: 8 }}>
             <input
-              autoFocus
-              className="mne-input"
+                className="mne-input"
               type="text"
               value={newTheme}
               onChange={e => setNewTheme(e.target.value)}

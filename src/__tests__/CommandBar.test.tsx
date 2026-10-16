@@ -143,7 +143,7 @@ test('Escape and the close button close the docked panel', async () => {
   expect(onClose).toHaveBeenCalledTimes(2)
 })
 
-test('phones get a modal bottom sheet whose Half/Full detents toggle its height', async () => {
+test('phones get a modal bottom sheet; the grabber toggles its height and there is no Half/Full control', async () => {
   setViewportWidth(390)
   const user = userEvent.setup()
   render(<CommandBar open={true} onClose={() => {}} />)
@@ -153,9 +153,10 @@ test('phones get a modal bottom sheet whose Half/Full detents toggle its height'
   expect(sheet).toHaveAttribute('data-mode', 'sheet')
   expect(sheet).toHaveAttribute('data-detent', 'half')
 
-  await user.click(screen.getByRole('button', { name: 'Full' }))
+  expect(screen.queryByRole('button', { name: 'Full' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Expand to full height' }))
   expect(sheet).toHaveAttribute('data-detent', 'full')
-  await user.click(screen.getByRole('button', { name: 'Half' }))
+  await user.click(screen.getByRole('button', { name: 'Collapse to half height' }))
   expect(sheet).toHaveAttribute('data-detent', 'half')
 })
 
