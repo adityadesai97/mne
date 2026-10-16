@@ -108,7 +108,7 @@ export function FixedIncomeLotList({ lots, faceValue, onAddLot, onEditLot, onDel
   const showFace = faceValue != null
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
       {lots.length > 0 && (
         <div className="pf-scroll">
           <table className="mne-table is-compact">

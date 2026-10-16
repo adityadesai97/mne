@@ -36,4 +36,7 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 .pf-chev.is-open { transform: rotate(180deg); }
 .pf-sub { border-top: 1px solid var(--mne-line); padding-top: 12px; }
 .pf-sub:first-child { border-top: 0; padding-top: 0; }
-.pf-scroll { overflow-x: auto; }
+.pf-scroll { overflow-x: auto; position: relative; }
+.pf-table-row td.r { white-space: nowrap; }
+@media (max-width: 640px) { .mne-card.pf-scroll { padding: 12px; } .mne-table td, .mne-table th { padding-left: 8px; padding-right: 8px; } }
+.pf-scroll .mne-chip, .pf-scroll td { white-space: nowrap; }

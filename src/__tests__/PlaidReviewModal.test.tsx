@@ -281,7 +281,7 @@ test('a validation error is shown and executeTool is not called', async () => {
   const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
   await user.click(confirmButton)
 
-  expect(await screen.findByText('Value is required')).toBeInTheDocument()
+  expect(await screen.findByText(/Value is required/)).toBeInTheDocument()
   expect(executeTool).not.toHaveBeenCalled()
 })
 

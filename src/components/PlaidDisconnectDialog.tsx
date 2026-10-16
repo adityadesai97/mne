@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { LinkedPlaidAsset } from '@/lib/db/plaid'
 
@@ -17,7 +16,6 @@ interface Props {
 
 export function PlaidDisconnectDialog({ institutionName, assets, busy, onUnlink, onDelete, onCancel }: Props) {
   const count = assets?.length ?? 0
-  const [mode, setMode] = useState<'keep' | 'delete'>('keep')
   return (
     <Dialog open onOpenChange={(next) => { if (!next && !busy) onCancel() }}>
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
@@ -42,35 +40,16 @@ export function PlaidDisconnectDialog({ institutionName, assets, busy, onUnlink,
                 ))}
               </div>
             )}
-            {count > 0 && (
-              <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 12 }}>
-                <legend className="sr-only">What happens to the linked assets</legend>
-                <label className="mne-check">
-                  <input type="radio" name="plaid-disconnect" checked={mode === 'keep'} onChange={() => setMode('keep')} disabled={busy} />
-                  <span>
-                    Disconnect and keep my assets
-                    <small>Syncing stops. Your positions and lots stay as they are.</small>
-                  </span>
-                </label>
-                <label className="mne-check">
-                  <input type="radio" name="plaid-disconnect" checked={mode === 'delete'} onChange={() => setMode('delete')} disabled={busy} />
-                  <span>
-                    Disconnect and delete {count} linked asset{count !== 1 ? 's' : ''}
-                    <small>Removes the assets and their lots. This can't be undone.</small>
-                  </span>
-                </label>
-              </fieldset>
-            )}
-            <div className="mne-dialog-actions">
-              <button type="button" className="mne-btn is-ghost" disabled={busy} onClick={onCancel}>Cancel</button>
-              <button
-                type="button"
-                className="mne-btn"
-                disabled={busy}
-                onClick={() => (count > 0 && mode === 'delete' ? onDelete() : onUnlink())}
-              >
-                {busy ? 'Working…' : 'Disconnect'}
+            <div className="mne-dialog-actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+              <button type="button" className="mne-btn" disabled={busy} onClick={onUnlink}>
+                {busy ? 'Working…' : count > 0 ? 'Disconnect and keep my assets' : 'Disconnect'}
               </button>
+              {count > 0 && (
+                <button type="button" className="mne-btn is-ghost" disabled={busy} onClick={onDelete} style={{ color: 'var(--mne-loss)' }}>
+                  Disconnect and delete {count} linked asset{count !== 1 ? 's' : ''}
+                </button>
+              )}
+              <button type="button" className="mne-btn is-quiet" disabled={busy} onClick={onCancel}>Cancel</button>
             </div>
           </>
         )}

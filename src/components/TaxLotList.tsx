@@ -214,7 +214,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   }
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
       {subtypesWithActivity.map((st: any) => {
         const transactions = st.transactions ?? []
         const rsuGrants = st.rsu_grants ?? []
@@ -243,7 +243,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
             {isSubtypeOpen && (
               <div className="pf-fade" style={{ marginTop: 8 }}>
                 {isRsuSubtype && rsuGrantGroups ? (
-                  <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
                     {rsuGrantGroups.grants.map(group => {
                       const vesting = computeGrantVesting(group.grant, group.transactions)
                       const summary = computeGrantSummary(group.transactions, ticker)
@@ -269,7 +269,7 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
                           </button>
 
                           {isGrantOpen && (
-                            <div className="pf-fade" style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+                            <div className="pf-fade" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                                 <div>
                                   <div style={{ fontWeight: 500 }}>{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</div>

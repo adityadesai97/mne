@@ -292,8 +292,8 @@ export default function AssetDetail() {
       <PageHead title="Asset detail" />
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" className="mne-btn is-quiet is-sm" aria-label="Go back" onClick={() => navigate(-1)}>
-          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: '-4px', marginRight: 2 }}><path d="M15 5l-7 7 7 7" /></svg>
+        <button type="button" className="mne-btn is-quiet is-sm" aria-label="Go back" onClick={() => navigate(-1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
           Portfolio
         </button>
       </div>
@@ -510,7 +510,7 @@ export default function AssetDetail() {
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
 function fmtShares(n: number, maximumFractionDigits = 2) {
