@@ -333,6 +333,11 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
     const ro = new ResizeObserver(() => {
       if (el.clientWidth === last) return
       last = el.clientWidth
+      // The sidebar's 430ms width move streams a new width every frame; follow it directly instead of
+      // restarting a 180ms transform transition each frame, which reads as a springy lag-and-catch-up.
+      el.classList.add('is-tracking')
+      window.clearTimeout(trackingTimerRef.current)
+      trackingTimerRef.current = window.setTimeout(() => el.classList.remove('is-tracking'), TRACKING_WINDOW_MS)
       measureColumns()
     })
     ro.observe(el)
