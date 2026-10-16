@@ -303,7 +303,6 @@ export default function Watchlist() {
                   <th>Symbol</th>
                   <th className="r">Price</th>
                   <th className="r">Today</th>
-                  <th className="max-sm:hidden">Themes</th>
                   <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -332,13 +331,6 @@ export default function Watchlist() {
                         </td>
                         <td className="r mne-num">${currentPrice.toFixed(2)}</td>
                         <td className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
-                        <td className="max-sm:hidden">
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {t.ticker_themes?.map((tt: any) => (
-                              <span key={tt.theme.id} className="mne-chip is-outline">{tt.theme.name}</span>
-                            ))}
-                          </div>
-                        </td>
                         <td className="r">
                           {!t.is_owned && (
                             <button
@@ -356,7 +348,7 @@ export default function Watchlist() {
                       </tr>
                       {isOpen && (
                         <tr>
-                          <td colSpan={5} onClick={e => e.stopPropagation()}>
+                          <td colSpan={4}onClick={e => e.stopPropagation()}>
                             <ThemeManager ticker={t} onUpdated={loadTickers} />
                           </td>
                         </tr>
