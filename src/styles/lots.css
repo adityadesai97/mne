@@ -1,0 +1,112 @@
+/* Tax-lot layouts (summary first + timeline). Built on the mne tokens; the
+   stat strip, split bar and banner reuse .mne-stat / .mne-stack / .mne-banner. */
+
+.lot-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.lot-flex { display: inline-flex; align-items: center; gap: 8px; }
+.lot-between { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.lot-num { font-variant-numeric: tabular-nums; }
+.lot-sub { display: block; font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.lot-l2 { display: flex; flex-direction: column; min-width: 0; }
+
+.lot-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.lot-dot.is-long { background: var(--mne-chart-3); }
+.lot-dot.is-short { background: var(--mne-amber); }
+.lot-dot.is-accent { background: var(--mne-accent); }
+.lot-dot.is-evt { background: transparent; border: 2px dashed var(--mne-line-strong); width: 12px; height: 12px; }
+.lot-chip { gap: 6px; white-space: nowrap; }
+
+.lot-gain { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+
+/* ---- summary ---- */
+.lot-stats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.lot-stats .mne-stat .v { font-size: 24px; line-height: 30px; }
+.lot-split { margin-top: 20px; }
+.lot-split-hd { display: flex; justify-content: space-between; gap: 8px; font: 500 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .06em; }
+.lot-wrap { margin-top: 16px; border-top: 1px solid var(--mne-line); padding-top: 12px; }
+.lot-grant { background: var(--mne-surface-300); border-radius: var(--mne-radius-md); padding: 12px; }
+.lot-grant-body { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.lot-grant .lot-wrap { margin-top: 4px; }
+
+.lot-bar { height: 6px; border-radius: 99px; background: var(--mne-surface-300); overflow: hidden; flex: 1; min-width: 60px; }
+.lot-grant .lot-bar, .lot-row:nth-child(even) .lot-bar, .lot-tli:nth-child(even) .lot-bar { background: var(--mne-line); }
+.lot-bar i { display: block; height: 100%; border-radius: 99px; background: var(--mne-amber); transition: width var(--mne-dur-layout) var(--mne-ease); }
+.lot-bar i.is-long { background: var(--mne-chart-3); }
+.lot-bar i.is-accent { background: var(--mne-accent); }
+
+.lot-rows { display: grid; gap: 4px; }
+.lot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 12px 14px; border-radius: var(--mne-radius-md); transition: background var(--mne-dur) var(--mne-ease); }
+.lot-row:nth-child(even) { background: color-mix(in srgb, var(--mne-surface-300) 55%, transparent); }
+.lot-row:hover { background: var(--mne-surface-300); }
+.lot-row.is-edit { display: block; padding: 0; background: none !important; }
+.lot-main { min-width: 0; }
+.lot-title { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-weight: 600; }
+.lot-side { text-align: right; }
+.lot-v { font: 500 20px/26px var(--mne-font-serif); font-variant-numeric: tabular-nums; }
+.lot-gainchip { margin-top: 2px; font: 400 14px/20px var(--mne-font-sans); }
+.lot-foot { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; min-height: 28px; }
+.lot-foot .lot-bar { max-width: 320px; }
+.lot-lbl { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.lot-lbl b { color: var(--mne-ink); font-weight: 600; }
+.lot-acts { margin-left: auto; display: flex; gap: 2px; flex: none; transition: opacity var(--mne-dur) var(--mne-ease); }
+@media (hover: hover) and (min-width: 641px) {
+  .lot-row .lot-acts { opacity: 0; }
+  .lot-row:hover .lot-acts, .lot-row:focus-within .lot-acts { opacity: 1; }
+}
+@media (max-width: 480px) {
+  .lot-row { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .lot-side { text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lot-gainchip { margin-top: 0; }
+  .lot-foot { flex-wrap: wrap; gap: 6px; }
+  .lot-foot .lot-bar { flex: 1 1 100%; order: 3; max-width: none; }
+  .lot-acts { order: 2; }
+}
+
+/* ---- timeline ---- */
+.lot-tln { list-style: none; margin: 0; padding: 0; position: relative; }
+.lot-tln::before { content: ""; position: absolute; left: 19px; top: 14px; bottom: 14px; width: 2px; background: var(--mne-line); }
+.lot-tli { position: relative; padding: 10px 10px 10px 44px; border-radius: var(--mne-radius-md); }
+.lot-tli:nth-child(even) { background: color-mix(in srgb, var(--mne-surface-300) 55%, transparent); }
+.lot-grant .lot-tli:nth-child(even) { background: color-mix(in srgb, var(--mne-surface-200) 55%, transparent); }
+.lot-pin { position: absolute; left: 12px; top: 17px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-content: center; background: var(--mne-surface-200); }
+.lot-pin .lot-dot { width: 12px; height: 12px; box-shadow: 0 0 0 3px var(--mne-surface-200); }
+.lot-pin .lot-dot.is-evt { box-shadow: none; }
+.lot-tli-hd { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; width: 100%; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+div.lot-tli-hd { cursor: default; }
+.lot-tli-hd:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 4px; border-radius: 8px; }
+.lot-what { font-weight: 600; min-width: 0; font-variant-numeric: tabular-nums; }
+.lot-what .lot-sub { font-weight: 400; }
+.lot-tli.is-evt .lot-what { font-weight: 500; color: var(--mne-ink-muted); }
+.lot-gl { font-variant-numeric: tabular-nums; text-align: right; }
+.lot-chev { display: inline-flex; }
+.lot-det { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--mne-line-strong); }
+.lot-tli.is-edit { padding-right: 0; background: none !important; }
+.lot-dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 16px; margin: 0 0 10px; }
+.lot-dl dt { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.lot-dl dd { margin: 0; font: 500 14px/22px var(--mne-font-sans); font-variant-numeric: tabular-nums; }
+.lot-togo { margin-bottom: 10px; }
+.lot-togo .mne-help { white-space: nowrap; }
+.lot-text-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.lot-textbtn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-radius: var(--mne-radius-pill); padding: 6px 10px; color: var(--mne-ink-muted); cursor: pointer; font: 500 14px/18px var(--mne-font-sans); transition: background var(--mne-dur) var(--mne-ease), color var(--mne-dur) var(--mne-ease); }
+.lot-textbtn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
+.lot-textbtn.is-danger:hover { color: var(--mne-loss); }
+.lot-textbtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.lot-today { display: flex; align-items: center; gap: 8px; padding: 6px 10px 10px 44px; position: relative; font: 500 12px/16px var(--mne-font-sans); color: var(--mne-accent); text-transform: uppercase; letter-spacing: .06em; }
+.lot-today::before { content: ""; position: absolute; left: 12px; top: 5px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--mne-accent); background: var(--mne-surface-200); box-sizing: border-box; }
+.lot-grant .lot-today::before, .lot-grant .lot-pin, .lot-grant .lot-pin .lot-dot { background-color: var(--mne-surface-300); }
+.lot-grant .lot-pin .lot-dot { box-shadow: 0 0 0 3px var(--mne-surface-300); }
+.lot-grant .lot-pin .lot-dot.is-long { background: var(--mne-chart-3); }
+.lot-grant .lot-pin .lot-dot.is-short { background: var(--mne-amber); }
+.lot-grant .lot-pin .lot-dot.is-evt { background: transparent; box-shadow: none; }
+.lot-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 12px; font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.lot-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.lot-legend-end { margin-left: auto; }
+@media (max-width: 480px) {
+  .lot-tli-hd { grid-template-columns: minmax(0, 1fr) auto; }
+  .lot-tli-hd .lot-chev { display: none; }
+  .lot-tli.is-evt .lot-gl .mne-chip { display: none; }
+  .lot-tli { padding-right: 6px; }
+  .lot-legend-end { margin-left: 0; flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lot-bar i, .lot-row, .lot-acts, .lot-textbtn { transition: none; }
+}

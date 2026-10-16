@@ -30,13 +30,15 @@ export function DivergingBars({ rows, formatValue = fmtUsd }: {
   formatValue?: (abs: number) => string
 }) {
   const max = Math.max(0, ...rows.map(r => Math.abs(r.value)))
+  // Honest proportions, but any non-zero value keeps a visible sliver (min 3% of the half-track).
+  const half = (v: number) => (max > 0 && v !== 0 ? Math.max(3, (Math.abs(v) / max) * 50) : 0)
   return (
     <div className="mne-bars is-wide" style={{ marginTop: 16 }}>
       {rows.map(r => (
         <div className="mne-bar-row" key={r.name}>
           <Name text={r.name} />
           <div className="mne-diverge">
-            <div className={`bar ${r.value >= 0 ? 'up' : 'down'}`} style={{ width: `${max > 0 ? (Math.abs(r.value) / max) * 50 : 0}%` }} />
+            <div className={`bar ${r.value >= 0 ? 'up' : 'down'}`} style={{ width: `${half(r.value)}%` }} />
           </div>
           <span className="v"><Delta value={r.value} format={formatValue} /></span>
         </div>
@@ -54,6 +56,10 @@ export function CostValueBars({ rows, formatValue = fmtUsd }: {
   const w = (n: number) => `${max > 0 ? (n / max) * 100 : 0}%`
   return (
     <div className="mne-bars is-wide" style={{ marginTop: 16 }}>
+      <div className="mne-legend mne-legend-bars" aria-hidden="true">
+        <span><i className="is-thick" style={{ background: 'var(--mne-chart-1)' }} />Current value</span>
+        <span><i className="is-thin" style={{ background: 'var(--mne-ink)' }} />Cost basis</span>
+      </div>
       {rows.map(r => (
         <div className="mne-bar-row" key={r.name}>
           <Name text={r.name} />
@@ -64,7 +70,6 @@ export function CostValueBars({ rows, formatValue = fmtUsd }: {
           <span className="v">{formatValue(r.currentValue)}</span>
         </div>
       ))}
-      <div className="mne-help">Thick bar: current value. Thin dark bar: cost basis.</div>
     </div>
   )
 }

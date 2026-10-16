@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { TaxLotList } from '@/components/TaxLotList'
 import { FixedIncomeLotList } from '@/components/FixedIncomeLotList'
+import { AddLotForm } from '@/components/AddLotForm'
+import { AssetLogo } from '@/components/AssetLogo'
+import { AssetTags } from '@/components/AssetTags'
+import { addMarketLot } from '@/lib/db/marketLots'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
@@ -10,13 +14,13 @@ import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
   isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset,
-  getPlaidSyncInfo,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
 import '@/styles/portfolio.css'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { config } from '@/store/config'
 
 interface EditAssetValues {
   name: string
@@ -134,6 +138,15 @@ export default function AssetDetail() {
     }
   }
 
+  async function handleAddMarketLot(values: { count: number; cost_price: number; purchase_date: string }) {
+    try {
+      await addMarketLot(asset.id, values)
+      if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
   async function handleEditLot(lotId: string, values: { count: number; cost_price: number; purchase_date: string }) {
     try {
       await updateFixedIncomeLot(lotId, values)
@@ -235,11 +248,11 @@ export default function AssetDetail() {
     )
   }
 
+  const lotLayout = config.lotView
   const isStock = isTickerAsset(asset)
   const isCrypto = asset.asset_type === 'Crypto'
   const isFixedIncome = asset.asset_type === 'Fixed Income'
   const isTradable = isTradableFixedIncome(asset)
-  const plaidSync = getPlaidSyncInfo(asset)
   const fixedIncomeLots = asset.fixed_income_lots ?? []
   const lotUnits = isTradable ? computeFixedIncomeLotCount(asset) : 0
   const expectedReturn = isTradable ? computeFixedIncomeExpectedReturn(asset) : null
@@ -270,7 +283,6 @@ export default function AssetDetail() {
     isStock && asset.ticker?.symbol ? asset.ticker.symbol : null,
     asset.location?.name,
     asset.asset_type + (isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''),
-    asset.ownership,
   ].filter(Boolean).join(' · ')
 
   function startEditing() {
@@ -373,9 +385,15 @@ export default function AssetDetail() {
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0 }}>
-                <h2 className="mne-section-title" style={{ fontSize: 28, lineHeight: '34px' }}>{asset.name}</h2>
-                <div className="mne-muted">{subtitle}</div>
+              <div className="pf-detail-head">
+                <AssetLogo asset={asset} size="lg" />
+                <div style={{ minWidth: 0 }}>
+                  <div className="pf-detail-title">
+                    <h2 className="mne-section-title" style={{ fontSize: 28, lineHeight: '34px' }}>{asset.name}</h2>
+                    <AssetTags asset={asset} />
+                  </div>
+                  <div className="mne-muted">{subtitle}</div>
+                </div>
               </div>
               <div className="pf-actions" style={{ alignSelf: 'flex-start' }}>
                 <button type="button" className="mne-btn is-ghost is-sm" onClick={startEditing} aria-label="Edit asset">Edit</button>
@@ -383,14 +401,8 @@ export default function AssetDetail() {
               </div>
             </div>
 
-            {(plaidSync.synced || (isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null))) && (
+            {isFixedIncome && (asset.interest_rate != null || asset.maturity_date || asset.face_value != null) && (
               <div className="pf-card-chips" style={{ justifyContent: 'flex-start', marginTop: 12 }}>
-                {plaidSync.synced && (
-                  <span className="mne-chip is-synced is-outline">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg>
-                    Synced via Plaid{plaidSync.institutionName ? ` (${plaidSync.institutionName})` : ''}
-                  </span>
-                )}
                 {isFixedIncome && asset.interest_rate != null && (
                   <span className="mne-chip is-outline">{Number(asset.interest_rate).toFixed(2)}% rate</span>
                 )}
@@ -438,21 +450,25 @@ export default function AssetDetail() {
         )}
       </section>
 
-      {isStock && hasStockActivity && (
+      {isStock && (
         <section className="mne-card pf-fade">
           <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Tax lots</h3>
           <p className="mne-help" style={{ marginBottom: 12 }}>
             {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
             {stockGrantCount > 0 && <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>}
           </p>
-          <TaxLotList
+          {hasStockActivity && <TaxLotList
             subtypes={asset.stock_subtypes}
             ticker={asset.ticker}
+            layout={lotLayout}
             onDeleteTransaction={handleDeleteTransaction}
             onEditTransaction={handleEditTransaction}
             onEndGrant={handleEndGrant}
             onDeleteGrant={handleDeleteGrant}
-          />
+          />}
+          <div style={{ marginTop: hasStockActivity ? 12 : 0 }}>
+            <AddLotForm isCrypto={isCrypto} onAddLot={handleAddMarketLot} />
+          </div>
         </section>
       )}
 
@@ -465,6 +481,9 @@ export default function AssetDetail() {
           <FixedIncomeLotList
             lots={fixedIncomeLots}
             faceValue={asset.face_value ?? null}
+            layout={lotLayout}
+            maturityDate={asset.maturity_date ?? null}
+            expectedReturn={expectedReturn}
             onAddLot={handleAddLot}
             onEditLot={handleEditLot}
             onDeleteLot={handleDeleteLot}

@@ -5,6 +5,7 @@ import { saveLlmKey } from '@/lib/db/llmCredentials'
 import { saveMarketKeys } from '@/lib/db/marketCredentials'
 import '@/styles/settings.css'
 import { Field, PageHead, SegmentedControl, Switch } from '@/components/mne'
+import { Dropdown } from '@/components/mne/Dropdown'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { config } from '@/store/config'
 import { exportData, importData, setActiveImportController, type ExportScope } from '@/lib/importExport'
@@ -54,6 +55,7 @@ export default function Settings() {
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
+  const [lotView, setLotView] = useState<'default' | 'timeline'>(() => config.lotView)
   const [hideValues, setHideValues] = useHideValues()
   const [editingKeys, setEditingKeys] = useState(false)
   const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' })
@@ -565,6 +567,19 @@ export default function Settings() {
                 <div className="d">Blur dollar amounts on Home, Portfolio, and Charts</div>
               </div>
               <Switch label="Privacy mode" checked={hideValues} onChange={setHideValues} />
+            </div>
+            <div className="mne-row">
+              <div>
+                <div className="t">Tax lot layout</div>
+                <div className="d">How an asset's lots are shown: a summary first, or a timeline with upcoming dates</div>
+              </div>
+              <Dropdown<'default' | 'timeline'>
+                label="Tax lot layout"
+                alignRight
+                value={lotView}
+                options={[{ value: 'default', label: 'Default' }, { value: 'timeline', label: 'Timeline' }]}
+                onChange={(v) => { config.setLotView(v); setLotView(v) }}
+              />
             </div>
           </div>
         </section>

@@ -13,7 +13,9 @@ import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
 import { getSupabaseClient } from '@/lib/supabase'
 import { Delta, PageHead } from '@/components/mne'
 import { computeThemeDistribution } from '@/lib/charts'
-import { Sparkles, Star, Trash2 } from 'lucide-react'
+import { Info, Sparkles, Star, Trash2 } from 'lucide-react'
+import { Tooltip } from '@/components/mne/Tooltip'
+import '@/styles/watchlist.css'
 import { finnhubFetch } from '@/lib/marketData'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
@@ -200,34 +202,39 @@ export default function Watchlist() {
         )}
       </PageHead>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="mne-field" style={{ flex: 1, minWidth: 200, maxWidth: 320 }}>
-            <label htmlFor="watchlist-symbol">Add a ticker</label>
-            <input
-              id="watchlist-symbol"
-              className="mne-input"
-              type="text"
-              value={symbol}
-              onChange={e => setSymbol(e.target.value)}
-              placeholder={isCrypto ? 'BTC' : 'AAPL or BTC'}
-              aria-invalid={error ? true : undefined}
-              autoComplete="off"
-            />
-          </div>
-          <button type="submit" className="mne-btn" disabled={submitting || !symbol.trim()}>
-            {submitting ? 'Adding…' : 'Add to watchlist'}
-          </button>
+      <form onSubmit={handleSubmit} className="wl-add">
+        <div className="mne-field wl-add-input">
+          <label htmlFor="watchlist-symbol">Add a ticker</label>
+          <input
+            id="watchlist-symbol"
+            className="mne-input"
+            type="text"
+            value={symbol}
+            onChange={e => setSymbol(e.target.value)}
+            placeholder={isCrypto ? 'BTC' : 'AAPL or BTC'}
+            aria-invalid={error ? true : undefined}
+            autoComplete="off"
+          />
         </div>
-        <label className="mne-check">
-          <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
-          <span>Cryptocurrency<small>Priced via CoinGecko instead of Finnhub.</small></span>
-        </label>
-        {error && <span className="mne-help is-error" role="alert">▼ {error}</span>}
+        <div className="wl-add-crypto">
+          <label className="mne-check">
+            <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
+            <span>Crypto</span>
+          </label>
+          <Tooltip content="Cryptocurrency. Priced via CoinGecko instead of Finnhub.">
+            <button type="button" className="wl-info" aria-label="About the Crypto option">
+              <Info size={16} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </Tooltip>
+        </div>
+        <button type="submit" className="mne-btn wl-add-btn" disabled={submitting || !symbol.trim()}>
+          {submitting ? 'Adding…' : 'Add to watchlist'}
+        </button>
+        {error && <span className="mne-help is-error wl-add-error" role="alert">▼ {error}</span>}
       </form>
 
       {!loaded && (
-        <div className="mne-bento">
+        <div className="mne-bento wl-bento">
           <section className="mne-card s4" aria-busy="true">
             <h3 className="mne-card-title">Tickers</h3>
             <div style={{ display: 'grid', gap: 8 }}>
@@ -247,7 +254,7 @@ export default function Watchlist() {
       )}
 
       {loaded && tickers.length > 0 && (
-        <div className="mne-bento">
+        <div className="mne-bento wl-bento">
           <section className="mne-card s4">
             <h3 className="mne-card-title">Tickers</h3>
             <div style={{ overflowX: 'auto' }}>
