@@ -9,6 +9,7 @@ import {
   computeRsuVesting,
   computeRsuVestEvents,
   rsuVestedSharesAsOf,
+  computeRsuVestTimeline,
   computeThemeDistribution,
 } from '../lib/charts'
 
@@ -352,4 +353,28 @@ test('crypto assets count toward allocation, P&L and theme distribution like sto
   expect(computeUnrealizedPnLByPosition([crypto])).toEqual([{ name: 'BTC', gain: 80 }])
   expect(computeThemeDistribution([crypto])).toEqual([{ name: 'Crypto', value: 200 }])
   expect(computeCapitalGainsExposure([crypto])).toMatchObject({ shortTerm: 80 })
+})
+
+describe('computeRsuVestTimeline extras', () => {
+  const asset = (grant: any) => ({ name: 'NVDA', ticker: { symbol: 'NVDA' }, stock_subtypes: [{ subtype: 'RSU', rsu_grants: [grant] }] })
+  const base = { grant_date: '2024-01-01', vest_start: '2024-01-01', cliff_date: '2025-01-01', vest_end: '2028-01-01', total_shares: 400, vesting_frequency: 'quarterly' }
+
+  test('exposes symbol, frequency, cliff flag and forfeited shares for an ended grant', () => {
+    const [row] = computeRsuVestTimeline([asset({ ...base, ended_at: '2026-01-01' })], new Date('2026-10-16'))
+    expect(row.symbol).toBe('NVDA')
+    expect(row.frequency).toBe('quarterly')
+    expect(row.hasCliff).toBe(true)
+    expect(row.endedMs).toBe(new Date('2026-01-01').getTime())
+    expect(row.forfeitedShares).toBe(row.totalShares - row.vestedShares)
+    expect(row.forfeitedShares).toBeGreaterThan(0)
+    expect(row.nextVest).toBeNull()
+  })
+
+  test('a live grant forfeits nothing; no cliff date means hasCliff is false', () => {
+    const [row] = computeRsuVestTimeline([asset({ ...base, cliff_date: null, vesting_frequency: 'continuous' })], new Date('2026-10-16'))
+    expect(row.forfeitedShares).toBe(0)
+    expect(row.hasCliff).toBe(false)
+    expect(row.events).toEqual([])
+    expect(row.nextVest).toBeNull()
+  })
 })

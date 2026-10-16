@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   computeMovers,
   computeMoversForWindow,
@@ -23,31 +22,15 @@ import { getTickerPriceHistory, type TickerPricePoint } from '@/lib/db/tickerPri
 import { getPortfolioExplanation, type PortfolioExplanationRow } from '@/lib/db/portfolioExplanations'
 import { openPortfolioExplanationInCommandBar, openCommandBarWithPrompt } from '@/lib/commandBarBridge'
 import { isTickerAsset } from '@/lib/portfolio'
-import { CardEyebrow } from '@/components/CardEyebrow'
-import { Chip } from '@/components/mne'
+import { useHideValues } from '@/hooks/useHideValues'
+import { buildCardModel, type PulseCardModel } from '@/components/pulse/model'
+import { PulseCarouselA } from '@/components/pulse/PulseCarouselA'
+import { PulseHeadlineD } from '@/components/pulse/PulseHeadlineD'
 
-const AUTOPLAY_MS = 3200
-// How long a manual swipe/scroll suppresses autoplay before it resumes.
-const RESUME_AUTOPLAY_MS = 5000
 // Covers the longest fixed timeframe (yearly, 365d) plus the longest
 // notable-move scan window (270d, see CUSTOM_WINDOW_DAYS in
 // portfolioExplanation.ts), with a little slack.
 const PRICE_HISTORY_LOOKBACK_DAYS = 372
-
-const TIMEFRAME_LABEL: Record<string, string> = {
-  daily: 'Today',
-  weekly: 'This week',
-  monthly: 'This month',
-  yearly: 'This year',
-  custom: 'Notable move',
-}
-const EVENT_LABEL: Record<string, string> = {
-  rsu_vest: 'RSU vest',
-  long_term: 'Long term',
-  harvest: 'Tax-loss candidate',
-  allocation_drift: 'Allocation drift',
-  earnings: 'Earnings',
-}
 
 function slotKey(slot: PortfolioInsightSlot): string {
   return `${slot.scope}:${slot.scopeKey}:${slot.timeframe}`
@@ -59,33 +42,28 @@ function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string
     : computeMoversForWindow(assets, netWorth, priceHistory, slot.windowDays, slot.timeframe)
 }
 
-/** The Home page's Portfolio Pulse card — an auto-scrolling carousel of
- *  whichever insights are currently relevant: a stock's, a sector's, or the
- *  whole portfolio's move, at whatever timeframe (daily/weekly/monthly/
- *  yearly, or a "notable move" over some other window) actually stands out
- *  right now (see computeCandidateSlots). Each card is a one-line,
- *  deterministic teaser (buildSlotTeaser: no LLM call) that opens a command
- *  bar session on click, which fetches/generates that one slot's actual
- *  explanation — see CommandBar.tsx's handling of `startExplanationRequest`.
- *  Renders nothing when there's nothing to show.
+/** The Home page's Portfolio Pulse card — whichever insights are currently
+ *  relevant: a stock's, a sector's, or the whole portfolio's move, at whatever
+ *  timeframe actually stands out (see computeCandidateCards), plus event cards
+ *  (RSU vests, lots turning long-term, ...). Each is a deterministic one-liner
+ *  (no LLM call) that opens a command bar session on click, which fetches or
+ *  generates that one insight's explanation.
  *
- *  Cards sit in a native horizontally-scrolling, scroll-snapped strip
- *  (rather than a framer-motion drag gesture) so a swipe/trackpad scroll
- *  moves between them directly — the browser's own "a scroll cancels the
- *  following click" behavior means each card's own click handler never
- *  needs to guess whether a gesture was a tap or a swipe. Autoplay and the
- *  dot indicators drive the same scroll position that a manual swipe does,
- *  so all three stay in sync. */
+ *  This component owns the data (price history, themes, earnings, previous
+ *  explanations, seen tracking, ranking); the presentation is one of two
+ *  layouts chosen in Settings → Appearance (`config.pulseView`): 'carousel'
+ *  (PulseCarouselA) or 'headline' (PulseHeadlineD). Renders nothing when
+ *  there's nothing to show. */
 export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; netWorth: number }) {
   const [priceHistory, setPriceHistory] = useState<Map<string, TickerPricePoint[]> | null>(null)
   const [previousBySlot, setPreviousBySlot] = useState<Map<string, PortfolioExplanationRow | null>>(new Map())
   const [themes, setThemes] = useState<{ name: string; theme_targets?: { target_percentage: number | string }[] | null }[]>([])
   const [earnings, setEarnings] = useState<Map<string, string>>(new Map())
   const [seenEventIds, setSeenEventIds] = useState<Set<string>>(() => loadSeenEventIds())
-  const [index, setIndex] = useState(0)
-  const [paused, setPaused] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Price-move cards opened this session read as "Seen" straight away (their
+  // stored-explanation check only refreshes on the next load).
+  const [openedKeys, setOpenedKeys] = useState<Set<string>>(new Set())
+  const [hideValues] = useHideValues()
 
   const tickerIds = useMemo(
     () => [...new Set(assets.filter((a: any) => isTickerAsset(a) && a.ticker?.id).map((a: any) => a.ticker.id as string))],
@@ -161,14 +139,16 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
   // Price-move cards and event cards compete for the same few spots, ranked
   // by how much of net worth each puts at stake; anything already opened
   // (and unchanged) is demoted behind fresh cards — see rankPulseItems.
-  const cards = useMemo(() => {
-    if (!priceHistory) return []
+  const { items, results } = useMemo(() => {
+    const results = new Map<string, ReturnType<typeof resultForSlot>>()
+    if (!priceHistory) return { items: [] as PulseItem[], results }
     const items: PulseItem[] = []
     for (const card of moveCards) {
       const result = resultForSlot(assets, netWorth, priceHistory, card.slot)
       const previous = previousBySlot.get(slotKey(card.slot)) ?? null
       const teaser = buildSlotTeaser(card.slot, result, previous)
       if (!teaser) continue
+      results.set(slotKey(card.slot), result)
       items.push({
         type: 'move',
         key: slotKey(card.slot),
@@ -182,118 +162,31 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     for (const event of eventCards) {
       items.push({ type: 'event', key: event.id, event, seen: seenEventIds.has(event.id) })
     }
-    return rankPulseItems(items)
+    return { items: rankPulseItems(items), results }
   }, [moveCards, eventCards, assets, netWorth, priceHistory, previousBySlot, seenEventIds])
-  const cardsKey = cards.map(c => c.key).join('|')
 
-  // New content (a different set of relevant insights) always starts back
-  // at the first card rather than leaving `index` pointing past the end or
-  // mid-way through a story the user hasn't seen yet.
-  useEffect(() => { setIndex(0) }, [cardsKey])
+  const cards = useMemo<PulseCardModel[]>(() => {
+    if (!priceHistory) return []
+    return items.map(item => {
+      const model = buildCardModel(item, { assets, priceHistory, result: results.get(item.key) })
+      return openedKeys.has(model.key) ? { ...model, seen: true } : model
+    })
+  }, [items, results, assets, priceHistory, openedKeys])
 
-  useEffect(() => {
-    if (cards.length <= 1 || paused) return
-    const id = setInterval(() => setIndex(i => (i + 1) % cards.length), AUTOPLAY_MS)
-    return () => clearInterval(id)
-  }, [cards.length, paused])
-
-  useEffect(() => () => { if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current) }, [])
-
-  // Drives the scroll position from `index` — an autoplay tick or a dot
-  // click both just change `index`, and this is what actually moves the
-  // strip. The threshold check keeps this from fighting handleScroll below
-  // while the position it computed is already where we want to be.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el || cards.length === 0) return
-    const target = index * el.clientWidth
-    if (Math.abs(el.scrollLeft - target) > 2) el.scrollTo({ left: target, behavior: 'smooth' })
-  }, [index, cards.length])
-
-  // The other direction: a manual swipe/trackpad scroll updates `index` to
-  // match wherever the strip actually landed, which keeps the dots and any
-  // future autoplay tick in sync with what the user did by hand.
-  function handleScroll() {
-    const el = scrollRef.current
-    if (!el || el.clientWidth === 0) return
-    const newIndex = Math.round(el.scrollLeft / el.clientWidth)
-    setIndex(i => (i === newIndex ? i : newIndex))
-  }
-
-  function pauseAutoplayTemporarily() {
-    setPaused(true)
-    // Stop any in-flight smooth scroll so a tap lands on the card the user
-    // is looking at, not the neighbour it's animating toward.
-    const el = scrollRef.current
-    if (el) el.scrollTo({ left: el.scrollLeft, behavior: 'auto' })
-    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
-    resumeTimerRef.current = setTimeout(() => setPaused(false), RESUME_AUTOPLAY_MS)
+  function openCard(card: PulseCardModel) {
+    const item = card.item
+    if (item.type === 'move') {
+      setOpenedKeys(prev => new Set(prev).add(item.key))
+      openPortfolioExplanationInCommandBar(item.slot)
+    } else {
+      setSeenEventIds(markEventSeen(item.event.id))
+      openCommandBarWithPrompt(item.event.question)
+    }
   }
 
   if (cards.length === 0) return null
 
-  return (
-    <section
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      className="mne-card mne-pulse s6"
-      aria-roledescription="carousel"
-      aria-label="Portfolio Pulse"
-    >
-      <CardEyebrow icon={Sparkles}>Portfolio Pulse</CardEyebrow>
-      {/* The viewport is the scroll-snap strip (swipe/trackpad/dots/autoplay
-          all drive the same scrollLeft); slides use the design's `.slide`. */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        onPointerDown={pauseAutoplayTemporarily}
-        onTouchStart={pauseAutoplayTemporarily}
-        className="vp snap-x snap-mandatory no-scrollbar"
-        style={{ marginTop: 12, overflowX: 'auto' }}
-      >
-        <div className="track">
-          {cards.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => {
-                if (c.type === 'move') {
-                  openPortfolioExplanationInCommandBar(c.slot)
-                } else {
-                  setSeenEventIds(markEventSeen(c.event.id))
-                  openCommandBarWithPrompt(c.event.question)
-                }
-              }}
-              title="Ask about this in the command bar"
-              className="slide snap-start text-left cursor-pointer break-words"
-              style={{ border: 0, font: 'inherit', color: 'inherit' }}
-            >
-              {c.type === 'move'
-                ? (c.tag
-                  ? <Chip variant="tag">{c.tag}</Chip>
-                  : <Chip variant="outline">{TIMEFRAME_LABEL[c.slot.timeframe] ?? 'Notable move'}</Chip>)
-                : <Chip variant="outline">{EVENT_LABEL[c.event.kind] ?? 'Heads up'}</Chip>}
-              <span>
-                {c.type === 'move' ? c.teaser : c.event.text}{' '}
-                <ArrowRight size={14} className="inline align-text-bottom mne-muted" aria-hidden="true" />
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-      {cards.length > 1 && (
-        <div className="dots" role="group" aria-label="Portfolio Pulse insights">
-          {cards.map((c, i) => (
-            <button
-              key={c.key}
-              type="button"
-              aria-current={i === index}
-              aria-label={`Show insight ${i + 1} of ${cards.length}`}
-              onClick={() => { pauseAutoplayTemporarily(); setIndex(i) }}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  )
+  return config.pulseView === 'headline'
+    ? <PulseHeadlineD cards={cards} onOpen={openCard} hidden={hideValues} />
+    : <PulseCarouselA cards={cards} onOpen={openCard} hidden={hideValues} />
 }

@@ -1,4 +1,4 @@
-import { test, expect, beforeEach } from 'vitest'
+import { test, expect, beforeEach, vi } from 'vitest'
 import { config } from '@/store/config'
 
 beforeEach(() => localStorage.clear())
@@ -46,4 +46,19 @@ test('sign-out also wipes leftover Groq and provider keys from older versions', 
   config.markSignedOut()
   expect(localStorage.getItem('mne_groq_api_key')).toBeNull()
   expect(localStorage.getItem('mne_llm_provider')).toBeNull()
+})
+
+test('pulseView defaults to carousel, persists headline, and survives blocked storage', () => {
+  expect(config.pulseView).toBe('carousel')
+  config.setPulseView('headline')
+  expect(localStorage.getItem('mne_pulse_view')).toBe('headline')
+  expect(config.pulseView).toBe('headline')
+  config.setPulseView('carousel')
+  expect(config.pulseView).toBe('carousel')
+  localStorage.setItem('mne_pulse_view', 'garbage')
+  expect(config.pulseView).toBe('carousel')
+
+  const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+  expect(config.pulseView).toBe('carousel')
+  spy.mockRestore()
 })

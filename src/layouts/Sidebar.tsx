@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react'
+import { useSyncExternalStore, type ReactElement } from 'react'
+import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import { NavLink } from 'react-router-dom'
 import { Home, LayoutGrid, LineChart, Eye, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
@@ -51,13 +52,27 @@ export default function Sidebar() {
   const ToggleIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose
   const toggleLabel = isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
 
+  // Both states render the exact same DOM (tooltips are only switched on/off), so nothing remounts or reflows:
+  // sidebar.css animates only the sidebar width, and label/wordmark opacity.
   return (
     <aside
       className={`mne-side hidden md:flex fixed left-0 top-0 bottom-0 z-40 bg-background${isCollapsed ? ' is-collapsed' : ''}`}
       data-collapsed={isCollapsed}
     >
       <div className="mne-side-head">
-        <div className="mne-brand" aria-label="mne">{isCollapsed ? 'm' : 'mne'}</div>
+        <div className="mne-brand" aria-label="mne">m<span className="mne-brand-rest" aria-hidden="true">ne</span></div>
+      </div>
+      <nav className="mne-nav is-side" aria-label="Main">
+        {items.map(({ to, icon: Icon, label }) => (
+          <SideTip key={to} label={label} show={isCollapsed}>
+            <NavLink to={to} end={to === '/'} aria-label={label}>
+              <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+              <span className="mne-side-label">{label}</span>
+            </NavLink>
+          </SideTip>
+        ))}
+      </nav>
+      <div className="mne-side-foot">
         <Tooltip content={toggleLabel} side="right">
           <button
             type="button"
@@ -69,19 +84,6 @@ export default function Sidebar() {
             <ToggleIcon size={20} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </Tooltip>
-      </div>
-      <nav className="mne-nav is-side" aria-label="Main">
-        {items.map(({ to, icon: Icon, label }) => {
-          const link = (
-            <NavLink key={to} to={to} end={to === '/'} aria-label={label}>
-              <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
-              <span>{label}</span>
-            </NavLink>
-          )
-          return isCollapsed ? <Tooltip key={to} content={label} side="right">{link}</Tooltip> : link
-        })}
-      </nav>
-      <div className="mne-side-foot">
         <Tooltip content="Settings" side="right">
           <NavLink to="/settings" className="mne-side-btn" aria-label="Settings">
             <Settings size={20} strokeWidth={1.5} aria-hidden="true" />
@@ -89,5 +91,19 @@ export default function Sidebar() {
         </Tooltip>
       </div>
     </aside>
+  )
+}
+
+// Label tooltip only while collapsed. Always the same wrapper (open forced false when expanded) so the link never remounts.
+function SideTip({ label, show, children }: { label: string; show: boolean; children: ReactElement }) {
+  return (
+    <TooltipPrimitive.Provider delayDuration={150}>
+      <TooltipPrimitive.Root open={show ? undefined : false}>
+        <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content side="right" sideOffset={6} className="mne-tooltip">{label}</TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      </TooltipPrimitive.Root>
+    </TooltipPrimitive.Provider>
   )
 }

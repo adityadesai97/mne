@@ -17,6 +17,8 @@ import { Info, Sparkles, Star, Trash2 } from 'lucide-react'
 import { Tooltip } from '@/components/mne/Tooltip'
 import '@/styles/watchlist.css'
 import { finnhubFetch } from '@/lib/marketData'
+import { SymbolCombobox } from '@/components/mne/Combobox'
+import type { SymbolSuggestion } from '@/lib/symbolSearch'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 
@@ -38,6 +40,9 @@ export default function Watchlist() {
   const [themes, setThemes] = useState<any[]>([])
   const [symbol, setSymbol] = useState('')
   const [isCrypto, setIsCrypto] = useState(false)
+  // The coin picked from the suggestions, so the exact coin (not just a
+  // symbol that may be shared by several) is what gets added.
+  const [pickedCoin, setPickedCoin] = useState<SymbolSuggestion | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -87,8 +92,18 @@ export default function Watchlist() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const trimmed = symbol.toUpperCase().trim()
-    if (!trimmed) return
+    await addSymbol(symbol, pickedCoin)
+  }
+
+  const handlePick = (s: SymbolSuggestion, submit: boolean) => {
+    setSymbol(s.symbol)
+    setPickedCoin(s.kind === 'crypto' ? s : null)
+    if (submit) void addSymbol(s.symbol, s.kind === 'crypto' ? s : null)
+  }
+
+  const addSymbol = async (raw: string, coin: SymbolSuggestion | null) => {
+    const trimmed = raw.toUpperCase().trim()
+    if (!trimmed || submitting) return
     setSubmitting(true)
     setError(null)
     try {
@@ -97,8 +112,12 @@ export default function Watchlist() {
       if (isCrypto) {
         // Crypto is priced from CoinGecko, not Finnhub — resolving the coin,
         // quote, history and theme all live in ensureCryptoTicker.
-        await ensureCryptoTicker(user.id, trimmed, { watchlistOnly: true })
+        const chosen = coin?.coinId && coin.symbol === trimmed
+          ? { id: coin.coinId, name: coin.name, symbol: coin.symbol, logo: coin.logo ?? null }
+          : undefined
+        await ensureCryptoTicker(user.id, trimmed, { watchlistOnly: true, coin: chosen })
         setSymbol('')
+        setPickedCoin(null)
         await loadTickers()
         return
       }
@@ -130,6 +149,7 @@ export default function Watchlist() {
         })(),
       ])
       setSymbol('')
+      setPickedCoin(null)
       await loadTickers()
     } catch (err: any) {
       setError(err.message ?? 'Failed to add ticker')
@@ -205,20 +225,19 @@ export default function Watchlist() {
       <form onSubmit={handleSubmit} className="wl-add">
         <div className="mne-field wl-add-input">
           <label htmlFor="watchlist-symbol">Add a ticker</label>
-          <input
+          <SymbolCombobox
             id="watchlist-symbol"
-            className="mne-input"
-            type="text"
             value={symbol}
-            onChange={e => setSymbol(e.target.value)}
+            onChange={v => { setSymbol(v); setPickedCoin(null) }}
+            onPick={handlePick}
+            crypto={isCrypto}
             placeholder={isCrypto ? 'BTC' : 'AAPL or BTC'}
-            aria-invalid={error ? true : undefined}
-            autoComplete="off"
+            invalid={!!error}
           />
         </div>
         <div className="wl-add-crypto">
           <label className="mne-check">
-            <input type="checkbox" checked={isCrypto} onChange={e => setIsCrypto(e.target.checked)} />
+            <input type="checkbox" checked={isCrypto} onChange={e => { setIsCrypto(e.target.checked); setPickedCoin(null) }} />
             <span>Crypto</span>
           </label>
           <Tooltip content="Cryptocurrency. Priced via CoinGecko instead of Finnhub.">

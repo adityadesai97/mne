@@ -11,3 +11,17 @@
   .wl-add-input { flex-basis: 100%; max-width: none; }
   .wl-add-btn { margin-left: auto; }
 }
+
+/* Symbol typeahead */
+.wl-combo { position: relative; }
+.wl-combo-menu { top: calc(100% + 6px); left: 0; right: 0; width: auto; max-width: none; max-height: min(360px, 50vh); overflow-y: auto; overscroll-behavior: contain; }
+.wl-combo-menu[hidden] { display: none; }
+.wl-combo-opt { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 10px; border-radius: var(--mne-radius-sm); font: 400 14px/20px var(--mne-font-sans); color: var(--mne-ink); cursor: pointer; }
+.wl-combo-opt.is-active { background: var(--mne-surface-300); }
+.wl-combo-sym { font-weight: 600; flex: none; }
+.wl-combo-name { color: var(--mne-ink-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-combo-chip { flex: none; font-size: 12px; line-height: 16px; padding: 2px 8px; }
+.wl-combo-logo { flex: none; border-radius: 50%; object-fit: contain; }
+.wl-combo-note { padding: 12px 14px; font: 400 13px/18px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.wl-combo-note.is-error { color: var(--mne-ink-muted); }
+.wl-add-input { position: relative; z-index: 5; }

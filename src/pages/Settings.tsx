@@ -56,6 +56,7 @@ export default function Settings() {
   const [pushLoading, setPushLoading] = useState(false)
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>(config.theme)
   const [lotView, setLotView] = useState<'default' | 'timeline'>(() => config.lotView)
+  const [pulseView, setPulseView] = useState<'carousel' | 'headline'>(() => config.pulseView)
   const [hideValues, setHideValues] = useHideValues()
   const [editingKeys, setEditingKeys] = useState(false)
   const [keyDraft, setKeyDraft] = useState({ claudeApiKey: '', finnhubApiKey: '', coingeckoApiKey: '' })
@@ -579,6 +580,19 @@ export default function Settings() {
                 value={lotView}
                 options={[{ value: 'default', label: 'Default' }, { value: 'timeline', label: 'Timeline' }]}
                 onChange={(v) => { config.setLotView(v); setLotView(v) }}
+              />
+            </div>
+            <div className="mne-row">
+              <div>
+                <div className="t">Portfolio Pulse layout</div>
+                <div className="d">How Home shows insights: one at a time in a carousel, or the top insight with the rest folded below</div>
+              </div>
+              <Dropdown<'carousel' | 'headline'>
+                label="Portfolio Pulse layout"
+                alignRight
+                value={pulseView}
+                options={[{ value: 'carousel', label: 'Carousel' }, { value: 'headline', label: 'Headline' }]}
+                onChange={(v) => { config.setPulseView(v); setPulseView(v) }}
               />
             </div>
           </div>

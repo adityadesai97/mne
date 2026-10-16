@@ -299,6 +299,17 @@ export type RsuTimelineRow = {
   /** Discrete installments; empty for a continuously vesting grant. */
   events: RsuTimelineEvent[]
   nextVest: { ms: number; shares: number } | null
+  /** Ticker (or asset name) alone, without the grant date that `label` carries. */
+  symbol: string
+  /** Grant date; the left edge of the rail. */
+  grantMs: number
+  frequency: RsuVestingFrequency
+  /** True when the grant records a cliff date of its own. */
+  hasCliff: boolean
+  /** Date the grant was ended (cancelled), if it was. */
+  endedMs: number | null
+  /** Unvested shares given up when the grant ended; 0 for a live grant. */
+  forfeitedShares: number
 }
 
 export function computeRsuVestTimeline(assets: any[], today: Date = new Date()): RsuTimelineRow[] {
@@ -319,9 +330,17 @@ export function computeRsuVestTimeline(assets: any[], today: Date = new Date()):
         const cliffSource = grant.cliff_date ?? (events.length > 0 ? grant.vest_start : null)
         const cliffMs = cliffSource ? new Date(cliffSource).getTime() : null
         const next = endedAt ? undefined : events.find(e => !e.done)
+        const vestedShares = rsuVestedSharesAsOf(grant, today)
+        const endedMs = endedAt ? endedAt.getTime() : null
         rows.push({
+          symbol: String(a.ticker?.symbol ?? a.name),
+          grantMs: Number.isFinite(startMs) ? startMs : endMs,
+          frequency: normalizeRsuVestingFrequency(grant.vesting_frequency),
+          hasCliff: !!grant.cliff_date,
+          endedMs: endedMs !== null && Number.isFinite(endedMs) ? endedMs : null,
+          forfeitedShares: endedAt ? Math.max(0, total - vestedShares) : 0,
           label: `${a.ticker?.symbol ?? a.name} · ${formatDateMDY(grant.grant_date)}${endedAt ? ' (Ended)' : ''}`,
-          vestedShares: rsuVestedSharesAsOf(grant, today),
+          vestedShares,
           totalShares: total,
           ended: !!endedAt,
           startMs: Number.isFinite(startMs) ? startMs : endMs,

@@ -4,12 +4,24 @@
   overflow: hidden;
   transition: width var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1));
 }
-.mne-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
-.mne-side-head .mne-brand { white-space: nowrap; }
-.mne-side .mne-nav a { white-space: nowrap; }
-.mne-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+/* Same geometry in both states: the rail is 72px, padding 20px 12px, so the inner column is 48px (collapsed) / 216px (expanded).
+   Every row is a fixed 44px with the icon at a fixed 14px inset, so only the aside's width changes. */
+.mne-side { --side-row: 44px; box-sizing: border-box; padding: 20px 12px; }
+.mne-side-head { display: flex; align-items: center; height: var(--side-row); flex: none; }
+.mne-brand { position: relative; white-space: nowrap; overflow: hidden; }
+.mne-side-head .mne-brand { padding: 0 14px; line-height: var(--side-row); height: var(--side-row); }
+.mne-brand-rest { transition: opacity var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.mne-side.is-collapsed .mne-brand-rest { opacity: 0; }
+.mne-side .mne-nav.is-side { flex: none; gap: 4px; }
+.mne-side .mne-nav a {
+  box-sizing: border-box; height: var(--side-row); padding: 0 14px; gap: 12px; flex: none;
+  white-space: nowrap; overflow: hidden;
+}
+.mne-side-label { white-space: nowrap; transition: opacity var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.mne-side.is-collapsed .mne-side-label { opacity: 0; }
+.mne-side-foot { margin-top: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: none; }
 .mne-side-btn {
-  display: inline-grid; place-content: center; width: 40px; height: 40px; flex: none;
+  display: inline-grid; place-content: center; width: 48px; height: var(--side-row); flex: none;
   border: 0; background: transparent; border-radius: var(--mne-radius-pill, 999px);
   color: var(--mne-ink-muted); cursor: pointer; text-decoration: none;
   transition: background var(--mne-dur, 180ms) linear, color var(--mne-dur, 180ms) linear;
@@ -17,15 +29,6 @@
 .mne-side-btn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
 .mne-side-btn[aria-current="page"] { background: var(--mne-surface-300); color: var(--mne-accent); }
 .mne-side-btn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
-
-.mne-side.is-collapsed { padding-left: 12px; padding-right: 12px; }
-.mne-side.is-collapsed .mne-side-head { flex-direction: column; justify-content: center; gap: 12px; }
-.mne-side.is-collapsed .mne-brand { padding: 0; text-align: center; }
-.mne-side.is-collapsed .mne-nav a { justify-content: center; padding-left: 0; padding-right: 0; }
-.mne-side.is-collapsed .mne-nav a span {
-  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
-}
-.mne-side.is-collapsed .mne-side-foot { align-items: center; }
 
 /* Content that sits beside the sidebar follows its width. */
 @media (min-width: 768px) {

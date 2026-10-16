@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Masonry, MasonryItem } from '@/components/mne/Masonry'
 import { PieChart, Landmark, Layers, TrendingUp, Scale, BarChart3, CalendarClock } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { getAllThemes } from '@/lib/db/themes'
@@ -96,14 +97,14 @@ export default function Charts() {
     return (
       <div className="mne-main" aria-busy="true">
         <PageHead title="Charts" />
-        <div className="mne-bento">
+        <Masonry>
           {[0, 1, 2, 3].map((i) => (
-            <section key={i} className="mne-card s3">
+            <section key={i} className="mne-card">
               <div className="mne-skel" style={{ height: 14, width: 140 }} />
               <div className="mne-skel" style={{ height: 160, marginTop: 18 }} />
             </section>
           ))}
-        </div>
+        </Masonry>
       </div>
     )
   }
@@ -138,9 +139,9 @@ export default function Charts() {
       <div className="mne-main">
         <PageHead title="Charts" />
 
-        <div className="mne-bento is-charts">
+        <Masonry>
           {/* PORTFOLIO ALLOCATION */}
-          <section className="mne-card s3">
+          <section className="mne-card">
             <div className="mne-chart-head">
               <Eyebrow icon={PieChart}>Portfolio allocation</Eyebrow>
               <MultiDropdown
@@ -157,7 +158,7 @@ export default function Charts() {
           </section>
 
 {/* BY ACCOUNT */}
-          <section className="mne-card s3">
+          <section className="mne-card">
             <Eyebrow icon={Landmark}>By account</Eyebrow>
             <div className={hiddenValueClass(hideValues)}>
               {locations.length > 0
@@ -168,7 +169,7 @@ export default function Charts() {
 
 {/* UNREALIZED P&L BY POSITION */}
           {pnlData.length > 0 && (
-            <section className="mne-card s6">
+            <MasonryItem span={2}><section className="mne-card">
               <div className="mne-chart-head">
                 <Eyebrow icon={TrendingUp}>Unrealized P&amp;L</Eyebrow>
                 <span className={hiddenValueClass(hideValues)}>{signed(totalPnl)}</span>
@@ -176,11 +177,11 @@ export default function Charts() {
               <div className={hiddenValueClass(hideValues)}>
                 <DivergingBars rows={pnlData.map((p) => ({ name: p.name, value: p.gain }))} />
               </div>
-            </section>
+            </section></MasonryItem>
           )}
 
 {/* STOCK DISTRIBUTION BY THEME */}
-          <section className="mne-card s3">
+          <section className="mne-card">
             <div className="mne-chart-head">
               <Eyebrow icon={Layers}>Stock distribution by theme</Eyebrow>
               <Dropdown
@@ -206,7 +207,7 @@ export default function Charts() {
 
 {/* CAPITAL GAINS EXPOSURE */}
           {(activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) && (
-            <section className="mne-card s3">
+            <section className="mne-card">
               <div className="mne-chart-head">
                 <Eyebrow icon={Scale}>Capital gains exposure</Eyebrow>
                 <Dropdown
@@ -227,24 +228,24 @@ export default function Charts() {
 
 {/* COST BASIS VS CURRENT VALUE */}
           {cvvData.length > 0 && (
-            <section className="mne-card s6">
+            <MasonryItem span={2}><section className="mne-card">
               <Eyebrow icon={BarChart3}>Cost basis vs value</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <CostValueBars rows={cvvData} />
               </div>
-            </section>
+            </section></MasonryItem>
           )}
 
 {/* RSU VESTING PROGRESS */}
           {rsuData.length > 0 && (
-            <section className="mne-card s6">
+            <MasonryItem span={2}><section className="mne-card">
               <Eyebrow icon={CalendarClock}>RSU vesting progress</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
-                <RsuVestChart rows={rsuData} />
+                <RsuVestChart rows={rsuData} hideValues={hideValues} />
               </div>
-            </section>
+            </section></MasonryItem>
           )}
-        </div>
+        </Masonry>
       </div>
     </>
   )

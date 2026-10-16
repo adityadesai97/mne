@@ -3,7 +3,8 @@ import { validateMarketRequest, buildUpstreamUrl, FINNHUB_PATHS } from '../../su
 
 test('accepts the Finnhub endpoints mne uses', () => {
   for (const path of FINNHUB_PATHS) {
-    expect(validateMarketRequest({ provider: 'finnhub', path, params: { symbol: 'AAPL' } })).toBeNull()
+    const params = path === 'search' ? { q: 'apple' } : { symbol: 'AAPL' }
+    expect(validateMarketRequest({ provider: 'finnhub', path, params })).toBeNull()
   }
 })
 
@@ -39,4 +40,17 @@ test('rejects non-string and oversized parameter values', () => {
 test('the stored key is attached on the server side only', () => {
   expect(buildUpstreamUrl('finnhub', 'quote', { symbol: 'AAPL' }, 'KEY1')).toBe('https://finnhub.io/api/v1/quote?symbol=AAPL&token=KEY1')
   expect(buildUpstreamUrl('coingecko', 'simple/price', { ids: 'bitcoin' }, 'CG-1')).toBe('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&x_cg_demo_api_key=CG-1')
+})
+
+test('Finnhub symbol search accepts only the q parameter', () => {
+  expect(validateMarketRequest({ provider: 'finnhub', path: 'search', params: { q: 'apple' } })).toBeNull()
+  expect(validateMarketRequest({ provider: 'finnhub', path: 'search', params: { q: 'apple', exchange: 'US' } })).toMatch(/not allowed/)
+  expect(validateMarketRequest({ provider: 'finnhub', path: 'search', params: { token: 'x' } })).toMatch(/not allowed/)
+  expect(validateMarketRequest({ provider: 'finnhub', path: 'search', params: { q: 'a'.repeat(1001) } })).toMatch(/short string/)
+  // the restriction is per-endpoint: other endpoints keep their own params
+  expect(validateMarketRequest({ provider: 'finnhub', path: 'quote', params: { symbol: 'AAPL' } })).toBeNull()
+})
+
+test('search is not an allowed CoinGecko-style path on other providers', () => {
+  expect(buildUpstreamUrl('finnhub', 'search', { q: 'apple' }, 'KEY1')).toBe('https://finnhub.io/api/v1/search?q=apple&token=KEY1')
 })
