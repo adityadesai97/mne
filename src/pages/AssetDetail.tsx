@@ -20,6 +20,7 @@ import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
 import '@/styles/portfolio.css'
 import { formatDateMDY } from '@/lib/dates'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
+import { config } from '@/store/config'
 
 interface EditAssetValues {
   name: string
@@ -247,6 +248,7 @@ export default function AssetDetail() {
     )
   }
 
+  const lotLayout = config.lotView
   const isStock = isTickerAsset(asset)
   const isCrypto = asset.asset_type === 'Crypto'
   const isFixedIncome = asset.asset_type === 'Fixed Income'
@@ -458,6 +460,7 @@ export default function AssetDetail() {
           {hasStockActivity && <TaxLotList
             subtypes={asset.stock_subtypes}
             ticker={asset.ticker}
+            layout={lotLayout}
             onDeleteTransaction={handleDeleteTransaction}
             onEditTransaction={handleEditTransaction}
             onEndGrant={handleEndGrant}
@@ -478,6 +481,9 @@ export default function AssetDetail() {
           <FixedIncomeLotList
             lots={fixedIncomeLots}
             faceValue={asset.face_value ?? null}
+            layout={lotLayout}
+            maturityDate={asset.maturity_date ?? null}
+            expectedReturn={expectedReturn}
             onAddLot={handleAddLot}
             onEditLot={handleEditLot}
             onDeleteLot={handleDeleteLot}

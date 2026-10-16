@@ -1,18 +1,25 @@
 // src/components/TaxLotList.tsx
+// Tax lots for a stock / crypto asset. Two presentations, chosen in Settings
+// (config.lotView): "summary first" (default) and "timeline". Edit / delete /
+// grant handlers are unchanged and passed straight through.
 import { useState } from 'react'
-import { Trash2, Pencil } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { formatDateMDY } from '@/lib/dates'
-import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
-import { Delta } from '@/components/mne'
+import { computeRsuVestEvents } from '@/lib/charts'
+import { useHideValues } from '@/hooks/useHideValues'
+import { Stat } from '@/components/mne'
+import {
+  buildStockLot, daysBetween, fmtMoney, fmtMoney0, fmtQty, parseIsoDate, plural, qtyText, startOfToday, toIsoKey,
+  type StockLot,
+} from '@/components/lots/lotMath'
+import {
+  Chevron, GainText, Hide, LotDisclosure, ProgressBar, type LotLayout,
+} from '@/components/lots/parts'
+import {
+  StockLotRows, StockSummary, StockTimeline,
+  type EditValues, type StockLotCtx, type TimelineExtraEvent,
+} from '@/components/lots/StockLotViews'
 import '@/styles/portfolio.css'
-
-interface EditValues {
-  count: string
-  cost_price: string
-  purchase_date: string
-  capital_gains_status: string
-  sold_at_vest: string
-}
 
 type EditTransactionUpdates = {
   count: number
@@ -22,17 +29,10 @@ type EditTransactionUpdates = {
   sold_at_vest?: number
 }
 
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg className={`pf-chev${open ? ' is-open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  )
-}
-
-export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
+export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
   subtypes: any[]
   ticker: any
+  layout?: LotLayout
   onDeleteTransaction?: (id: string) => Promise<void>
   onEditTransaction?: (id: string, updates: EditTransactionUpdates) => Promise<void>
   onEndGrant?: (id: string) => Promise<void>
@@ -41,17 +41,12 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
   const [hideValues] = useHideValues()
   const isCrypto = ticker?.kind === 'crypto'
   const [editingId, setEditingId] = useState<string | null>(null)
-  // Subtype tables start open (they are compact); RSU grant blocks start
+  // Subtype sections start open (they are compact); RSU grant blocks start
   // collapsed so a stock with lots of vesting history doesn't dump every row.
   const [collapsedSubtypeIds, setCollapsedSubtypeIds] = useState<Set<string>>(new Set())
   const [expandedGrantIds, setExpandedGrantIds] = useState<Set<string>>(new Set())
-  const [editValues, setEditValues] = useState<EditValues>({
-    count: '',
-    cost_price: '',
-    purchase_date: '',
-    capital_gains_status: '',
-    sold_at_vest: '',
-  })
+  const today = startOfToday()
+  const price = ticker?.current_price != null ? Number(ticker.current_price) : null
 
   function toggleIn(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
     setter(prev => {
@@ -65,156 +60,177 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
     (st: any) => (st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0,
   )
 
-  async function handleSave(tId: string) {
+  async function handleSave(tId: string, values: EditValues) {
     if (!onEditTransaction) return
-    const soldAtVest = parseFloat(editValues.sold_at_vest) || 0
+    const soldAtVest = parseFloat(values.sold_at_vest) || 0
     await onEditTransaction(tId, {
-      count: parseFloat(editValues.count),
-      cost_price: parseFloat(editValues.cost_price),
-      purchase_date: editValues.purchase_date,
-      capital_gains_status: editValues.capital_gains_status,
+      count: parseFloat(values.count),
+      cost_price: parseFloat(values.cost_price),
+      purchase_date: values.purchase_date,
+      capital_gains_status: values.capital_gains_status,
       sold_at_vest: soldAtVest > 0 ? soldAtVest : undefined,
     })
     setEditingId(null)
   }
 
-  const hasActions = Boolean(onEditTransaction || onDeleteTransaction)
-  const colCount = 6 + (hasActions ? 1 : 0)
-
-  function renderEditRow(t: any) {
-    const step = isCrypto ? 'any' : '0.01'
-    return (
-      <tr key={t.id}>
-        <td colSpan={colCount}>
-          <div className="pf-lot-edit">
-            <div className="pf-lot-edit-grid">
-              <div className="mne-field">
-                <label htmlFor={`${t.id}-count`}>{isCrypto ? 'Units' : 'Shares'}</label>
-                <input id={`${t.id}-count`} className="mne-input" type="number" step={step} value={editValues.count}
-                  onChange={e => setEditValues(v => ({ ...v, count: e.target.value }))} />
-              </div>
-              <div className="mne-field">
-                <label htmlFor={`${t.id}-cost`}>{isCrypto ? 'Cost/unit' : 'Cost/share'}</label>
-                <input id={`${t.id}-cost`} className="mne-input" type="number" step={step} value={editValues.cost_price}
-                  onChange={e => setEditValues(v => ({ ...v, cost_price: e.target.value }))} />
-              </div>
-              <div className="mne-field">
-                <label htmlFor={`${t.id}-date`}>Purchase date</label>
-                <input id={`${t.id}-date`} className="mne-input" type="date" value={editValues.purchase_date}
-                  onChange={e => setEditValues(v => ({ ...v, purchase_date: e.target.value }))} />
-              </div>
-              <div className="mne-field">
-                <label htmlFor={`${t.id}-status`}>Status</label>
-                <div className="mne-select-wrap">
-                  <select id={`${t.id}-status`} className="mne-input" value={editValues.capital_gains_status}
-                    onChange={e => setEditValues(v => ({ ...v, capital_gains_status: e.target.value }))}>
-                    <option value="Short Term">Short Term</option>
-                    <option value="Long Term">Long Term</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mne-field">
-                <label htmlFor={`${t.id}-sav`}>Sold at vest</label>
-                <input id={`${t.id}-sav`} className="mne-input" type="number" step={step} min="0" placeholder="0" value={editValues.sold_at_vest}
-                  onChange={e => setEditValues(v => ({ ...v, sold_at_vest: e.target.value }))} />
-              </div>
-            </div>
-            <div className="pf-actions">
-              <button type="button" className="mne-btn is-sm" onClick={() => handleSave(t.id)}>Save</button>
-              <button type="button" className="mne-btn is-ghost is-sm" onClick={() => setEditingId(null)}>Cancel</button>
-            </div>
-          </div>
-        </td>
-      </tr>
-    )
+  const ctx: StockLotCtx = {
+    isCrypto,
+    hideValues,
+    price,
+    today,
+    editingId,
+    onStartEdit: onEditTransaction ? setEditingId : undefined,
+    onSaveEdit: handleSave,
+    onCancelEdit: () => setEditingId(null),
+    onDelete: onDeleteTransaction,
   }
 
-  function renderTransactionRow(t: any) {
-    if (editingId === t.id) return renderEditRow(t)
-    const totalVested = Number(t.count)
-    const soldAtVest = Number(t.sold_at_vest ?? 0)
-    const shares = Math.max(0, totalVested - soldAtVest)
-    const costPerShare = Number(t.cost_price)
-    const currentPrice = ticker?.current_price ?? null
-    const totalCost = shares * costPerShare
-    const currentValue = currentPrice !== null ? shares * currentPrice : null
-    const gain = currentValue !== null ? currentValue - totalCost : null
-    const isLong = t.capital_gains_status === 'Long Term'
+  const build = (txs: any[]): StockLot[] => txs.map(t => buildStockLot(t, price, today))
 
-    return (
-      <tr key={t.id}>
-        <td>{formatDateMDY(t.purchase_date)}</td>
-        <td><span className="mne-chip is-outline">{isLong ? 'Long term' : 'Short term'}</span></td>
-        <td className="r">
-          {isCrypto ? fmtCoins(shares) : shares.toFixed(shares % 1 === 0 ? 0 : 4)}
-          {soldAtVest > 0 && (
-            <span className="mne-help" style={{ display: 'block' }}>
-              {soldAtVest.toFixed(soldAtVest % 1 === 0 ? 0 : 4)} sold at vest
-            </span>
-          )}
-        </td>
-        <td className="r"><span className={hiddenValueClass(hideValues)}>{fmt(costPerShare)}</span></td>
-        <td className="r pf-hide-sm"><span className={hiddenValueClass(hideValues)}>{currentValue !== null ? fmt(currentValue) : '—'}</span></td>
-        <td className="r">
-          {gain !== null
-            ? <span className={hiddenValueClass(hideValues)}><Delta value={gain} format={abs => fmt(abs)} /></span>
-            : <span className="mne-muted">—</span>}
-        </td>
-        {hasActions && (
-          <td className="r" style={{ whiteSpace: 'nowrap' }}>
-            {onEditTransaction && (
-              <button
-                type="button"
-                className="pf-iconbtn"
-                aria-label="Edit"
-                onClick={() => {
-                  setEditingId(t.id)
-                  setEditValues({
-                    count: String(t.count),
-                    cost_price: String(t.cost_price),
-                    purchase_date: t.purchase_date,
-                    capital_gains_status: t.capital_gains_status,
-                    sold_at_vest: String(t.sold_at_vest ?? 0),
-                  })
-                }}
-              >
-                <Pencil size={14} aria-hidden="true" />
-              </button>
-            )}
-            {onDeleteTransaction && (
-              <button type="button" className="pf-iconbtn is-danger" aria-label="Delete" onClick={() => onDeleteTransaction(t.id)}>
-                <Trash2 size={14} aria-hidden="true" />
-              </button>
-            )}
-          </td>
+  /** A plain lot collection (Market / ESPP subtype, or unmatched RSU rows). */
+  function renderLots(txs: any[], opts: { detailLabel?: string; summary?: boolean } = {}) {
+    const lots = build(txs)
+    if (layout === 'timeline') return <StockTimeline lots={lots} ctx={ctx} legend={opts.summary !== false} />
+    if (opts.summary === false) {
+      return <StockLotRows lots={[...lots].sort((a, b) => String(b.date).localeCompare(String(a.date)))} ctx={ctx} />
+    }
+    return <StockSummary lots={lots} ctx={ctx} detailLabel={opts.detailLabel} />
+  }
+
+  function renderGrant(group: { grant: any; transactions: any[] }) {
+    const { grant } = group
+    const vesting = computeGrantVesting(grant, group.transactions)
+    const summary = computeGrantSummary(group.transactions, ticker)
+    const isGrantOpen = expandedGrantIds.has(grant.id)
+    const total = Number(grant.total_shares ?? 0)
+    const vestedPct = total > 0 ? (vesting.vestedShares / total) * 100 : 0
+    const lots = build(group.transactions)
+    const next = grant.ended_at ? null : nextVestEvent(grant, today)
+    const freq = String(grant.vesting_frequency ?? '')
+
+    const extraEvents: TimelineExtraEvent[] = []
+    if (next) {
+      extraEvents.push({
+        key: `vest-${grant.id}`,
+        date: next.key,
+        title: `Next vest · ${qtyText(next.shares)}`,
+        sub: `${formatDateMDY(next.key)} · ${freq} · ${next.days === 0 ? 'today' : `in ${next.days} ${plural(next.days, 'day', 'days')}`}`,
+        right: price !== null ? <span className="mne-help">est. <Hide hidden={hideValues}>{fmtMoney0(next.shares * price)}</Hide></span> : undefined,
+      })
+    }
+    if (parseIsoDate(grant.grant_date)) {
+      extraEvents.push({
+        key: `grant-${grant.id}`,
+        date: String(grant.grant_date).slice(0, 10),
+        title: 'Grant awarded',
+        sub: `${fmtQty(total)} ${plural(total, 'share', 'shares')} · vests through ${formatDateMDY(grant.vest_end)}`,
+        right: <span className="mne-help">{vestedPct.toFixed(0)}% vested</span>,
+      })
+    }
+
+    const actions = (
+      <div className="pf-actions" style={{ alignItems: 'center' }}>
+        {grant.ended_at ? (
+          <span className="mne-chip is-outline">Ended</span>
+        ) : onEndGrant ? (
+          <button type="button" className="mne-btn is-ghost is-sm" onClick={() => { void onEndGrant(grant.id) }}>
+            End Grant
+          </button>
+        ) : null}
+        {onDeleteGrant && (
+          <button
+            type="button"
+            className="pf-iconbtn is-danger"
+            aria-label="Delete grant"
+            onClick={() => { void onDeleteGrant(grant.id, group.transactions.map((t: any) => t.id)) }}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+          </button>
         )}
-      </tr>
+      </div>
     )
-  }
 
-  function renderTable(txs: any[]) {
+    const vestLine = (
+      <div className="mne-help">
+        Vesting {formatDateMDY(grant.vest_start)} → {formatDateMDY(grant.vest_end)}
+        {freq && <> · {freq}</>}
+        {grant.ended_at && <> · Ended {formatDateMDY(grant.ended_at)}</>}
+      </div>
+    )
+
     return (
-      <div className="pf-scroll">
-        <table className="mne-table is-compact">
-          <thead>
-            <tr>
-              <th>Purchased</th>
-              <th>Term</th>
-              <th className="r">{isCrypto ? 'Units' : 'Shares'}</th>
-              <th className="r">{isCrypto ? 'Cost/unit' : 'Cost/share'}</th>
-              <th className="r pf-hide-sm">Value</th>
-              <th className="r">Gain</th>
-              {hasActions && <th className="r"><span className="sr-only">Actions</span></th>}
-            </tr>
-          </thead>
-          <tbody>{txs.map(t => renderTransactionRow(t))}</tbody>
-        </table>
+      <div key={grant.id} className="lot-grant">
+        <button
+          type="button"
+          className="pf-disclose"
+          onClick={() => toggleIn(setExpandedGrantIds, grant.id)}
+          aria-expanded={isGrantOpen}
+        >
+          <span>
+            <b>Grant {formatDateMDY(grant.grant_date)}</b>
+            <span className="mne-help" style={{ display: 'block' }}>{isCrypto ? `${fmtQty(summary.shares, true)} units` : `${qtyText(summary.shares)} held`}</span>
+          </span>
+          <span className="lot-flex">
+            <GainText gain={summary.gain} hidden={hideValues} format={fmtMoney} />
+            <Chevron open={isGrantOpen} />
+          </span>
+        </button>
+
+        {isGrantOpen && (
+          <div className="pf-fade lot-grant-body">
+            {layout === 'timeline' ? (
+              <>
+                <div className="lot-between">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{qtyText(total)} granted <span className="mne-muted" style={{ fontWeight: 400 }}>· {fmtQty(vesting.unvestedShares)} unvested</span></div>
+                    {vestLine}
+                  </div>
+                  {actions}
+                </div>
+                <div>
+                  <ProgressBar pct={vestedPct} tone="accent" />
+                  <div className="mne-help" style={{ marginTop: 6 }}>{fmtQty(vesting.vestedShares)} of {fmtQty(total)} vested ({vestedPct.toFixed(0)}%)</div>
+                </div>
+                {group.transactions.length > 0 || extraEvents.length > 0
+                  ? <StockTimeline lots={lots} ctx={ctx} extraEvents={extraEvents} />
+                  : <p className="mne-help">No transactions mapped to this grant yet.</p>}
+              </>
+            ) : (
+              <>
+                <div className="lot-stats">
+                  <Stat label="Granted" value={fmtQty(total)} sub={`${formatDateMDY(grant.vest_start)} → ${formatDateMDY(grant.vest_end)}`} subClassName="mne-muted" />
+                  <Stat label="Vested" value={fmtQty(vesting.vestedShares)} sub={`${vestedPct.toFixed(0)}% · ${fmtQty(summary.shares)} held`} subClassName="mne-muted" />
+                  <Stat label="Unvested" value={fmtQty(vesting.unvestedShares)}
+                    sub={grant.ended_at ? `Ended ${formatDateMDY(grant.ended_at)}` : next ? `next ${formatDateMDY(next.key)}` : undefined} subClassName="mne-muted" />
+                  <Stat label="Held gain"
+                    value={summary.gain !== null ? <Hide hidden={hideValues}>{summary.gain < 0 ? '−' : ''}{fmtMoney0(Math.abs(summary.gain))}</Hide> : <span className="mne-muted">—</span>} />
+                </div>
+                <ProgressBar pct={vestedPct} tone="accent" />
+                <div className="lot-between">
+                  <div className="mne-help">
+                    {freq && <>{freq} vesting</>}
+                    {next && <>{freq ? ' · ' : ''}+{qtyText(next.shares)} in {next.days} {plural(next.days, 'day', 'days')}</>}
+                    {grant.ended_at && <>{freq ? ' · ' : ''}Ended {formatDateMDY(grant.ended_at)}</>}
+                  </div>
+                  {actions}
+                </div>
+                {group.transactions.length > 0 ? (
+                  <LotDisclosure label="vest lots" count={`${group.transactions.length} ${plural(group.transactions.length, 'lot', 'lots')}`}>
+                    <StockLotRows lots={[...lots].sort((a, b) => String(b.date).localeCompare(String(a.date)))} ctx={ctx} />
+                  </LotDisclosure>
+                ) : (
+                  <p className="mne-help">No transactions mapped to this grant yet.</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+    <div className="lot-stack">
       {subtypesWithActivity.map((st: any) => {
         const transactions = st.transactions ?? []
         const rsuGrants = st.rsu_grants ?? []
@@ -230,95 +246,31 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
               onClick={() => toggleIn(setCollapsedSubtypeIds, st.id)}
               aria-expanded={isSubtypeOpen}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span className="lot-flex">
                 <Chevron open={isSubtypeOpen} />
                 <span className="mne-eyebrow">{st.subtype}</span>
               </span>
               <span className="mne-help">
-                {transactions.length} tx
-                {rsuGrants.length > 0 && <> · {rsuGrants.length} grant{rsuGrants.length === 1 ? '' : 's'}</>}
+                {transactions.length} {plural(transactions.length, 'transaction', 'transactions')}
+                {rsuGrants.length > 0 && <> · {rsuGrants.length} {plural(rsuGrants.length, 'grant', 'grants')}</>}
               </span>
             </button>
 
             {isSubtypeOpen && (
               <div className="pf-fade" style={{ marginTop: 8 }}>
                 {isRsuSubtype && rsuGrantGroups ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-                    {rsuGrantGroups.grants.map(group => {
-                      const vesting = computeGrantVesting(group.grant, group.transactions)
-                      const summary = computeGrantSummary(group.transactions, ticker)
-                      const isGrantOpen = expandedGrantIds.has(group.grant.id)
-                      return (
-                        <div key={group.grant.id} style={{ background: 'var(--mne-surface-300)', borderRadius: 'var(--mne-radius-md)', padding: 12 }}>
-                          <button
-                            type="button"
-                            className="pf-disclose"
-                            onClick={() => toggleIn(setExpandedGrantIds, group.grant.id)}
-                            aria-expanded={isGrantOpen}
-                          >
-                            <span>
-                              <b>Grant {formatDateMDY(group.grant.grant_date)}</b>
-                              <span className="mne-help" style={{ display: 'block' }}>{isCrypto ? `${fmtCoins(summary.shares)} units` : `${fmtShares(summary.shares)} shares`}</span>
-                            </span>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              {summary.gain !== null
-                                ? <span className={hiddenValueClass(hideValues)}><Delta value={summary.gain} format={abs => fmt(abs)} /></span>
-                                : <span className="mne-muted">—</span>}
-                              <Chevron open={isGrantOpen} />
-                            </span>
-                          </button>
-
-                          {isGrantOpen && (
-                            <div className="pf-fade" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <div>
-                                  <div style={{ fontWeight: 500 }}>{fmtShares(Number(group.grant.total_shares ?? 0))} shares granted</div>
-                                  <div className="mne-help">{fmtShares(vesting.unvestedShares)} unvested</div>
-                                  <div className="mne-help">
-                                    Vesting {formatDateMDY(group.grant.vest_start)} → {formatDateMDY(group.grant.vest_end)}
-                                    {group.grant.ended_at && <> · Ended {formatDateMDY(group.grant.ended_at)}</>}
-                                  </div>
-                                </div>
-                                <div className="pf-actions" style={{ alignItems: 'center' }}>
-                                  {group.grant.ended_at ? (
-                                    <span className="mne-chip is-outline">Ended</span>
-                                  ) : onEndGrant ? (
-                                    <button type="button" className="mne-btn is-ghost is-sm" onClick={() => { void onEndGrant(group.grant.id) }}>
-                                      End Grant
-                                    </button>
-                                  ) : null}
-                                  {onDeleteGrant && (
-                                    <button
-                                      type="button"
-                                      className="pf-iconbtn is-danger"
-                                      aria-label="Delete grant"
-                                      onClick={() => { void onDeleteGrant(group.grant.id, group.transactions.map((t: any) => t.id)) }}
-                                    >
-                                      <Trash2 size={14} aria-hidden="true" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              {group.transactions.length > 0 ? (
-                                renderTable(group.transactions)
-                              ) : (
-                                <p className="mne-help">No transactions mapped to this grant yet.</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                  <div className="lot-stack">
+                    {rsuGrantGroups.grants.map(group => renderGrant(group))}
 
                     {rsuGrantGroups.unassignedTransactions.length > 0 && (
                       <div>
                         <div className="mne-eyebrow" style={{ marginBottom: 8 }}>Unmatched Transactions</div>
-                        {renderTable(rsuGrantGroups.unassignedTransactions)}
+                        {renderLots(rsuGrantGroups.unassignedTransactions, { summary: false })}
                       </div>
                     )}
                   </div>
                 ) : (
-                  renderTable(transactions)
+                  renderLots(transactions)
                 )}
               </div>
             )}
@@ -327,6 +279,16 @@ export function TaxLotList({ subtypes, ticker, onDeleteTransaction, onEditTransa
       })}
     </div>
   )
+}
+
+/** Soonest vest installment after today, or null (ended / continuous / done). */
+function nextVestEvent(grant: any, today: Date) {
+  const todayKey = toIsoKey(today)
+  const ev = computeRsuVestEvents(grant).find(e => e.date.toISOString().slice(0, 10) > todayKey)
+  if (!ev) return null
+  const key = ev.date.toISOString().slice(0, 10)
+  const date = parseIsoDate(key)
+  return { key, shares: ev.shares, days: date ? daysBetween(today, date) : 0 }
 }
 
 function groupRsuActivityByGrant(grants: any[], transactions: any[]) {
@@ -407,14 +369,6 @@ function pickGrantForTransaction(
   })[0]
 }
 
-function parseIsoDate(value: string | null | undefined) {
-  if (!value) return null
-  const [year, month, day] = value.split('-').map(Number)
-  if (year && month && day) return new Date(year, month - 1, day)
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
 function computeGrantVesting(grant: any, transactions: any[]) {
   const totalShares = Number(grant.total_shares ?? 0)
   const vestedFromTransactions = transactions.reduce((sum, tx) => {
@@ -443,19 +397,3 @@ function computeGrantSummary(transactions: any[], ticker: any) {
   return { shares, currentValue, gain }
 }
 
-function fmt(n: number) {
-  // Sub-dollar prices (e.g. a $0.00001 meme coin) need more than 2 decimals
-  // to show anything but $0.00.
-  const abs = Math.abs(Number(n))
-  const maximumFractionDigits = abs > 0 && abs < 1 ? 8 : 2
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits }).format(Number(n))
-}
-
-// Crypto quantities are tracked to 8 decimal places (satoshi precision).
-function fmtCoins(n: number) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(n)
-}
-
-function fmtShares(n: number) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
-}

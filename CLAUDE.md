@@ -32,6 +32,7 @@ npm run types                     # regenerate src/lib/database.types.ts (needs 
 - `mne_needs_signin` — flag set when the user is signed out
 - `mne_theme` — appearance preference (`light` | `dark` | `system`)
 - `mne_sidebar_collapsed` — desktop sidebar collapsed to the 72px icon rail (`'true'` | `'false'`)
+- `mne_lot_view` — Asset detail tax lot layout, `default` (summary first) | `timeline`; chosen in Settings → Appearance (`config.lotView`)
 - `mne_asset_view` — Portfolio layout preference (`grid` | `list`; unset until the user picks one, in which case Portfolio defaults to `list` on mobile and `grid` on desktop)
 
 `config.isConfigured` is true only when a Claude key is saved (`llmKeySet`, or a not-yet-migrated legacy key), a Finnhub key is saved (`finnhubKeySet`/`hasFinnhubKey`, same legacy allowance), and `!config.needsSignIn`.
