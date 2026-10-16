@@ -7,7 +7,8 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
-import { Delta, Eyebrow, PageHead, SegmentedControl } from '@/components/mne'
+import { Delta, Eyebrow, PageHead } from '@/components/mne'
+import { Dropdown, MultiDropdown } from '@/components/mne/Dropdown'
 import {
   StackBreakdown,
   TrackBars,
@@ -76,15 +77,6 @@ export default function Charts() {
 
   const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
-  function toggleSubtype(s: Subtype) {
-    setActiveSubtypes((prev) => {
-      const next = new Set(prev)
-      if (next.has(s)) next.delete(s)
-      else next.add(s)
-      return next
-    })
-  }
-
   const allocation = useMemo(
     () => capSegments(groupByAssetType(assets, activeSubtypes).map((g) => ({ name: g.type, value: g.value }))),
     [assets, activeSubtypes],
@@ -146,27 +138,37 @@ export default function Charts() {
       <div className="mne-main">
         <PageHead title="Charts" />
 
-        <div className="mne-bento">
+        <div className="mne-bento is-charts">
           {/* PORTFOLIO ALLOCATION */}
           <section className="mne-card s3">
             <div className="mne-chart-head">
               <Eyebrow icon={PieChart}>Portfolio allocation</Eyebrow>
-              <div className="mne-seg is-multi" role="group" aria-label="Stock lot types to include">
-                {ALL_SUBTYPES.map((s) => (
-                  <button type="button" key={s} aria-pressed={activeSubtypes.has(s)} onClick={() => toggleSubtype(s)}>
-                    {s}
-                  </button>
-                ))}
-              </div>
+              <MultiDropdown
+                label="Subtypes"
+                alignRight
+                options={ALL_SUBTYPES.map((v) => ({ value: v, label: v }))}
+                values={ALL_SUBTYPES.filter((v) => activeSubtypes.has(v))}
+                onChange={(vals) => setActiveSubtypes(new Set(vals))}
+              />
             </div>
             <div className={hiddenValueClass(hideValues)}>
               <StackBreakdown segments={allocation} label="Portfolio allocation by asset type" />
             </div>
           </section>
 
-          {/* UNREALIZED P&L BY POSITION */}
+{/* BY ACCOUNT */}
+          <section className="mne-card s3">
+            <Eyebrow icon={Landmark}>By account</Eyebrow>
+            <div className={hiddenValueClass(hideValues)}>
+              {locations.length > 0
+                ? <TrackBars rows={locations} />
+                : <p className="mne-help" style={{ marginTop: 14 }}>No data</p>}
+            </div>
+          </section>
+
+{/* UNREALIZED P&L BY POSITION */}
           {pnlData.length > 0 && (
-            <section className="mne-card s3">
+            <section className="mne-card s6">
               <div className="mne-chart-head">
                 <Eyebrow icon={TrendingUp}>Unrealized P&amp;L</Eyebrow>
                 <span className={hiddenValueClass(hideValues)}>{signed(totalPnl)}</span>
@@ -177,24 +179,15 @@ export default function Charts() {
             </section>
           )}
 
-          {/* BY ACCOUNT */}
-          <section className="mne-card s3">
-            <Eyebrow icon={Landmark}>By account</Eyebrow>
-            <div className={hiddenValueClass(hideValues)}>
-              {locations.length > 0
-                ? <TrackBars rows={locations} />
-                : <p className="mne-help" style={{ marginTop: 14 }}>No data</p>}
-            </div>
-          </section>
-
-          {/* STOCK DISTRIBUTION BY THEME */}
+{/* STOCK DISTRIBUTION BY THEME */}
           <section className="mne-card s3">
             <div className="mne-chart-head">
               <Eyebrow icon={Layers}>Stock distribution by theme</Eyebrow>
-              <SegmentedControl
+              <Dropdown
                 label="Theme distribution scope"
+                alignRight
                 value={includeCashInThemeDistribution ? 'cash' : 'stocks'}
-                options={[{ value: 'stocks', label: 'Stocks' }, { value: 'cash', label: 'With cash' }]}
+                options={[{ value: 'stocks', label: 'Stocks only' }, { value: 'cash', label: 'Stocks + cash' }]}
                 onChange={(v) => setIncludeCashInThemeDistribution(v === 'cash')}
               />
             </div>
@@ -211,24 +204,18 @@ export default function Charts() {
             </div>
           </section>
 
-          {/* CAPITAL GAINS EXPOSURE */}
+{/* CAPITAL GAINS EXPOSURE */}
           {(activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) && (
             <section className="mne-card s3">
               <div className="mne-chart-head">
                 <Eyebrow icon={Scale}>Capital gains exposure</Eyebrow>
-                <div className="mne-select-wrap" style={{ minWidth: 150 }}>
-                  <select
-                    className="mne-input"
-                    aria-label="Filter capital gains by ticker"
-                    value={activeGainsSymbol}
-                    onChange={(e) => setGainsSymbol(e.target.value)}
-                  >
-                    <option value="">All tickers</option>
-                    {gainsSymbols.map((sym) => (
-                      <option key={sym} value={sym}>{sym}</option>
-                    ))}
-                  </select>
-                </div>
+                <Dropdown
+                  label="Filter capital gains by ticker"
+                  alignRight
+                  value={activeGainsSymbol}
+                  options={[{ value: '', label: 'All tickers' }, ...gainsSymbols.map((sym) => ({ value: sym, label: sym }))]}
+                  onChange={setGainsSymbol}
+                />
               </div>
               <div className={hiddenValueClass(hideValues)}>
                 {gainsGross > 0
@@ -238,9 +225,9 @@ export default function Charts() {
             </section>
           )}
 
-          {/* COST BASIS VS CURRENT VALUE */}
+{/* COST BASIS VS CURRENT VALUE */}
           {cvvData.length > 0 && (
-            <section className="mne-card s3">
+            <section className="mne-card s6">
               <Eyebrow icon={BarChart3}>Cost basis vs value</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <CostValueBars rows={cvvData} />
@@ -248,7 +235,7 @@ export default function Charts() {
             </section>
           )}
 
-          {/* RSU VESTING PROGRESS */}
+{/* RSU VESTING PROGRESS */}
           {rsuData.length > 0 && (
             <section className="mne-card s6">
               <Eyebrow icon={CalendarClock}>RSU vesting progress</Eyebrow>

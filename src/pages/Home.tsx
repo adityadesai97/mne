@@ -18,6 +18,7 @@ import { Delta, PageHead, SegmentedControl, Stat } from '@/components/mne'
 import { showAppAlert } from '@/lib/appAlerts'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
+import '@/styles/home.css'
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -36,10 +37,11 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n)
 }
 
-// Counts to the new value in 180ms from wherever it currently is (not from
-// zero), with no scale pop; jumps straight there for reduced-motion users.
+// First load: counts up from 0 over ~1.1s with an ease-out. Later changes (a
+// price refresh) count from the current value in 180ms. Reduced motion jumps.
 function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | null>, format = fmtCurrency) {
-  const fromRef = useRef(target)
+  const fromRef = useRef(0)
+  const firstRef = useRef(true)
   useEffect(() => {
     const node = ref.current
     if (!node) return
@@ -47,13 +49,17 @@ function useAnimatedNumber(target: number, ref: React.RefObject<HTMLElement | nu
     if (reduce || fromRef.current === target) {
       node.textContent = format(target)
       fromRef.current = target
+      if (target !== 0) firstRef.current = false
       return
     }
+    const first = firstRef.current
+    firstRef.current = false
+    node.textContent = format(fromRef.current)
     const controls = animate(fromRef.current, target, {
-      duration: 0.18,
-      ease: [0.4, 0, 0.2, 1],
-      onUpdate: (v) => { node.textContent = format(v) },
-      onComplete: () => { fromRef.current = target },
+      duration: first ? 1.1 : 0.18,
+      ease: first ? [0.16, 1, 0.3, 1] : [0.4, 0, 0.2, 1],
+      onUpdate: (v) => { fromRef.current = v; node.textContent = format(v) },
+      onComplete: () => { fromRef.current = target; node.textContent = format(target) },
     })
     return () => { controls.stop() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,6 +70,7 @@ export default function Home() {
   const [assets, setAssets] = useState<any[]>([])
   const [snapshots, setSnapshots] = useState<any[]>([])
   const [assetsLoaded, setAssetsLoaded] = useState(false)
+  const [snapshotsLoaded, setSnapshotsLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [firstName, setFirstName] = useState<string | null>(null)
   const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
@@ -103,11 +110,12 @@ export default function Home() {
   useEffect(() => {
     if (!assetsLoaded || assets.length === 0) {
       setSnapshots([])
+      if (assetsLoaded) setSnapshotsLoaded(true)
       return
     }
     getSnapshots().then(setSnapshots).catch(() => {
       // snapshots are non-critical; no alert needed
-    })
+    }).finally(() => setSnapshotsLoaded(true))
   }, [assetsLoaded, assets.length])
 
   useEffect(() => {
@@ -222,7 +230,6 @@ export default function Home() {
   const typeEntries = Object.entries(byType)
     .map(([name, value]) => ({ name, value, pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
     .sort((a, b) => b.value - a.value)
-  const uniqueAssetTypes = typeEntries.length
 
   // Daily movers — today's price move per stock position, from each
   // ticker's last-refreshed quote (current_price vs previous_close), not
@@ -278,14 +285,8 @@ export default function Home() {
     if (stockGainLoss !== 0) {
       list.push(`Your stocks are ${stockIsGain ? 'up' : 'down'} ${Math.abs(stockGainLossPercent).toFixed(1)}% overall`)
     }
-    if (uniqueAssetTypes > 1) {
-      list.push(`Spread across ${uniqueAssetTypes} asset types`)
-    }
-    if (assets.length > 0) {
-      list.push(`Tracking ${assets.length} position${assets.length === 1 ? '' : 's'}`)
-    }
     return list
-  }, [bestAsset, bestAssetGain, bestAssetGainPct, largestAsset, largestPct, stockGainLoss, stockGainLossPercent, stockIsGain, uniqueAssetTypes, assets.length])
+  }, [bestAsset, bestAssetGain, bestAssetGainPct, largestAsset, largestPct, stockGainLoss, stockGainLossPercent, stockIsGain])
 
   useEffect(() => {
     if (insights.length <= 1) return
@@ -302,7 +303,7 @@ export default function Home() {
     return (
       <div className="mne-main">
         <PageHead title={heroGreeting} />
-        <div className="mne-bento" aria-busy="true" aria-label="Loading">
+        <div className="mne-bento is-home" aria-busy="true" aria-label="Loading">
           <section className="mne-card is-hero s4" style={{ display: 'grid', gap: 12 }}>
             <div className="mne-skel is-pill" style={{ height: 12, width: 90 }} />
             <div className="mne-skel" style={{ height: 52, width: '60%' }} />
@@ -359,7 +360,7 @@ export default function Home() {
         </button>
       </PageHead>
 
-      <div className="mne-bento">
+      <div className="mne-bento is-home">
 
         {/* NET WORTH HERO */}
         <section className="mne-card is-hero s4">
@@ -388,27 +389,23 @@ export default function Home() {
           {/* The line stays visible in privacy mode (an earlier decision: the
               trend alone doesn't read as a dollar figure); NetWorthChart turns
               the scrub tooltip, which prints exact values, off. */}
-          <div style={{ marginTop: 14 }}>
+          <div className="mne-chart-wrap" style={{ marginTop: 6 }}>
+            <div className="mne-chart-range">
+              <SegmentedControl
+                label="Chart range"
+                value={homeChartRange}
+                options={HOME_CHART_RANGES}
+                onChange={handleRangeChange}
+              />
+            </div>
             <NetWorthChart
               series={netWorthSeries}
               height={isMobile ? 110 : 150}
               hideValues={hideValues}
               label={`Net worth over ${rangeLabel}`}
+              animKey={homeChartRange}
+              pending={!snapshotsLoaded}
             />
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <SegmentedControl
-              label="Chart range"
-              value={homeChartRange}
-              options={HOME_CHART_RANGES}
-              onChange={handleRangeChange}
-            />
-          </div>
-
-          <div className="mne-stats" style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--mne-line)' }}>
-            <Stat label="Positions" value={assets.length} />
-            <Stat label="Asset types" value={uniqueAssetTypes} />
           </div>
 
           {/* Rotating insight ticker */}

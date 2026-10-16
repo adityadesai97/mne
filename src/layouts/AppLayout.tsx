@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
 import { BorderBeam } from 'border-beam'
 import BottomNav from './BottomNav'
-import Sidebar from './Sidebar'
+import Sidebar, { useSidebarCollapsed, sidebarWidthPx } from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
 import { AppAlertsHost } from '@/components/AppAlertsHost'
 import { useAppTheme } from '@/hooks/useAppTheme'
@@ -123,6 +123,7 @@ function CmdKFab({ onOpen }: { onOpen: () => void }) {
 
 export default function AppLayout() {
   const location = useLocation()
+  const sidebarCollapsed = useSidebarCollapsed()
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
@@ -284,13 +285,14 @@ export default function AppLayout() {
         minHeight: '100dvh',
         ['--app-safe-top' as string]: `${safeInsets.top}px`,
         ['--app-safe-bottom' as string]: `${safeInsets.bottom}px`,
+        ['--sidebar-w' as string]: `${sidebarWidthPx(sidebarCollapsed)}px`,
       }}
     >
       <Sidebar />
 
       {/* Main content — offset by sidebar on desktop */}
       <div
-        className="flex-1 md:ml-60 min-h-screen flex flex-col overflow-x-hidden"
+        className="flex-1 mne-with-side min-h-screen flex flex-col overflow-x-hidden"
         style={{
           minHeight: '100dvh',
           paddingTop: 'var(--app-safe-top, 0px)',
@@ -340,7 +342,7 @@ export default function AppLayout() {
       />
       {cgAlert && (
         <div
-          className="fixed top-0 left-0 right-0 md:left-60 z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center"
+          className="fixed top-0 left-0 right-0 mne-side-offset z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center"
           // Native env(), not the JS-measured --app-safe-top var — see the
           // CmdKFab comment above for why: the browser updates env() in
           // sync with its own toolbar animation, a debounced React-state
@@ -360,7 +362,7 @@ export default function AppLayout() {
       */}
       {plaidPendingCount > 0 && !plaidBannerDismissed && (
         <div
-          className={`fixed left-0 right-0 md:left-60 z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center ${cgAlert ? 'top-9' : 'top-0'}`}
+          className={`fixed left-0 right-0 mne-side-offset z-50 bg-brand px-4 pb-2 text-sm flex justify-between items-center ${cgAlert ? 'top-9' : 'top-0'}`}
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)', transform: 'translateZ(0)' }}
         >
           <span>

@@ -1,0 +1,18 @@
+/* Home page: compact bento, chart range overlay and chart draw-in motion. */
+.mne-bento.is-home { align-items: start; }
+
+.mne-chart-wrap { position: relative; padding-top: 34px; }
+.mne-chart-range { position: absolute; top: 0; right: 0; z-index: 3; }
+.mne-chart-range .mne-seg { padding: 2px; }
+.mne-chart-range .mne-seg button { font-size: 12px; line-height: 16px; padding: 4px 10px; }
+
+@keyframes mne-line-draw {
+  from { clip-path: inset(-12px 100% -12px -12px); }
+  to { clip-path: inset(-12px -12px -12px -12px); }
+}
+@keyframes mne-area-in { from { opacity: 0; } to { opacity: .12; } }
+.mne-draw { animation: mne-line-draw var(--mne-draw-dur, 900ms) cubic-bezier(.4, 0, .2, 1) both; }
+.mne-draw-area { animation: mne-line-draw var(--mne-draw-dur, 900ms) cubic-bezier(.4, 0, .2, 1) both, mne-area-in var(--mne-draw-dur, 900ms) cubic-bezier(.4, 0, .2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .mne-draw, .mne-draw-area { animation: none; }
+}

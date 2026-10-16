@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Delta } from '@/components/mne'
+import '@/styles/home.css'
 
 interface Point { date: string; value: number }
 
@@ -22,12 +23,25 @@ function fmtDate(date: string) {
  *  since the range start) while scrubbing. With `hideValues` the scrub is
  *  disabled entirely — the trend line alone doesn't read as a dollar figure,
  *  but the tooltip prints the exact net worth for the day under the cursor. */
-export function NetWorthChart({ series, height, hideValues, label }: {
+export function NetWorthChart({ series, height, hideValues, label, animKey, pending }: {
   series: Point[]
   height: number
   hideValues: boolean
   label: string
+  /** Changes when the range changes; redraws the line. */
+  animKey?: string
+  /** Real data hasn't arrived yet: reserve the space, draw nothing. */
+  pending?: boolean
 }) {
+  // First real draw is the slow 900ms reveal; later ones (range changes) 400ms.
+  const drawnRef = useRef(false)
+  const drawKey = `${animKey ?? ''}|${series.length > 1 ? series[0].date : 'x'}`
+  const lastKeyRef = useRef<{ key: string; dur: number } | null>(null)
+  if (!pending && lastKeyRef.current?.key !== drawKey) {
+    lastKeyRef.current = { key: drawKey, dur: drawnRef.current ? 400 : 900 }
+    drawnRef.current = true
+  }
+  const drawDur = lastKeyRef.current?.dur ?? 900
   const [hover, setHover] = useState<number | null>(null)
   const plotRef = useRef<HTMLDivElement>(null)
 
@@ -87,15 +101,15 @@ export function NetWorthChart({ series, height, hideValues, label }: {
             {fmtDate(cur.date)} · <Delta value={change} digits={1} />
           </div>
         )}
-        <svg viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" width="100%" height={height} role="img" aria-label={label}>
-          <path d={area} fill="var(--mne-chart-1)" opacity={0.12} />
-          <path d={d} fill="none" stroke="var(--mne-chart-1)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        {!pending && <svg key={drawKey} viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" width="100%" height={height} role="img" aria-label={label} style={{ ['--mne-draw-dur' as string]: `${drawDur}ms` }}>
+          <path className="mne-draw-area" d={area} fill="var(--mne-chart-1)" opacity={0.12} />
+          <path className="mne-draw" d={d} fill="none" stroke="var(--mne-chart-1)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           {curXY && (
             <g className="cursor">
               <line x1={curXY.x} x2={curXY.x} y1={0} y2={VB_H} stroke="var(--mne-line-strong)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
             </g>
           )}
-        </svg>
+        </svg>}
         {curXY && (
           <span
             aria-hidden="true"

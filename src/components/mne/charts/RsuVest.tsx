@@ -19,7 +19,6 @@ export function RsuVestRail({ row }: { row: RsuTimelineRow }) {
   const finalAt = at(row.endMs)
   const showAllTicks = row.events.length <= MAX_TICKS
   const ticks = row.events.filter((e, i) => showAllTicks || i === 0 || i === row.events.length - 1 || e === row.events.find(x => !x.done))
-  const near = (a: number, b: number) => Math.abs(a - b) < 16
   // keep edge labels inside the card: right-align near the end, left-align near the start
   const labStyle = (left: number) => ({ left: `${left}%`, ...(left > 88 ? { transform: 'translateX(-100%)' } : left < 12 ? { transform: 'none' } : {}) })
   const pctVested = row.totalShares > 0 ? Math.round((row.vestedShares / row.totalShares) * 100) : 0
@@ -35,7 +34,7 @@ export function RsuVestRail({ row }: { row: RsuTimelineRow }) {
           value={row.ended ? 'Ended' : row.nextVest ? `${monthDay(row.nextVest.ms)} · ${fmtN(row.nextVest.shares)} sh` : row.vestedShares >= row.totalShares ? 'Fully vested' : 'Ongoing'}
         />
       </div>
-      <div className="mne-vest" role="img" aria-label={`${row.label}: ${fmtN(row.vestedShares)} of ${fmtN(row.totalShares)} shares vested (${pctVested}%)`}>
+      <div className="mne-vest has-today-row" role="img" aria-label={`${row.label}: ${fmtN(row.vestedShares)} of ${fmtN(row.totalShares)} shares vested (${pctVested}%)`}>
         <div className="rail" />
         <div className="done" style={{ width: `${today}%` }} />
         {ticks.map(e => {
@@ -44,9 +43,9 @@ export function RsuVestRail({ row }: { row: RsuTimelineRow }) {
         })}
         {row.events.length === 0 && cliff !== null && <span className={`tick is-cliff${row.todayMs >= (row.cliffMs ?? 0) ? ' is-done' : ''}`} style={{ left: `${cliff}%` }} />}
         {row.events.length === 0 && <span className={`tick${row.todayMs >= row.endMs ? ' is-done' : ''}`} style={{ left: `${finalAt}%` }} />}
-        {cliff !== null && !near(cliff, today) && <span className="lab" style={labStyle(cliff)}>Cliff · {monthYear(row.cliffMs!)}</span>}
-        {!near(finalAt, today) && <span className="lab" style={labStyle(finalAt)}>Final · {monthYear(row.endMs)}</span>}
-        <span className="lab" style={labStyle(today)}>{row.ended ? 'Ended' : 'Today'}</span>
+        {cliff !== null && <span className="lab" style={labStyle(cliff)}>Cliff · {monthYear(row.cliffMs!)}</span>}
+        {<span className="lab" style={labStyle(finalAt)}>Final · {monthYear(row.endMs)}</span>}
+        <span className="lab is-today" style={labStyle(today)}>{row.ended ? 'Ended' : 'Today'}</span>
       </div>
     </div>
   )

@@ -5,7 +5,9 @@ import { config } from '@/store/config'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
-import { PageBody, PageHead, SegmentedControl } from '@/components/mne'
+import { LayoutGrid, List as ListIcon } from 'lucide-react'
+import { PageBody, PageHead } from '@/components/mne'
+import { Dropdown } from '@/components/mne/Dropdown'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -25,16 +27,18 @@ function formatRelativeTime(isoString: string | null): string | null {
 type SortOption = 'name' | 'value' | 'gain' | 'gainPct'
 type AssetView = 'grid' | 'list'
 
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'name', label: 'Name' },
-  { value: 'value', label: 'Value' },
-  { value: 'gain', label: 'Gain $' },
-  { value: 'gainPct', label: 'Gain %' },
+const key = (k: string, v: string) => (<><span className="pf-dd-k">{k}</span>{v}</>)
+
+const SORT_OPTIONS = [
+  { value: 'name' as const, label: key('Sort', 'Name') },
+  { value: 'value' as const, label: key('Sort', 'Value') },
+  { value: 'gain' as const, label: key('Sort', 'Gain $') },
+  { value: 'gainPct' as const, label: key('Sort', 'Gain %') },
 ]
 
-const VIEW_OPTIONS: { value: AssetView; label: string }[] = [
-  { value: 'grid', label: 'Grid' },
-  { value: 'list', label: 'List' },
+const VIEW_OPTIONS = [
+  { value: 'grid' as const, label: <span className="pf-dd-v"><LayoutGrid size={16} strokeWidth={1.5} aria-hidden="true" />Grid</span> },
+  { value: 'list' as const, label: <span className="pf-dd-v"><ListIcon size={16} strokeWidth={1.5} aria-hidden="true" />List</span> },
 ]
 
 /** Unrealized gain as a percent of cost basis; assets with no basis sort last. */
@@ -51,7 +55,7 @@ function PortfolioSkeleton() {
         <div className="mne-page-head"><div className="mne-skel" style={{ height: 40, width: 180 }} /></div>
         <div className="pf-controls">
           <div className="mne-skel is-pill" style={{ height: 44, width: 300 }} />
-          <div className="mne-skel is-pill" style={{ height: 36, width: 120 }} />
+          <div className="mne-skel is-pill" style={{ height: 44, width: 360 }} />
         </div>
         <div className="pf-grid">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -135,7 +139,10 @@ export default function Portfolio() {
     return Array.from(types)
   }, [assets])
 
-  const chips = ['All', ...assetTypes]
+  const typeOptions = useMemo(
+    () => [{ value: 'All', label: key('Type', 'All') }, ...assetTypes.map((t) => ({ value: t, label: key('Type', t) }))],
+    [assetTypes],
+  )
 
   const displayed = useMemo(() => {
     let result = assets
@@ -205,7 +212,7 @@ export default function Portfolio() {
           {updated && <span className="mne-live"><i aria-hidden="true" />Prices {updated}</span>}
         </PageHead>
 
-        <div className="pf-controls">
+        <div className="pf-toolbar">
           <div className={`mne-search pf-search${search ? ' has-value' : ''}`}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
             <input
@@ -217,24 +224,9 @@ export default function Portfolio() {
             />
             <button type="button" className="clear" aria-label="Clear search" tabIndex={search ? 0 : -1} onClick={() => setSearch('')}>✕</button>
           </div>
-          <SegmentedControl<AssetView> value={assetView} options={VIEW_OPTIONS} onChange={handleAssetViewChange} label="Asset view" />
-        </div>
-
-        <div className="pf-controls">
-          <div className="pf-filters" role="group" aria-label="Filter by type">
-            {chips.map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={`mne-chip ${activeType === type ? 'is-accent' : 'is-outline'}`}
-                aria-pressed={activeType === type}
-                onClick={() => setActiveType(type)}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-          <SegmentedControl<SortOption> value={sort} options={SORT_OPTIONS} onChange={setSort} label="Sort by" />
+          <Dropdown<AssetView> label="Asset view" value={assetView} options={VIEW_OPTIONS} onChange={handleAssetViewChange} />
+          <Dropdown<string> label="Filter by type" value={activeType} options={typeOptions} onChange={setActiveType} />
+          <Dropdown<SortOption> label="Sort by" value={sort} options={SORT_OPTIONS} onChange={setSort} alignRight />
         </div>
 
         {isListView ? (

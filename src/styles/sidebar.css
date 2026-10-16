@@ -1,0 +1,37 @@
+/* Desktop sidebar: expanded 240px / collapsed 72px rail. Width is driven by --sidebar-w on the layout root. */
+.mne-side {
+  width: var(--sidebar-w, 240px);
+  overflow: hidden;
+  transition: width var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1));
+}
+.mne-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.mne-side-head .mne-brand { white-space: nowrap; }
+.mne-side .mne-nav a { white-space: nowrap; }
+.mne-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+.mne-side-btn {
+  display: inline-grid; place-content: center; width: 40px; height: 40px; flex: none;
+  border: 0; background: transparent; border-radius: var(--mne-radius-pill, 999px);
+  color: var(--mne-ink-muted); cursor: pointer; text-decoration: none;
+  transition: background var(--mne-dur, 180ms) linear, color var(--mne-dur, 180ms) linear;
+}
+.mne-side-btn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
+.mne-side-btn[aria-current="page"] { background: var(--mne-surface-300); color: var(--mne-accent); }
+.mne-side-btn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+
+.mne-side.is-collapsed { padding-left: 12px; padding-right: 12px; }
+.mne-side.is-collapsed .mne-side-head { flex-direction: column; justify-content: center; gap: 12px; }
+.mne-side.is-collapsed .mne-brand { padding: 0; text-align: center; }
+.mne-side.is-collapsed .mne-nav a { justify-content: center; padding-left: 0; padding-right: 0; }
+.mne-side.is-collapsed .mne-nav a span {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.mne-side.is-collapsed .mne-side-foot { align-items: center; }
+
+/* Content that sits beside the sidebar follows its width. */
+@media (min-width: 768px) {
+  .mne-with-side { margin-left: var(--sidebar-w, 240px); transition: margin-left var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+  .fixed.mne-side-offset { left: var(--sidebar-w, 240px); transition: left var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mne-side, .mne-with-side, .mne-side-offset { transition: none; }
+}

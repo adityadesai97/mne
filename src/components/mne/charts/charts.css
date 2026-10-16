@@ -7,9 +7,30 @@
 .mne-rsu-grant:first-child { padding-top: 12px; }
 .mne-rsu-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .mne-rsu-next { text-align: right; }
-.mne-rsu-pct { font-size: 14px; }
 .mne-chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mne-chart-head .mne-eyebrow { min-width: 0; }
 .mne-chart-blur { filter: blur(12px); user-select: none; pointer-events: none; transform: translateZ(0); }
 .mne-seg.is-multi button[aria-pressed="false"] { color: var(--mne-ink-muted); }
 @media (max-width: 760px) { .mne-bars.is-wide .mne-bar-row { grid-template-columns: 76px 1fr minmax(88px, auto); } }
+
+/* Charts page: cards are only as tall as their content. */
+.mne-bento.is-charts { align-items: start; }
+.mne-chart-head .mne-dd-trigger { min-width: 0; }
+
+/* Bar legend with swatches shaped like the bars (thick = value, thin = cost basis). */
+.mne-legend-bars { margin-bottom: -2px; gap: 6px 18px; }
+.mne-legend-bars span { display: inline-flex; align-items: center; }
+.mne-legend-bars i { border-radius: 99px; margin-right: 8px; }
+.mne-legend-bars i.is-thick { width: 20px; height: 10px; }
+.mne-legend-bars i.is-thin { width: 20px; height: 4px; }
+
+/* RSU rails: 12px captions, grant name in body-strong. */
+.mne-rsu-head .mne-stat .l { font: 600 15px/20px var(--mne-font-sans); color: var(--mne-ink); }
+.mne-rsu-head .mne-rsu-next .l { font: 400 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.mne-rsu-head .mne-stat .v { font: 500 20px/28px var(--mne-font-serif); }
+.mne-rsu-pct { font: 400 13px/18px var(--mne-font-sans); }
+.mne-vest { height: 64px; margin-top: 12px; }
+.mne-vest .lab { top: 38px; font: 400 12px/16px var(--mne-font-sans); }
+/* "Today" sits on its own caption row so it never collides with the Cliff / Final labels. */
+.mne-vest.has-today-row { height: 80px; }
+.mne-vest .lab.is-today { top: 58px; color: var(--mne-ink); font-weight: 500; }

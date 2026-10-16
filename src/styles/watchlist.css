@@ -1,0 +1,13 @@
+.wl-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.wl-add-input { flex: 1 1 200px; max-width: 320px; }
+.wl-add-crypto { display: flex; align-items: center; gap: 6px; min-height: 40px; }
+.wl-add-crypto .mne-check { align-items: center; }
+.wl-info { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; color: var(--mne-ink-muted); cursor: pointer; }
+.wl-info:hover { color: var(--mne-ink); }
+.wl-info:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
+.wl-add-error { flex-basis: 100%; }
+.wl-bento { align-items: start; }
+@media (max-width: 520px) {
+  .wl-add-input { flex-basis: 100%; max-width: none; }
+  .wl-add-btn { margin-left: auto; }
+}

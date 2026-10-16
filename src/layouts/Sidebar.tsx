@@ -1,6 +1,9 @@
+import { useSyncExternalStore } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Home, LayoutGrid, LineChart, Eye, Settings } from 'lucide-react'
+import { Home, LayoutGrid, LineChart, Eye, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
+import { Tooltip } from '@/components/mne/Tooltip'
+import '@/styles/sidebar.css'
 
 export const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
@@ -10,23 +13,81 @@ export const NAV_ITEMS = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-// Desktop navigation: the design system's 240px labelled sidebar (wordmark + vertical nav).
+const STORAGE_KEY = 'mne_sidebar_collapsed'
+export const SIDEBAR_EXPANDED_PX = 240
+export const SIDEBAR_COLLAPSED_PX = 72
+
+function readCollapsed(): boolean {
+  try { return localStorage.getItem(STORAGE_KEY) === 'true' } catch { return false }
+}
+
+// Tiny module-level store so AppLayout's content offset follows the sidebar.
+let collapsed = readCollapsed()
+const listeners = new Set<() => void>()
+function subscribe(fn: () => void) {
+  listeners.add(fn)
+  return () => { listeners.delete(fn) }
+}
+function setCollapsed(next: boolean) {
+  collapsed = next
+  try { localStorage.setItem(STORAGE_KEY, String(next)) } catch { /* ignore */ }
+  listeners.forEach(fn => fn())
+}
+
+export function useSidebarCollapsed() {
+  return useSyncExternalStore(subscribe, () => collapsed, () => false)
+}
+
+export function sidebarWidthPx(isCollapsed: boolean) {
+  return isCollapsed ? SIDEBAR_COLLAPSED_PX : SIDEBAR_EXPANDED_PX
+}
+
+// Desktop navigation: labelled 240px sidebar, collapsible to a 72px icon rail. Settings is an icon pinned to the bottom.
 // NavLink sets aria-current="page" on the active item, which .mne-nav styles.
 export default function Sidebar() {
   const { hasAssets } = useHasAssets()
-  const items = NAV_ITEMS.filter(item => !item.requiresAssets || hasAssets)
+  const isCollapsed = useSidebarCollapsed()
+  const items = NAV_ITEMS.filter(item => item.to !== '/settings' && (!item.requiresAssets || hasAssets))
+  const ToggleIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose
+  const toggleLabel = isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
 
   return (
-    <aside className="mne-side hidden md:flex fixed left-0 top-0 bottom-0 z-40 w-60 bg-background">
-      <div className="mne-brand">mne</div>
+    <aside
+      className={`mne-side hidden md:flex fixed left-0 top-0 bottom-0 z-40 bg-background${isCollapsed ? ' is-collapsed' : ''}`}
+      data-collapsed={isCollapsed}
+    >
+      <div className="mne-side-head">
+        <div className="mne-brand" aria-label="mne">{isCollapsed ? 'm' : 'mne'}</div>
+        <Tooltip content={toggleLabel} side="right">
+          <button
+            type="button"
+            className="mne-side-btn"
+            aria-label={toggleLabel}
+            aria-expanded={!isCollapsed}
+            onClick={() => setCollapsed(!isCollapsed)}
+          >
+            <ToggleIcon size={20} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        </Tooltip>
+      </div>
       <nav className="mne-nav is-side" aria-label="Main">
-        {items.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'}>
-            <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+        {items.map(({ to, icon: Icon, label }) => {
+          const link = (
+            <NavLink key={to} to={to} end={to === '/'} aria-label={label}>
+              <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+              <span>{label}</span>
+            </NavLink>
+          )
+          return isCollapsed ? <Tooltip key={to} content={label} side="right">{link}</Tooltip> : link
+        })}
       </nav>
+      <div className="mne-side-foot">
+        <Tooltip content="Settings" side="right">
+          <NavLink to="/settings" className="mne-side-btn" aria-label="Settings">
+            <Settings size={20} strokeWidth={1.5} aria-hidden="true" />
+          </NavLink>
+        </Tooltip>
+      </div>
     </aside>
   )
 }
