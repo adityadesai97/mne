@@ -1,8 +1,8 @@
 // src/pages/Home.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion, AnimatePresence, animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Lightbulb, Wallet, PieChart, Activity, Crown } from 'lucide-react'
+import { animate } from 'framer-motion'
+import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown } from 'lucide-react'
 import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
@@ -82,7 +82,6 @@ export default function Home() {
   const [homeChartRange, setHomeChartRangeState] = useState<HomeChartRange>(
     () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
   )
-  const [insightIndex, setInsightIndex] = useState(0)
   const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
   const heroRef = useRef<HTMLSpanElement>(null)
@@ -280,31 +279,6 @@ export default function Home() {
   const todayChangePercent = totalValue > 0 ? (todayChange / totalValue) * 100 : 0
   const hasMood = dailyMovers.length > 0 && todayChange !== 0
 
-  // Short rotating one-liners for the insight ticker — all derived from data
-  // already on screen elsewhere, nothing fabricated.
-  const insights = useMemo(() => {
-    const list: string[] = []
-    if (bestAsset && bestAssetGainPct !== 0) {
-      const label = bestAsset.ticker?.symbol ?? bestAsset.name
-      list.push(`${label} is your best performer, ${bestAssetGain >= 0 ? 'up' : 'down'} ${Math.abs(bestAssetGainPct).toFixed(1)}%`)
-    }
-    if (largestAsset) {
-      list.push(`${largestAsset.name} makes up ${largestPct.toFixed(0)}% of your portfolio`)
-    }
-    if (stockGainLoss !== 0) {
-      list.push(`Your stocks are ${stockIsGain ? 'up' : 'down'} ${Math.abs(stockGainLossPercent).toFixed(1)}% overall`)
-    }
-    return list
-  }, [bestAsset, bestAssetGain, bestAssetGainPct, largestAsset, largestPct, stockGainLoss, stockGainLossPercent, stockIsGain])
-
-  useEffect(() => {
-    if (insights.length <= 1) return
-    const id = window.setInterval(() => {
-      setInsightIndex((i) => (i + 1) % insights.length)
-    }, 4500)
-    return () => window.clearInterval(id)
-  }, [insights.length])
-
   const heroGreeting = `${greeting.text}${firstName ? `, ${firstName}` : ''}`
   const isUpdating = isRefreshingPrices || refreshing
 
@@ -417,25 +391,6 @@ export default function Home() {
               pending={!snapshotsLoaded}
             />
           </div>
-
-          {/* Rotating insight ticker */}
-          {insights.length > 0 && (
-            <div className="mne-muted hidden sm:flex" style={{ alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12, lineHeight: '16px', overflow: 'hidden' }}>
-              <Lightbulb size={14} style={{ flex: 'none', color: 'var(--mne-accent)' }} aria-hidden="true" />
-              <AnimatePresence mode="wait">
-                <motion.span
-                  key={insights[insightIndex % insights.length]}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-                  className="truncate"
-                >
-                  {insights[insightIndex % insights.length]}
-                </motion.span>
-              </AnimatePresence>
-            </div>
-          )}
         </section>
         </MasonryItem>
 
