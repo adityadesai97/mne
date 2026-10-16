@@ -93,3 +93,7 @@
 .cmdk-feedback-link:hover { color: var(--mne-ink); }
 .cmdk-feedback-link:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
 .mne-thumb { padding: 0; }
+
+/* Sheet head is the drag handle: stop the browser scrolling/zooming from it. */
+.cmdk-head[data-draggable] { touch-action: none; cursor: grab; }
+.cmdk-head[data-draggable]:active { cursor: grabbing; }

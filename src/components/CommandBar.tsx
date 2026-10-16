@@ -12,7 +12,6 @@ import { logLlmUsage } from '@/lib/db/llmUsage'
 import { showAppAlert } from '@/lib/appAlerts'
 import { LLM_MODEL } from '@/lib/llm'
 import { useDockedViewport, DOCK_WIDTH_PX } from '@/hooks/useDockedViewport'
-import { SegmentedControl } from '@/components/mne'
 import { TokenUsageInfo } from '@/components/TokenUsageInfo'
 import { ExplanationMessageContent } from '@/components/ExplanationMessageContent'
 import { generatePortfolioExplanation, explanationTriggerQuestion, stripSources, type PortfolioInsightSlot } from '@/lib/portfolioExplanation'
@@ -401,7 +400,8 @@ const LAYOUT_TRANSITION = { duration: 0.43, ease: STANDARD_EASE }
 // The conversation outlives the close animation: state is cleared once the panel has slid away.
 const RESET_AFTER_CLOSE_MS = 460
 const SUGGESTIONS = ["What's my net worth?", 'What changed this month?', 'Show my short-term lots']
-const DETENT_OPTIONS = [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] as const
+const HALF_SHEET_RATIO = 0.58 // keep in step with .cmdk-sheet height in cmdbar.css
+const DRAG_COMMIT_PX = 40
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /** The command bar: a docked right-hand panel beside the page on wide screens (>= 1024px), a bottom sheet
@@ -730,18 +730,63 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     }
   }
 
+  // Drag the sheet's top edge to move between the half and full heights. The height follows the
+  // pointer while dragging; on release it snaps to whichever detent the drag headed toward.
+  const dragMovedRef = useRef(false)
+  const handleSheetDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button:not(.cmdk-grabber)')) return
+    const sheet = panelRef.current
+    const wrap = sheet?.parentElement
+    if (!sheet || !wrap) return
+    const startY = e.clientY
+    const startH = sheet.offsetHeight
+    const minH = wrap.clientHeight * HALF_SHEET_RATIO
+    const maxH = wrap.clientHeight - 8
+    const startDetent = detent
+    dragMovedRef.current = false
+    let dy = 0
+    const move = (ev: PointerEvent) => {
+      dy = ev.clientY - startY
+      if (Math.abs(dy) > 4) dragMovedRef.current = true
+      if (!dragMovedRef.current) return
+      sheet.style.transition = 'none'
+      sheet.style.height = `${Math.min(maxH, Math.max(minH, startH - dy))}px`
+    }
+    const end = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      if (dragMovedRef.current) {
+        const next: Detent = dy <= -DRAG_COMMIT_PX ? 'full' : dy >= DRAG_COMMIT_PX ? 'half' : startDetent
+        // Re-enable the height transition so the release animates to the snapped height.
+        sheet.style.transition = ''
+        void sheet.offsetHeight
+        sheet.style.height = ''
+        setDetent(next)
+        // The release can synthesise a click on a common ancestor (the scrim, which closes the
+        // sheet): swallow it once.
+        const swallow = (ev: MouseEvent) => { ev.stopPropagation(); ev.preventDefault() }
+        window.addEventListener('click', swallow, { capture: true, once: true })
+        window.setTimeout(() => { window.removeEventListener('click', swallow, true); dragMovedRef.current = false }, 0)
+      }
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+
   const hasMessages = displayMessages.length > 0
   const lastIndex = displayMessages.length - 1
 
   const panelBody = (
     <>
-      <div className="cmdk-head">
+      <div className="cmdk-head" {...(docked ? {} : { onPointerDown: handleSheetDragStart, 'data-draggable': 'true' })}>
         {!docked && (
           <button
             type="button"
             className="cmdk-grabber"
             aria-label={detent === 'half' ? 'Expand to full height' : 'Collapse to half height'}
-            onClick={() => setDetent(d => (d === 'half' ? 'full' : 'half'))}
+            onClick={() => { if (!dragMovedRef.current) setDetent(d => (d === 'half' ? 'full' : 'half')) }}
           />
         )}
         <div className="cmdk-head-row">
@@ -753,9 +798,6 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
             <button type="button" className="cmdk-ibtn" onClick={resetConversation} aria-label="New conversation" title="New conversation">
               <SquarePen />
             </button>
-          )}
-          {!docked && (
-            <SegmentedControl label="Sheet height" value={detent} options={DETENT_OPTIONS} onChange={setDetent} />
           )}
           <button type="button" className="cmdk-ibtn" onClick={handleClose} aria-label="Close" title="Close">
             <X />

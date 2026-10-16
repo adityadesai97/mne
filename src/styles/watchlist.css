@@ -25,3 +25,7 @@
 .wl-combo-note { padding: 12px 14px; font: 400 13px/18px var(--mne-font-sans); color: var(--mne-ink-muted); }
 .wl-combo-note.is-error { color: var(--mne-ink-muted); }
 .wl-add-input { position: relative; z-index: 5; }
+
+/* The + toggle in the page header opens the add form. */
+.wl-add-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+.wl-add { margin-bottom: 4px; }
