@@ -3,7 +3,7 @@ import { signedInApp, STOCK_ASSET, USER } from './fakeSupabase'
 
 const base = { user_id: USER.id, ownership: 'Individual', price: null, initial_price: null, ticker_id: null, ticker: null, fixed_income_subtype: null, interest_rate: null, maturity_date: null, face_value: null, stock_subtypes: [], fixed_income_lots: [], plaid_synced_positions: [], location_id: 'loc-1', location: { id: 'loc-1', name: 'Fidelity', account_type: 'Investment' } }
 const assets = [
-  { ...STOCK_ASSET, ticker: { ...STOCK_ASSET.ticker, logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="black"/></svg>' }, plaid_synced_positions: [{ id: 'p1', plaid_items: { institution_name: 'Fidelity' } }],
+  { ...STOCK_ASSET, ticker: { ...STOCK_ASSET.ticker, logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="black"/></svg>' }, plaid_synced_positions: [{ id: 'p1', plaid_item: { institution_name: 'Fidelity', last_synced_at: null } }],
     stock_subtypes: [{ ...STOCK_ASSET.stock_subtypes[0] }, { id: 'sub-2', asset_id: 'asset-1', subtype: 'RSU', transactions: [{ id: 'tx-2', subtype_id: 'sub-2', count: 5, cost_price: 100, purchase_date: '2024-01-02', capital_gains_status: 'Long Term', sold_at_vest: 0, plaid_synced_positions: [] }], rsu_grants: [] }] },
   { ...base, id: 'a2', name: 'Bitcoin', asset_type: 'Crypto', ownership: 'Joint', ticker_id: 't2', ticker: { id: 't2', symbol: 'BTC', current_price: 60000, previous_close: 59000, kind: 'crypto', ticker_themes: [] }, stock_subtypes: [{ id: 's3', asset_id: 'a2', subtype: 'Market', transactions: [{ id: 'tx3', subtype_id: 's3', count: 0.5, cost_price: 30000, purchase_date: '2023-01-02', capital_gains_status: 'Long Term', sold_at_vest: 0, plaid_synced_positions: [] }], rsu_grants: [] }] },
   { ...base, id: 'a3', name: 'Savings', asset_type: 'Cash', price: 5000 },
@@ -26,7 +26,7 @@ for (const theme of ['dark', 'light']) for (const [w, h] of [[1200, 900], [390, 
     await page.waitForTimeout(300)
     await page.screenshot({ path: `/tmp/claude-0/shots/pf-${theme}-${w}-b.png`, fullPage: true })
     await page.goto('/portfolio/asset-1'); await page.waitForTimeout(1000)
-    await page.getByRole('button', { name: 'Add Lot' }).click()
+    await page.screenshot({ path: '/tmp/claude-0/shots/ad0.png' }); await page.getByRole('button', { name: 'Add Lot' }).click()
     await page.getByRole('button', { name: 'Save' }).click()
     await page.screenshot({ path: `/tmp/claude-0/shots/ad-${theme}-${w}.png`, fullPage: true })
   })
