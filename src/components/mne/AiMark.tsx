@@ -1,23 +1,13 @@
 import type { SVGProps } from 'react'
 
-/** The AI mark: a cluster of three sharp four-point sparks (one large, two small). Filled with
- *  mitred joins so the points stay crisp at 14-24px; `strokeWidth` only adds a hairline of weight. */
-export function AiMark({ size = 18, strokeWidth = 0.75, ...rest }: { size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'width' | 'height' | 'strokeWidth'>) {
+/** The AI mark: a cluster of three filled four-point sparks (one large, two small) with concave
+ *  edges and sharp tips. Fill only, no stroke, so the points stay crisp from 12 to 24px. */
+export function AiMark({ size = 18, strokeWidth: _strokeWidth, ...rest }: { size?: number; strokeWidth?: number } & Omit<SVGProps<SVGSVGElement>, 'width' | 'height' | 'strokeWidth'>) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      stroke="currentColor"
-      strokeWidth={Math.min(strokeWidth, 1)}
-      strokeLinejoin="miter"
-      strokeMiterlimit={10}
-      {...rest}
-    >
-      <path d="M10 6 L11.8 11.7 L17.5 13.5 L11.8 15.3 L10 21 L8.2 15.3 L2.5 13.5 L8.2 11.7 Z" />
-      <path d="M19 1.5 L19.9 4.1 L22.5 5 L19.9 5.9 L19 8.5 L18.1 5.9 L15.5 5 L18.1 4.1 Z" />
-      <path d="M19.5 16 L20.2 17.8 L22 18.5 L20.2 19.2 L19.5 21 L18.8 19.2 L17 18.5 L18.8 17.8 Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...rest}>
+      <path d="M9.84 5.45Q11.14 10.65 16.34 11.95Q11.14 13.25 9.84 18.45Q8.54 13.25 3.34 11.95Q8.54 10.65 9.84 5.45Z" />
+      <path d="M17.4 1.5Q18.06 4.14 20.7 4.8Q18.06 5.46 17.4 8.1Q16.74 5.46 14.1 4.8Q16.74 4.14 17.4 1.5Z" />
+      <path d="M17.4 15.8Q18.06 18.44 20.7 19.1Q18.06 19.76 17.4 22.4Q16.74 19.76 14.1 19.1Q16.74 18.44 17.4 15.8Z" />
     </svg>
   )
 }
