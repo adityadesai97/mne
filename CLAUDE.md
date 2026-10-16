@@ -122,9 +122,9 @@ Tokens live in `src/index.css` (theme CSS variables, dark default + `html.light`
 
 `src/layouts/`:
 - `AppLayout.tsx` — root shell; runs startup effect on mount; calls `abortActiveImport()` on unmount; owns command bar open state, the ⌘K handler, and the docked-panel reflow (`.mne-with-dock` margin-right)
-- `TopBar.tsx` — slim sticky header: command pill (≥768px) or wordmark + Settings gear (phone); carries the safe-area top inset
+- `TopBar.tsx` — slim sticky header: command pill (≥768px) or wordmark + Account and Settings buttons (phone); carries the safe-area top inset
 - `BottomNav.tsx` — mobile tab bar: Home / Portfolio / **raised Ask action** / Charts / Watchlist (no Settings tab)
-- `Sidebar.tsx` — desktop navigation
+- `Sidebar.tsx` — desktop navigation; the foot has the collapse toggle, Settings and the **Account** button (`AccountMenu`)
 
 ### user_settings Columns
 
@@ -148,6 +148,10 @@ The browser holds **no** third-party API key. The Claude, Finnhub and CoinGecko 
 `src/lib/llm.ts` has a single `ClaudeAdapter` (Groq support was removed). `createLLMClient()` returns an `LLMClient` that implements the OpenAI `chat.completions.create` interface on top of `@anthropic-ai/sdk` (it converts OpenAI-format messages/tools to the Anthropic shape and normalizes responses and usage back), pointed at the llm-proxy as described above. The model is `LLM_MODEL` (`claude-sonnet-5`). `claudeWebSearch(query)` goes through the same proxy.
 
 All AI features (`src/lib/claude.ts`, `src/lib/autoThemes.ts`, `src/lib/portfolioExplanation.ts`) call `createLLMClient()`.
+
+### Account menu
+
+Sign out is no longer in Settings. `src/components/AccountMenu.tsx` (an account icon in the sidebar foot beside Settings, and in the phone header) opens a portalled menu (the sidebar clips overflow) showing the signed-in name/email with **Switch Google account** and **Sign out**. The logic is in `src/lib/account.ts`: `signOutOfMne()` (Supabase sign out, `config.markSignedOut()`, reload to `/`) and `switchGoogleAccount()` (`signInWithOAuth` with `queryParams: { prompt: 'select_account' }`, so Google shows its account chooser and the new session replaces this one on return). Styles in `src/styles/account.css`.
 
 ### AI Command Bar
 

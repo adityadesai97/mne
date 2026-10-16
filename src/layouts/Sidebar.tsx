@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom'
 import { Home, LayoutGrid, LineChart, Eye, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useHasAssets } from '@/hooks/useHasAssets'
 import { Tooltip } from '@/components/mne/Tooltip'
+import AccountMenu from '@/components/AccountMenu'
 import '@/styles/sidebar.css'
 
 export const NAV_ITEMS = [
@@ -43,7 +44,7 @@ export function sidebarWidthPx(isCollapsed: boolean) {
   return isCollapsed ? SIDEBAR_COLLAPSED_PX : SIDEBAR_EXPANDED_PX
 }
 
-// Desktop navigation: labelled 240px sidebar, collapsible to a 72px icon rail. Settings is an icon pinned to the bottom.
+// Desktop navigation: labelled 240px sidebar, collapsible to a 72px icon rail. Account and Settings are icons pinned to the bottom.
 // NavLink sets aria-current="page" on the active item, which .mne-nav styles.
 export default function Sidebar() {
   const { hasAssets } = useHasAssets()
@@ -89,6 +90,7 @@ export default function Sidebar() {
             <Settings size={20} strokeWidth={1.5} aria-hidden="true" />
           </NavLink>
         </Tooltip>
+        <AccountMenu variant="side" />
       </div>
     </aside>
   )

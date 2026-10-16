@@ -1,13 +1,14 @@
 import { NavLink } from 'react-router-dom'
 import { Settings } from 'lucide-react'
 import { AiMark } from '@/components/mne/AiMark'
+import AccountMenu from '@/components/AccountMenu'
 import '@/styles/shell.css'
 
 const IS_MAC = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || '')
 const SHORTCUT_LABEL = IS_MAC ? '⌘K' : 'Ctrl K'
 
 // Slim header of the app shell. Desktop/tablet: the command pill ("Ask or search…  ⌘K") that opens the
-// command bar. Phone: the wordmark and a Settings button (Settings left the bottom tab bar to make room
+// command bar. Phone: the wordmark, an Account menu and a Settings button (Settings left the bottom tab bar to make room
 // for the raised centre action); the pill is hidden there.
 export default function TopBar({ onAsk, open, controlsId }: { onAsk: () => void; open: boolean; controlsId: string }) {
   return (
@@ -28,6 +29,7 @@ export default function TopBar({ onAsk, open, controlsId }: { onAsk: () => void;
           <span>Ask or search…</span>
           <kbd className="mne-kbd" aria-hidden="true">{SHORTCUT_LABEL}</kbd>
         </button>
+        <AccountMenu variant="top" />
         <NavLink to="/settings" className="mne-topbar-btn" aria-label="Settings">
           <Settings size={20} strokeWidth={1.5} aria-hidden="true" />
         </NavLink>
