@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '../supabase'
-import { fetchCoinDailyHistory, fetchCryptoQuotes, searchCoinBySymbol } from '../coingecko'
+import { fetchCoinDailyHistory, fetchCryptoQuotes, searchCoinBySymbol, type CoinSearchResult } from '../coingecko'
 import { backfillTickerPriceHistory } from './tickerPriceHistory'
 import { addTickerTheme, getOrCreateTheme } from './themes'
 
@@ -22,7 +22,7 @@ function missingMigrationError() {
 export async function ensureCryptoTicker(
   userId: string,
   rawSymbol: string,
-  options: { watchlistOnly?: boolean } = {},
+  options: { watchlistOnly?: boolean; coin?: CoinSearchResult } = {},
 ): Promise<{ id: string; isNew: boolean }> {
   const supabase = getSupabaseClient()
   const symbol = rawSymbol.trim().toUpperCase()
@@ -35,7 +35,9 @@ export async function ensureCryptoTicker(
     throw new Error(`${symbol} is already tracked as a stock ticker, so it can't also be a crypto asset.`)
   }
 
-  const coin = await searchCoinBySymbol(symbol)
+  // A coin the user picked from the Watchlist suggestions is used as-is, so
+  // a shared symbol can't resolve to a different coin than the one they chose.
+  const coin = options.coin ?? await searchCoinBySymbol(symbol)
   if (!coin) throw new Error(`Couldn't find a cryptocurrency with symbol ${symbol} on CoinGecko.`)
 
   const fields: Record<string, unknown> = {

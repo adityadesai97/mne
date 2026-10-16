@@ -45,14 +45,16 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 .pf-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pf-toolbar .pf-search { flex: 1 1 220px; max-width: none; }
 .pf-toolbar .mne-dd { flex: 0 1 auto; min-width: 120px; }
-.pf-toolbar .mne-dd-trigger { height: 44px; padding: 0 14px 0 16px; }
+.pf-toolbar .mne-dd-trigger { height: 44px; padding: 0 14px; }
 .pf-toolbar .pf-dd-k { color: var(--mne-ink-muted); font-weight: 400; margin-right: 6px; }
-.pf-dd-v { display: inline-flex; align-items: center; gap: 6px; }
+.pf-dd-v { display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 18px; }
+.pf-dd-v svg { flex: none; display: block; }
 .mne-dd-menu .pf-dd-k { display: none; }
 @media (max-width: 640px) {
   .pf-toolbar .pf-search { flex-basis: 100%; }
   .pf-toolbar .mne-dd { flex: 1 1 auto; min-width: 0; }
-  .pf-toolbar .mne-dd-trigger { padding: 0 10px 0 12px; gap: 4px; }
+  .pf-toolbar .mne-dd-trigger { padding: 0 10px; gap: 4px; }
+  .pf-toolbar .mne-dd-trigger::before { width: 16px; }
   .pf-toolbar .pf-dd-k { margin-right: 4px; }
 }
 

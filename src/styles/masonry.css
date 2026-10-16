@@ -1,0 +1,21 @@
+/* Masonry: packed card layout (see src/components/mne/Masonry.tsx).
+   One column (and before the first measurement) the items simply stack in
+   DOM order. With two or more columns the component positions each item with
+   a transform and sets the container height. No overflow is clipped anywhere,
+   so dropdown menus inside cards can extend past a card. */
+.mne-masonry { display: flex; flex-direction: column; gap: var(--mne-masonry-gap, 24px); min-width: 0; }
+.mne-masonry-item { min-width: 0; }
+/* A card that renders nothing (e.g. Portfolio Pulse with no insight) takes no space. */
+.mne-masonry-item:empty { display: none; }
+
+.mne-masonry.is-packed { display: block; position: relative; }
+.mne-masonry.is-packed > .mne-masonry-item { position: absolute; top: 0; left: 0; }
+/* Items are transformed (own stacking context): lift the one holding an open menu or focus above its neighbours. */
+.mne-masonry-item:focus-within,
+.mne-masonry-item:has([aria-expanded="true"]) { z-index: 20; }
+
+/* Reposition animation, only once the first layout is in place. */
+.mne-masonry.is-ready > .mne-masonry-item { transition: transform var(--dur-standard, 180ms) var(--ease-standard, cubic-bezier(.4, 0, .2, 1)); }
+@media (prefers-reduced-motion: reduce) {
+  .mne-masonry.is-ready > .mne-masonry-item { transition: none; }
+}

@@ -14,17 +14,19 @@
 
 .mne-dd { position: relative; display: inline-block; }
 .mne-dd-trigger {
-  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
-  font: 500 13px/18px var(--mne-font-sans); color: var(--mne-ink);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; box-sizing: border-box;
+  font: 500 13px/18px var(--mne-font-sans); color: var(--mne-ink); text-align: center;
   background: var(--mne-surface-300); border: 0; border-radius: var(--mne-radius-pill);
-  padding: 8px 12px 8px 14px; cursor: pointer;
+  padding: 8px 12px; min-height: 36px; cursor: pointer;
   transition: background var(--mne-dur) linear;
 }
+/* Spacer the width of the chevron (+ gap) so the label sits optically centred in the pill. */
+.mne-dd-trigger::before { content: ""; flex: none; width: 16px; }
 .mne-dd-trigger:hover { background: var(--mne-line); }
 .mne-dd-trigger:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
-.mne-dd-trigger svg { color: var(--mne-ink-muted); flex: none; transition: transform var(--mne-dur) var(--mne-ease); }
-.mne-dd-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
-.mne-dd-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mne-dd-trigger > svg:last-child { color: var(--mne-ink-muted); flex: none; display: block; transition: transform var(--mne-dur) var(--mne-ease); }
+.mne-dd-trigger[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.mne-dd-value { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 18px; text-align: center; }
 .mne-dd-menu {
   position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 280px;
   margin: 0; padding: 6px; list-style: none;

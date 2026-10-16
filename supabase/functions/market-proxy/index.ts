@@ -27,7 +27,13 @@ export const FINNHUB_PATHS = new Set([
   'company-news',
   'news',
   'calendar/earnings',
+  'search',
 ])
+// Endpoints that accept only the listed params (everything else is rejected),
+// so the symbol-lookup endpoint can't be used as a general query relay.
+export const FINNHUB_ALLOWED_PARAMS: Record<string, Set<string>> = {
+  search: new Set(['q']),
+}
 const COINGECKO_STATIC_PATHS = new Set(['simple/price', 'search'])
 const COINGECKO_CHART = /^coins\/[a-z0-9-]{1,100}\/market_chart$/
 
@@ -62,6 +68,7 @@ export function validateMarketRequest(body: unknown): string | null {
       if (!/^[a-z_]{1,40}$/i.test(key)) return `Parameter "${key}" is not allowed.`
       if (/^(token|x_cg_demo_api_key|x-cg-demo-api-key)$/i.test(key)) return `Parameter "${key}" is not allowed.`
       if (typeof value !== 'string' || value.length > 1000) return `Parameter "${key}" must be a short string.`
+      if (provider === 'finnhub' && FINNHUB_ALLOWED_PARAMS[path] && !FINNHUB_ALLOWED_PARAMS[path].has(key)) return `Parameter "${key}" is not allowed.`
     }
   }
   return null
