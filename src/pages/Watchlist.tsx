@@ -1,12 +1,10 @@
 // src/pages/Watchlist.tsx
-import { Fragment, useCallback, useEffect, useState } from 'react'
-import { deleteTicker, getAllTickers, refreshAllPrices, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
+import { Fragment, useEffect, useState } from 'react'
+import { deleteTicker, getAllTickers, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { isTickerAsset } from '@/lib/portfolio'
 import { ensureCryptoTicker } from '@/lib/db/cryptoTickers'
 import { config } from '@/store/config'
-import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { getAllThemes, getOrCreateTheme, addTickerTheme, removeTickerTheme } from '@/lib/db/themes'
 import { autoAssignThemesForTicker, autoAssignThemesForTickerIfEnabled } from '@/lib/autoThemes'
 import { requestAppConfirm, showAppAlert } from '@/lib/appAlerts'
@@ -47,8 +45,7 @@ export default function Watchlist() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [deletingTickerId, setDeletingTickerId] = useState<string | null>(null)
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
+  const [pricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
 
@@ -56,11 +53,6 @@ export default function Watchlist() {
     if (addOpen) document.getElementById('watchlist-symbol')?.focus()
   }, [addOpen])
 
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   const loadTickers = async () => {
     const [allTickers, allAssets] = await Promise.all([getAllTickers(), getAllAssets()])
@@ -79,18 +71,6 @@ export default function Watchlist() {
   useEffect(() => {
     loadTickers().catch(console.error).finally(() => setLoaded(true))
   }, [])
-
-  const handleRefresh = useCallback(async () => {
-    if (config.hasFinnhubKey) {
-      await refreshAllPrices().catch(console.error)
-      const now = new Date().toISOString()
-      localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
-      setPricesRefreshedAt(now)
-    }
-    await loadTickers().catch(console.error)
-  }, [])
-
-  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -206,7 +186,6 @@ export default function Watchlist() {
 
   return (
     <>
-    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="mne-main">
       <PageHead title="Watchlist">
         {formatRelativeTime(pricesRefreshedAt) && (

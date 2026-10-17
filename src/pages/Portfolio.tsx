@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAllAssets } from '@/lib/db/assets'
-import { refreshAllPrices } from '@/lib/db/tickers'
 import { config } from '@/store/config'
-import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { PositionCard } from '@/components/PositionCard'
 import { LayoutGrid, List as ListIcon } from 'lucide-react'
 import { PageBody, PageHead } from '@/components/mne'
@@ -77,8 +74,7 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
+  const [pricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
   // Read once at mount for the initial render (Portfolio remounts on route
@@ -108,31 +104,6 @@ export default function Portfolio() {
     })
   }, [])
 
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
-  const handleRefresh = useCallback(async () => {
-    if (config.hasFinnhubKey) {
-      try {
-        await refreshAllPrices()
-        const now = new Date().toISOString()
-        localStorage.setItem(PRICES_REFRESHED_AT_KEY, now)
-        setPricesRefreshedAt(now)
-      } catch {
-        showAppAlert('Price refresh failed. Check your Finnhub API key.', { variant: 'error' })
-      }
-    }
-    const fresh = await getAllAssets().catch(() => {
-      showAppAlert('Failed to reload portfolio.', { variant: 'error' })
-      return assets
-    })
-    setAssets((fresh as any[]) ?? assets)
-  }, [assets])
-
-  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const assetTypes = useMemo(() => {
     const types = new Set(assets.map((a) => a.asset_type as string))
@@ -206,7 +177,6 @@ export default function Portfolio() {
 
   return (
     <>
-      <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
       <PageBody>
         <PageHead title="Portfolio">
           {updated && <span className="mne-live max-sm:!hidden"><i aria-hidden="true" />Prices {updated}</span>}

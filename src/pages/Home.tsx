@@ -12,8 +12,6 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { refreshAllPrices } from '@/lib/db/tickers'
 import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { config } from '@/store/config'
-import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import { AskChip } from '@/components/AskChip'
 import { NetWorthChart } from '@/components/NetWorthChart'
@@ -150,11 +148,8 @@ export default function Home() {
     setAssets((fresh as any[]) ?? assets)
   }, [assets])
 
-  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
-
-  // Explicit click-to-refresh — pull-to-refresh only fires on touch input, so
-  // desktop/mouse users would otherwise have no way to force a price refresh
-  // and just have to wait for the hourly check-prices cron.
+  // Explicit click-to-refresh, so there is a way to force a price refresh
+  // instead of waiting for the hourly check-prices cron.
   const handleManualRefresh = useCallback(async () => {
     if (isRefreshingPrices) return
     setIsRefreshingPrices(true)
@@ -280,7 +275,7 @@ export default function Home() {
   const hasMood = dailyMovers.length > 0 && todayChange !== 0
 
   const heroGreeting = `${greeting.text}${firstName ? `, ${firstName}` : ''}`
-  const isUpdating = isRefreshingPrices || refreshing
+  const isUpdating = isRefreshingPrices
 
   if (!assetsLoaded) {
     return (
@@ -328,7 +323,6 @@ export default function Home() {
 
   return (
     <>
-    <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
     <div className="mne-main">
       <PageHead title={heroGreeting}>
         <button

@@ -1,12 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Masonry, MasonryItem } from '@/components/mne/Masonry'
 import { PieChart, Landmark, Layers, TrendingUp, Scale, BarChart3, CalendarClock } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { getAllThemes } from '@/lib/db/themes'
-import { refreshAllPrices } from '@/lib/db/tickers'
-import { config } from '@/store/config'
-import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { Delta, Eyebrow, PageHead } from '@/components/mne'
 import { Dropdown, MultiDropdown } from '@/components/mne/Dropdown'
@@ -42,7 +38,6 @@ export default function Charts() {
   const [assetsLoaded, setAssetsLoaded] = useState(false)
   const [themeTargets, setThemeTargets] = useState<Record<string, number>>({})
   const [activeSubtypes, setActiveSubtypes] = useState<Set<Subtype>>(new Set(ALL_SUBTYPES))
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
   const [gainsSymbol, setGainsSymbol] = useState('')
   const [hideValues] = useHideValues()
@@ -64,19 +59,6 @@ export default function Charts() {
       })
       .catch(() => {})
   }, [])
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
-  const handleRefresh = useCallback(async () => {
-    if (config.hasFinnhubKey) await refreshAllPrices().catch(console.error)
-    const fresh = await getAllAssets().catch(() => assets)
-    setAssets((fresh as any[]) ?? assets)
-  }, [assets])
-
-  const { refreshing, pullY } = usePullToRefresh(handleRefresh, isMobile)
 
   const allocation = useMemo(
     () => capSegments(groupByAssetType(assets, activeSubtypes).map((g) => ({ name: g.type, value: g.value }))),
@@ -135,7 +117,6 @@ export default function Charts() {
 
   return (
     <>
-      <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
       <div className="mne-main">
         <PageHead title="Charts" />
 

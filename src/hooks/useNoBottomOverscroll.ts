@@ -10,8 +10,7 @@ function canScrollFurther(el: HTMLElement, up: boolean) {
 // iOS rubber-bands the page past its last pixel (dragging the fixed bottom nav up with it, leaving blank canvas
 // beneath) and `overscroll-behavior` isn't honoured by every iOS WebKit build. Stop that drag from the one
 // place it can be stopped everywhere: cancel a touchmove that would scroll the document past its end, unless
-// an inner scroller (command bar thread, dialog, ...) can still take the drag. The top edge is left alone
-// because pull-to-refresh uses it.
+// an inner scroller (command bar thread, dialog, ...) can still take the drag. The top edge is left alone.
 export function useNoBottomOverscroll(enabled = true) {
   useEffect(() => {
     if (!enabled) return

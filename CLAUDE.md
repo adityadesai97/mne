@@ -102,7 +102,7 @@ Seven pages in `src/pages/`:
 - `Landing` — marketing/intro page shown when `VITE_LANDING_AS_HOME=true`
 - `Onboarding` — first-run wizard (API key setup, includes LLM provider picker)
 
-All data pages support pull-to-refresh on mobile via `usePullToRefresh` (`src/hooks/usePullToRefresh.ts`) + `PullToRefreshIndicator` (`src/components/PullToRefreshIndicator.tsx`).
+There is no pull-to-refresh (removed: its animation was jerky); Home has a **Refresh prices** button (icon-only on phones), and `useNoBottomOverscroll` (`src/hooks/useNoBottomOverscroll.ts`, used in `AppLayout`) stops iOS rubber-banding the page past its bottom.
 
 ### Design System
 
