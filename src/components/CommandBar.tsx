@@ -403,6 +403,7 @@ const LAYOUT_TRANSITION = { duration: 0.43, ease: STANDARD_EASE }
 const RESET_AFTER_CLOSE_MS = 460
 const SUGGESTIONS = ["What's my net worth?", 'What changed this month?', 'Show my short-term lots']
 const HALF_SHEET_RATIO = 0.58 // keep in step with .cmdk-sheet height in cmdbar.css
+const KEYBOARD_MIN_PX = 120 // a visual viewport this much shorter than the window means a keyboard is up
 const DRAG_COMMIT_PX = 40
 const DRAG_DISMISS_PX = 60 // dragging the sheet this far below its half height closes it
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -419,6 +420,9 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   const [writesDone, setWritesDone] = useState(false)
   const [attachment, setAttachment] = useState<FileAttachment | null>(null)
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
+  const [viewportTop, setViewportTop] = useState(0)
+  // On-screen keyboard up: the sheet takes the whole (small) visual viewport instead of 58% of it.
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
   // Where a pending write confirmation's Confirm/Cancel bar is pinned (just above the composer).
   const [pinSlot, setPinSlot] = useState<HTMLElement | null>(null)
   // Saved-conversation history: an in-panel view when docked, a dropdown under the header on the phone sheet.
@@ -507,7 +511,16 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   useEffect(() => {
     if (!open || docked) return
     const vv = window.visualViewport
-    const updateHeight = () => setViewportHeight(Math.round(vv?.height ?? window.innerHeight))
+    // iOS keeps the layout viewport fixed when the keyboard opens and instead scrolls the *visual*
+    // viewport (offsetTop > 0), so a fixed wrapper at top:0 ends up off-screen. Pin it to the visual
+    // viewport's top as well as its height.
+    const updateHeight = () => {
+      const height = Math.round(vv?.height ?? window.innerHeight)
+      const top = Math.round(vv?.offsetTop ?? 0)
+      setViewportHeight(height)
+      setViewportTop(top)
+      setKeyboardOpen(window.innerHeight - height - top > KEYBOARD_MIN_PX)
+    }
 
     updateHeight()
     vv?.addEventListener('resize', updateHeight)
@@ -1074,7 +1087,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
           <motion.div
             key="sheet"
             className="cmdk-sheet-wrap"
-            style={{ height: `${viewportHeight}px` }}
+            style={{ top: `${viewportTop}px`, height: `${viewportHeight}px` }}
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 1 }}
@@ -1089,6 +1102,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
               data-testid="cmdk-panel"
               data-mode="sheet"
               data-detent={detent}
+              data-keyboard={keyboardOpen ? 'true' : undefined}
               className="mne-cmd cmdk-panel cmdk-sheet shadow-xl"
               initial={{ y: '100%' }}
               animate={{ y: 0 }}

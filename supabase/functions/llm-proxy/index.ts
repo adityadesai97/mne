@@ -142,6 +142,10 @@ export async function handle(req: Request): Promise<Response> {
   const responseHeaders = new Headers(CORS_HEADERS)
   const contentType = upstream.headers.get('content-type')
   if (contentType) responseHeaders.set('Content-Type', contentType)
+  // Keep intermediaries from buffering or re-encoding the SSE stream (truncated streams show up in
+  // Safari as "Load failed").
+  responseHeaders.set('Cache-Control', 'no-cache, no-transform')
+  responseHeaders.set('X-Accel-Buffering', 'no')
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders })
 }
 

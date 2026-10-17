@@ -27,6 +27,8 @@
 .cmdk-sheet-wrap { position: fixed; left: 0; right: 0; top: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
 .cmdk-sheet { pointer-events: auto; width: 100%; max-width: 640px; height: 58%; border-radius: var(--mne-radius-lg) var(--mne-radius-lg) 0 0; border-bottom-width: 0; overflow: hidden; padding-bottom: env(safe-area-inset-bottom, 0px); transition: height var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
 .cmdk-sheet[data-detent="full"] { height: calc(100% - env(safe-area-inset-top, 0px) - 8px); }
+/* Keyboard up: the visual viewport is short, so use all of it; the keyboard already covers the home-indicator inset. */
+.cmdk-sheet[data-keyboard="true"] { height: calc(100% - 8px); padding-bottom: 0; }
 .cmdk-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(27, 22, 18, .4); }
 
 .cmdk-head { flex: none; padding: 6px 12px 0; }

@@ -151,8 +151,7 @@ class ClaudeAdapter {
           description: t.function.description ?? '',
           input_schema: t.function.parameters,
         })) as Anthropic.Tool[] | undefined
-        callbacks?.onStreamStart?.()
-        const stream = this.anthropic.messages.stream({
+        const request = {
           model: params.model,
           max_tokens: params.max_tokens ?? 1024,
           ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
@@ -160,12 +159,28 @@ class ClaudeAdapter {
           messages: conversationMessages,
           ...(tools?.length ? { tools } : {}),
           ...(params.output_config ? { output_config: params.output_config } : {}),
-        } as any)
-        if (callbacks?.onTextDelta) {
-          stream.on('text', (delta) => callbacks.onTextDelta!(delta))
+        } as any
+        callbacks?.onStreamStart?.()
+        try {
+          const stream = this.anthropic.messages.stream(request)
+          if (callbacks?.onTextDelta) {
+            stream.on('text', (delta) => callbacks.onTextDelta!(delta))
+          }
+          const response = await stream.finalMessage()
+          return toNormalizedResponse(response)
+        } catch (err) {
+          // Mobile Safari drops a long-lived streaming response with a bare "Load failed" even when the
+          // server answered 200. Anthropic API errors (4xx/5xx) are real and surface as-is; a connection
+          // failure gets one non-streaming retry, which comes back as a single plain JSON body.
+          const isApiError = err instanceof Anthropic.APIError && !(err instanceof Anthropic.APIConnectionError)
+          if (isApiError) throw err
+          callbacks?.onStreamStart?.() // clear any partial text the dropped stream delivered
+          const response = await this.anthropic.messages.create({ ...request, stream: false })
+          const normalized = toNormalizedResponse(response)
+          const text = normalized.choices[0].message.content
+          if (text) callbacks?.onTextDelta?.(text)
+          return normalized
         }
-        const response = await stream.finalMessage()
-        return toNormalizedResponse(response)
       },
     },
   }
