@@ -1416,6 +1416,17 @@ function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onD
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textId = useId()
+  const textRef = useRef<HTMLTextAreaElement>(null)
+
+  // Opening the form puts the cursor in its text box and brings the box into view. The scroll waits for
+  // the on-screen keyboard (which resizes the sheet) to settle, otherwise it measures the old height.
+  useEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    el.focus({ preventScroll: true })
+    const t = setTimeout(() => el.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 350)
+    return () => clearTimeout(t)
+  }, [])
 
   if (submitted) {
     return <p className="cmdk-ok m-0 text-xs">Thanks for the feedback ✓</p>
@@ -1478,6 +1489,7 @@ function FeedbackForm({ agentResponse, userQuery, usage, conversationOrigin, onD
         <label htmlFor={textId}>What went wrong?</label>
         <textarea
           id={textId}
+          ref={textRef}
           className="mne-input"
           rows={2}
           placeholder="What was wrong, or how could this be better?"
