@@ -50,3 +50,14 @@
 .wl-swipe-del:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: -4px; }
 .wl-swipe-del:disabled { opacity: .6; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .wl-item-row { transition: none; } }
+
+/* Desktop (mouse + hover): a trash icon on the row, shown on hover or keyboard focus, instead of the swipe action. */
+.wl-row-del-head, .wl-row-del { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .wl-list-head, .wl-item-row { grid-template-columns: minmax(0, 1fr) 96px 104px 32px; }
+  .wl-row-del-head { display: block; }
+  .wl-row-del { display: inline-grid; justify-self: end; opacity: 0; transition: opacity var(--mne-dur) var(--mne-ease); }
+  .wl-item-row:hover .wl-row-del, .wl-item-row:focus-within .wl-row-del { opacity: 1; }
+  .wl-swipe-del { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .wl-row-del { transition: none; } }

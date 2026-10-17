@@ -148,15 +148,15 @@ export default function Watchlist() {
     }
   }
 
-  // Swipe a row left to reveal its delete button (touch or mouse drag; a sideways trackpad scroll
-  // works too). One row is open at a time. Rows for owned tickers can't be deleted, so they don't swipe.
+  // Touch: swipe a row left to reveal its delete button (desktop gets a hover button instead). One row is
+  // open at a time. Rows for owned tickers can't be deleted, so they don't swipe.
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ id: string; x: number } | null>(null)
   const justSwipedRef = useRef(false)
-  const lastWheelRef = useRef(0)
 
   const handleRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, t: any) => {
-    if (t.is_owned || e.button !== 0 || (e.target as HTMLElement).closest('.wl-swipe-del')) return
+    // Touch and pen swipe; a mouse uses the hover delete button instead.
+    if (t.is_owned || e.pointerType === 'mouse' || e.button !== 0 || (e.target as HTMLElement).closest('.wl-swipe-del')) return
     const startX = e.clientX
     const startY = e.clientY
     const base = swipeOpenId === t.id ? -SWIPE_REVEAL_PX : 0
@@ -187,13 +187,6 @@ export default function Watchlist() {
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', up)
-  }
-
-  const handleRowWheel = (e: React.WheelEvent<HTMLDivElement>, t: any) => {
-    if (t.is_owned || Math.abs(e.deltaX) < 20 || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return
-    if (e.timeStamp - lastWheelRef.current < 400) return
-    lastWheelRef.current = e.timeStamp
-    setSwipeOpenId(e.deltaX > 0 ? t.id : null)
   }
 
   const toggleExpanded = (id: string) => {
@@ -317,6 +310,7 @@ export default function Watchlist() {
                 <span>Symbol</span>
                 <span className="r">Price</span>
                 <span className="r">Today</span>
+                <span className="wl-row-del-head" />
               </div>
               {tickers.map(t => {
                 const currentPrice = Number(t.current_price ?? 0)
@@ -345,12 +339,6 @@ export default function Watchlist() {
                       className={`wl-item-row${dragging ? ' is-dragging' : ''}`}
                       style={{ transform: dragging ? `translateX(${drag!.x}px)` : swipeOpenId === t.id ? `translateX(-${SWIPE_REVEAL_PX}px)` : undefined }}
                       onPointerDown={e => handleRowPointerDown(e, t)}
-                      onWheel={e => handleRowWheel(e, t)}
-                      onKeyDown={e => {
-                        if (t.is_owned) return
-                        if (e.key === 'ArrowLeft') { setSwipeOpenId(t.id) }
-                        else if (e.key === 'ArrowRight' || e.key === 'Escape') { setSwipeOpenId(null) }
-                      }}
                       onClick={() => {
                         if (justSwipedRef.current) return
                         if (swipeOpenId === t.id) { setSwipeOpenId(null); return }
@@ -369,6 +357,18 @@ export default function Watchlist() {
                       </button>
                       <span className="r mne-num">${currentPrice.toFixed(2)}</span>
                       <span className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</span>
+                      {!t.is_owned && (
+                        <button
+                          type="button"
+                          className="pf-iconbtn is-danger wl-row-del"
+                          onClick={e => handleDeleteTicker(t, e)}
+                          disabled={deletingTickerId === t.id}
+                          aria-label={`Delete ${t.symbol}`}
+                          title={`Delete ${t.symbol}`}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
+                      )}
                     </div>
                     {isOpen && (
                       <div className="wl-item-themes" onClick={e => e.stopPropagation()}>
