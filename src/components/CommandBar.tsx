@@ -424,9 +424,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   // On-screen keyboard up: the sheet takes the whole (small) visual viewport instead of 58% of it.
   const [viewportShrunk, setViewportShrunk] = useState(false)
   // Some iOS browsers resize the window itself for the keyboard, which the viewport comparison above can't
-  // see, so a focused composer on the phone sheet counts as "keyboard up" too.
+  // see, so a focused composer on a touch phone sheet counts as "keyboard up" too.
   const [inputFocused, setInputFocused] = useState(false)
-  const keyboardOpen = !docked && (viewportShrunk || inputFocused)
+  // Only on a touch screen: a narrow desktop window has no on-screen keyboard to make room for.
+  const touchOnly = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+  const keyboardOpen = !docked && (viewportShrunk || (inputFocused && touchOnly))
   // Where a pending write confirmation's Confirm/Cancel bar is pinned (just above the composer).
   const [pinSlot, setPinSlot] = useState<HTMLElement | null>(null)
   // Saved-conversation history: an in-panel view when docked, a dropdown under the header on the phone sheet.

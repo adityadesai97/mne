@@ -64,7 +64,8 @@ test.describe('signed in', () => {
     await page.keyboard.press('Control+k')
     await expect(page.getByPlaceholder('Ask anything or issue a command...')).toBeVisible()
     await expect(page.getByRole('complementary', { name: 'Ask mne' })).toBeVisible()
-    // Focus is inside the panel, so the shortcut closes it again.
+    // Focus is inside the panel (it lands there shortly after opening), so the shortcut closes it again.
+    await expect(page.getByPlaceholder('Ask anything or issue a command...')).toBeFocused()
     await page.keyboard.press('Control+k')
     await expect(page.getByRole('complementary', { name: 'Ask mne' })).toHaveCount(0)
   })
