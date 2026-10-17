@@ -29,3 +29,14 @@
 /* The + toggle in the page header opens the add form. */
 .wl-add-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
 .wl-add { margin-bottom: 4px; }
+
+/* Swipe a row left to reveal its delete button. The button sits just past the row's right edge and
+   slides into view with the row; the wrapper clips it until then. */
+.wl-table-wrap { overflow-x: clip; }
+.wl-row { touch-action: pan-y; transition: transform var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
+.wl-row.is-dragging { transition: none; user-select: none; }
+.wl-del-cell { position: relative; width: 0; padding: 0 !important; }
+.wl-swipe-del { all: unset; box-sizing: border-box; position: absolute; top: 0; bottom: 0; left: 0; width: 96px; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--mne-loss); color: var(--mne-on-accent); font: 500 14px/20px var(--mne-font-sans); cursor: pointer; }
+.wl-swipe-del:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: -2px; }
+.wl-swipe-del:disabled { opacity: .6; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .wl-row { transition: none; } }

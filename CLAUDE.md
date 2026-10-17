@@ -97,7 +97,7 @@ Seven pages in `src/pages/`:
 - `Portfolio` — position cards
 - `AssetDetail` — drill-down view for a single asset
 - `Charts` — allocation / P&L / RSU charts
-- `Watchlist` — tickers + themes; the add-ticker form (typeahead, Crypto checkbox) is hidden until the "+ Add ticker" button in the page header is clicked, and closes after a successful add
+- `Watchlist` — tickers + themes; the add-ticker form (typeahead, Crypto checkbox) is hidden until the "+ Add ticker" button in the page header is clicked, and closes after a successful add. A ticker is deleted by swiping its row left (touch, mouse drag or a sideways trackpad scroll) to reveal a red **Delete** button (`SWIPE_REVEAL_PX`, `.wl-swipe-del`); there is no always-visible delete button, and a ticker that is still owned can't be swiped
 - `Settings` — API keys, notifications, appearance
 - `Landing` — marketing/intro page shown when `VITE_LANDING_AS_HOME=true`
 - `Onboarding` — first-run wizard (API key setup, includes LLM provider picker)

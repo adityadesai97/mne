@@ -1,5 +1,5 @@
 // src/pages/Watchlist.tsx
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { deleteTicker, getAllTickers, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
@@ -20,6 +20,7 @@ import { SymbolCombobox } from '@/components/mne/Combobox'
 import type { SymbolSuggestion } from '@/lib/symbolSearch'
 
 const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
+const SWIPE_REVEAL_PX = 96 // keep in step with .wl-swipe-del width in watchlist.css
 
 function formatRelativeTime(isoString: string | null): string | null {
   if (!isoString) return null
@@ -147,6 +148,54 @@ export default function Watchlist() {
     }
   }
 
+  // Swipe a row left to reveal its delete button (touch or mouse drag; a sideways trackpad scroll
+  // works too). One row is open at a time. Rows for owned tickers can't be deleted, so they don't swipe.
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null)
+  const [drag, setDrag] = useState<{ id: string; x: number } | null>(null)
+  const justSwipedRef = useRef(false)
+  const lastWheelRef = useRef(0)
+
+  const handleRowPointerDown = (e: React.PointerEvent<HTMLTableRowElement>, t: any) => {
+    if (t.is_owned || e.button !== 0 || (e.target as HTMLElement).closest('.wl-swipe-del')) return
+    const startX = e.clientX
+    const startY = e.clientY
+    const base = swipeOpenId === t.id ? -SWIPE_REVEAL_PX : 0
+    let active = false
+    let x = base
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      if (!active) {
+        if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) return end(false)
+        if (Math.abs(dx) <= 8) return
+        active = true
+      }
+      x = Math.min(0, Math.max(-SWIPE_REVEAL_PX, base + dx))
+      setDrag({ id: t.id, x })
+    }
+    const end = (commit = true) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      if (!active || !commit) return
+      setSwipeOpenId(x < -SWIPE_REVEAL_PX / 2 ? t.id : null)
+      setDrag(null)
+      justSwipedRef.current = true
+      window.setTimeout(() => { justSwipedRef.current = false }, 0)
+    }
+    const up = () => end()
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  const handleRowWheel = (e: React.WheelEvent<HTMLTableRowElement>, t: any) => {
+    if (t.is_owned || Math.abs(e.deltaX) < 20 || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return
+    if (e.timeStamp - lastWheelRef.current < 400) return
+    lastWheelRef.current = e.timeStamp
+    setSwipeOpenId(e.deltaX > 0 ? t.id : null)
+  }
+
   const toggleExpanded = (id: string) => {
     setExpanded(prev => {
       const next = new Set(prev)
@@ -263,7 +312,7 @@ export default function Watchlist() {
         <div className="mne-bento wl-bento">
           <section className="mne-card s6">
             <h3 className="mne-card-title">Tickers</h3>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="wl-table-wrap">
             <table className="mne-table">
               <thead>
                 <tr>
@@ -283,7 +332,20 @@ export default function Watchlist() {
                   const isOpen = expanded.has(t.id)
                   return (
                     <Fragment key={t.id}>
-                      <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpanded(t.id)}>
+                      <tr
+                        className={`wl-row${drag?.id === t.id ? ' is-dragging' : ''}`}
+                        style={{
+                          cursor: 'pointer',
+                          transform: drag && drag.id === t.id ? `translateX(${drag.x}px)` : swipeOpenId === t.id ? `translateX(-${SWIPE_REVEAL_PX}px)` : undefined,
+                        }}
+                        onPointerDown={e => handleRowPointerDown(e, t)}
+                        onWheel={e => handleRowWheel(e, t)}
+                        onClick={() => {
+                          if (justSwipedRef.current) return
+                          if (swipeOpenId === t.id) { setSwipeOpenId(null); return }
+                          toggleExpanded(t.id)
+                        }}
+                      >
                         <td>
                           <button
                             type="button"
@@ -298,17 +360,18 @@ export default function Watchlist() {
                         </td>
                         <td className="r mne-num">${currentPrice.toFixed(2)}</td>
                         <td className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
-                        <td className="r">
+                        <td className="wl-del-cell">
                           {!t.is_owned && (
                             <button
                               type="button"
-                              className="pf-iconbtn is-danger"
+                              className="wl-swipe-del"
                               onClick={e => handleDeleteTicker(t, e)}
+                              onFocus={() => setSwipeOpenId(t.id)}
+                              onBlur={() => setSwipeOpenId(id => (id === t.id ? null : id))}
                               disabled={deletingTickerId === t.id}
                               aria-label={`Delete ${t.symbol}`}
-                              title={`Delete ${t.symbol}`}
                             >
-                              <Trash2 size={14} aria-hidden="true" />
+                              <Trash2 size={16} aria-hidden="true" /> Delete
                             </button>
                           )}
                         </td>
