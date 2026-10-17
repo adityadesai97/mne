@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown, RefreshCw } from 'lucide-react'
 import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
@@ -338,7 +338,8 @@ export default function Home() {
           disabled={isRefreshingPrices}
           aria-label="Refresh prices"
         >
-          {isRefreshingPrices ? 'Updating…' : 'Refresh prices'}
+          <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" className={`sm:hidden${isRefreshingPrices ? ' animate-spin' : ''}`} />
+          <span className="max-sm:sr-only">{isRefreshingPrices ? 'Updating…' : 'Refresh prices'}</span>
         </button>
       </PageHead>
 
