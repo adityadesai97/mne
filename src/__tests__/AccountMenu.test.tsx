@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import AccountMenu from '../components/AccountMenu'
 
 const signOut = vi.fn(() => Promise.resolve({ error: null }))
@@ -18,9 +19,9 @@ vi.mock('../lib/supabase', () => ({
 
 test('menu shows the signed-in account and offers switch and sign out', async () => {
   const user = userEvent.setup()
-  render(<AccountMenu variant="top" />)
+  render(<MemoryRouter><AccountMenu variant="top" /></MemoryRouter>)
   expect(screen.queryByRole('menu')).toBeNull()
-  await user.click(screen.getByRole('button', { name: 'Account' }))
+  await user.click(screen.getByRole('button', { name: 'Account and settings' }))
   expect(await screen.findByText('me@example.com')).toBeTruthy()
   expect(screen.getByText('Me Example')).toBeTruthy()
   expect(screen.getByRole('menuitem', { name: /Sign out/ })).toBeTruthy()
@@ -28,8 +29,8 @@ test('menu shows the signed-in account and offers switch and sign out', async ()
 
 test('switching accounts asks Google to show the account chooser', async () => {
   const user = userEvent.setup()
-  render(<AccountMenu variant="top" />)
-  await user.click(screen.getByRole('button', { name: 'Account' }))
+  render(<MemoryRouter><AccountMenu variant="top" /></MemoryRouter>)
+  await user.click(screen.getByRole('button', { name: 'Account and settings' }))
   await user.click(await screen.findByRole('menuitem', { name: /Switch Google account/ }))
   await waitFor(() => expect(signInWithOAuth).toHaveBeenCalled())
   expect(signInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({
@@ -40,8 +41,8 @@ test('switching accounts asks Google to show the account chooser', async () => {
 
 test('Escape closes the menu', async () => {
   const user = userEvent.setup()
-  render(<AccountMenu variant="top" />)
-  await user.click(screen.getByRole('button', { name: 'Account' }))
+  render(<MemoryRouter><AccountMenu variant="top" /></MemoryRouter>)
+  await user.click(screen.getByRole('button', { name: 'Account and settings' }))
   await screen.findByRole('menu')
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('menu')).toBeNull()

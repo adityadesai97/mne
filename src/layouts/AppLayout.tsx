@@ -5,6 +5,7 @@ import TopBar from './TopBar'
 import Sidebar, { useSidebarCollapsed, sidebarWidthPx } from './Sidebar'
 import { CommandBar } from '@/components/CommandBar'
 import { AppAlertsHost } from '@/components/AppAlertsHost'
+import { useNoBottomOverscroll } from '@/hooks/useNoBottomOverscroll'
 import { useDockedViewport, DOCK_WIDTH_PX } from '@/hooks/useDockedViewport'
 import { getAllAssets } from '@/lib/db/assets'
 import { computeTotalNetWorth } from '@/lib/portfolio'
@@ -81,6 +82,7 @@ export default function AppLayout() {
   const [plaidReviewOpen, setPlaidReviewOpen] = useState(false)
   // Wide screens dock the command bar beside the page, which then reflows by the panel's width.
   const docked = useDockedViewport()
+  useNoBottomOverscroll()
   const dockOffset = cmdOpen && docked ? DOCK_WIDTH_PX : 0
 
   const refreshPlaidPendingCount = async () => {
