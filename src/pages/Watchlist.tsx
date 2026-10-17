@@ -1,5 +1,5 @@
 // src/pages/Watchlist.tsx
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { deleteTicker, getAllTickers, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
@@ -155,7 +155,7 @@ export default function Watchlist() {
   const justSwipedRef = useRef(false)
   const lastWheelRef = useRef(0)
 
-  const handleRowPointerDown = (e: React.PointerEvent<HTMLTableRowElement>, t: any) => {
+  const handleRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, t: any) => {
     if (t.is_owned || e.button !== 0 || (e.target as HTMLElement).closest('.wl-swipe-del')) return
     const startX = e.clientX
     const startY = e.clientY
@@ -189,7 +189,7 @@ export default function Watchlist() {
     window.addEventListener('pointercancel', up)
   }
 
-  const handleRowWheel = (e: React.WheelEvent<HTMLTableRowElement>, t: any) => {
+  const handleRowWheel = (e: React.WheelEvent<HTMLDivElement>, t: any) => {
     if (t.is_owned || Math.abs(e.deltaX) < 20 || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return
     if (e.timeStamp - lastWheelRef.current < 400) return
     lastWheelRef.current = e.timeStamp
@@ -312,82 +312,72 @@ export default function Watchlist() {
         <div className="mne-bento wl-bento">
           <section className="mne-card s6">
             <h3 className="mne-card-title">Tickers</h3>
-            <div className="wl-table-wrap">
-            <table className="mne-table">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th className="r">Price</th>
-                  <th className="r">Today</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {tickers.map(t => {
-                  const currentPrice = Number(t.current_price ?? 0)
-                  const previousClose = t.previous_close != null ? Number(t.previous_close) : null
-                  const percentChange = previousClose != null && previousClose !== 0
-                    ? ((currentPrice - previousClose) / previousClose) * 100
-                    : null
-                  const isOpen = expanded.has(t.id)
-                  return (
-                    <Fragment key={t.id}>
-                      <tr
-                        className={`wl-row${drag?.id === t.id ? ' is-dragging' : ''}`}
-                        style={{
-                          cursor: 'pointer',
-                          transform: drag && drag.id === t.id ? `translateX(${drag.x}px)` : swipeOpenId === t.id ? `translateX(-${SWIPE_REVEAL_PX}px)` : undefined,
-                        }}
-                        onPointerDown={e => handleRowPointerDown(e, t)}
-                        onWheel={e => handleRowWheel(e, t)}
-                        onClick={() => {
-                          if (justSwipedRef.current) return
-                          if (swipeOpenId === t.id) { setSwipeOpenId(null); return }
-                          toggleExpanded(t.id)
-                        }}
+            <div className="wl-list" role="list">
+              <div className="wl-list-head" aria-hidden="true">
+                <span>Symbol</span>
+                <span className="r">Price</span>
+                <span className="r">Today</span>
+              </div>
+              {tickers.map(t => {
+                const currentPrice = Number(t.current_price ?? 0)
+                const previousClose = t.previous_close != null ? Number(t.previous_close) : null
+                const percentChange = previousClose != null && previousClose !== 0
+                  ? ((currentPrice - previousClose) / previousClose) * 100
+                  : null
+                const isOpen = expanded.has(t.id)
+                const dragging = drag != null && drag.id === t.id
+                const revealed = dragging || swipeOpenId === t.id
+                return (
+                  <div key={t.id} role="listitem" className="wl-item" data-revealed={revealed ? 'true' : 'false'}>
+                    {!t.is_owned && (
+                      <button
+                        type="button"
+                        className="wl-swipe-del"
+                        onClick={e => handleDeleteTicker(t, e)}
+                        disabled={deletingTickerId === t.id}
+                        aria-label={`Delete ${t.symbol}`}
                       >
-                        <td>
-                          <button
-                            type="button"
-                            aria-expanded={isOpen}
-                            aria-label={`${t.symbol} themes`}
-                            onClick={e => { e.stopPropagation(); toggleExpanded(t.id) }}
-                            style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
-                          >
-                            {t.logo && <img src={t.logo} alt="" width={20} height={20} style={{ borderRadius: 6, objectFit: 'contain' }} />}
-                            {t.symbol}
-                          </button>
-                        </td>
-                        <td className="r mne-num">${currentPrice.toFixed(2)}</td>
-                        <td className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</td>
-                        <td className="wl-del-cell">
-                          {!t.is_owned && (
-                            <button
-                              type="button"
-                              className="wl-swipe-del"
-                              onClick={e => handleDeleteTicker(t, e)}
-                              onFocus={() => setSwipeOpenId(t.id)}
-                              onBlur={() => setSwipeOpenId(id => (id === t.id ? null : id))}
-                              disabled={deletingTickerId === t.id}
-                              aria-label={`Delete ${t.symbol}`}
-                            >
-                              <Trash2 size={16} aria-hidden="true" /> Delete
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={4} onClick={e => e.stopPropagation()}>
-                            <ThemeManager ticker={t} onUpdated={loadTickers} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
+                        <Trash2 size={20} strokeWidth={1.5} aria-hidden="true" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                    <div
+                      className={`wl-item-row${dragging ? ' is-dragging' : ''}`}
+                      style={{ transform: dragging ? `translateX(${drag!.x}px)` : swipeOpenId === t.id ? `translateX(-${SWIPE_REVEAL_PX}px)` : undefined }}
+                      onPointerDown={e => handleRowPointerDown(e, t)}
+                      onWheel={e => handleRowWheel(e, t)}
+                      onKeyDown={e => {
+                        if (t.is_owned) return
+                        if (e.key === 'ArrowLeft') { setSwipeOpenId(t.id) }
+                        else if (e.key === 'ArrowRight' || e.key === 'Escape') { setSwipeOpenId(null) }
+                      }}
+                      onClick={() => {
+                        if (justSwipedRef.current) return
+                        if (swipeOpenId === t.id) { setSwipeOpenId(null); return }
+                        toggleExpanded(t.id)
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="wl-item-sym"
+                        aria-expanded={isOpen}
+                        aria-label={`${t.symbol} themes`}
+                        onClick={e => { e.stopPropagation(); if (swipeOpenId === t.id) setSwipeOpenId(null); else toggleExpanded(t.id) }}
+                      >
+                        {t.logo && <img src={t.logo} alt="" width={20} height={20} style={{ borderRadius: 6, objectFit: 'contain' }} />}
+                        {t.symbol}
+                      </button>
+                      <span className="r mne-num">${currentPrice.toFixed(2)}</span>
+                      <span className="r" style={{ whiteSpace: 'nowrap' }}>{percentChange != null ? <Delta value={percentChange} /> : <span className="mne-muted">–</span>}</span>
+                    </div>
+                    {isOpen && (
+                      <div className="wl-item-themes" onClick={e => e.stopPropagation()}>
+                        <ThemeManager ticker={t} onUpdated={loadTickers} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </section>
         </div>

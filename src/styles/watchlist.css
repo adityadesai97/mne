@@ -30,13 +30,23 @@
 .wl-add-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
 .wl-add { margin-bottom: 4px; }
 
-/* Swipe a row left to reveal its delete button. The button sits just past the row's right edge and
-   slides into view with the row; the wrapper clips it until then. */
-.wl-table-wrap { overflow-x: clip; }
-.wl-row { touch-action: pan-y; transition: transform var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
-.wl-row.is-dragging { transition: none; user-select: none; }
-.wl-del-cell { position: relative; width: 0; padding: 0 !important; }
-.wl-swipe-del { all: unset; box-sizing: border-box; position: absolute; top: 0; bottom: 0; left: 0; width: 96px; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--mne-loss); color: var(--mne-on-accent); font: 500 14px/20px var(--mne-font-sans); cursor: pointer; }
-.wl-swipe-del:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: -2px; }
+/* Ticker list. Swipe a row left to reveal its Delete action (the iOS pattern): the action sits fixed at
+   the item's right edge underneath, and the opaque row slides over it. It stays hidden until the row moves. */
+.wl-list { display: flex; flex-direction: column; gap: 2px; }
+.wl-list-head, .wl-item-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 104px; align-items: center; column-gap: 8px; }
+.wl-list-head { padding: 0 var(--mne-space-3) var(--mne-space-2); font: 500 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); }
+.wl-list .r { text-align: right; }
+.wl-item { position: relative; overflow: hidden; border-radius: var(--mne-radius-md); }
+.wl-item-row { position: relative; z-index: 1; padding: var(--mne-space-3); background: var(--mne-surface-200); cursor: pointer; touch-action: pan-y; font-variant-numeric: tabular-nums; transition: transform var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)), background var(--mne-dur) linear; }
+.wl-item:nth-child(odd) .wl-item-row { background: color-mix(in srgb, var(--mne-surface-300) 55%, var(--mne-surface-200)); }
+.wl-item-row:hover { background: var(--mne-surface-300) !important; }
+.wl-item-row { user-select: none; -webkit-user-select: none; }
+.wl-item-row.is-dragging { transition: none; }
+.wl-item-sym { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
+.wl-item-sym:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; border-radius: var(--mne-radius-sm); }
+.wl-item-themes { padding: 0 var(--mne-space-3) var(--mne-space-3); background: var(--mne-surface-200); }
+.wl-swipe-del { all: unset; box-sizing: border-box; position: absolute; top: 0; right: 0; bottom: 0; width: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: var(--mne-loss); color: var(--mne-on-accent); font: 500 12px/16px var(--mne-font-sans); cursor: pointer; visibility: hidden; transition: visibility 0s linear var(--mne-dur-layout, 430ms); }
+.wl-item[data-revealed="true"] .wl-swipe-del { visibility: visible; transition-delay: 0s; }
+.wl-swipe-del:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: -4px; }
 .wl-swipe-del:disabled { opacity: .6; cursor: default; }
-@media (prefers-reduced-motion: reduce) { .wl-row { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wl-item-row { transition: none; } }
