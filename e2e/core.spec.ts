@@ -169,14 +169,15 @@ test.describe('signed in', () => {
     await expect(page.getByRole('complementary', { name: 'Ask mne' }).getByText('Explain my allocation')).toBeVisible()
   })
 
-  test('on a phone the raised centre action opens a bottom sheet and Settings sits in the header', async ({ page }) => {
+  test('on a phone the raised centre action opens a bottom sheet and Settings is in the header menu', async ({ page }) => {
     await signedInApp(page)
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     await expect(page.getByRole('button', { name: 'Ask or search' })).toBeHidden()
-    // Settings is no longer a tab but stays reachable.
+    // Settings is no longer a tab but stays reachable from the header's account menu.
     await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' })).toHaveCount(0)
-    await page.getByRole('link', { name: 'Settings' }).click()
+    await page.getByRole('button', { name: 'Account and settings' }).click()
+    await page.getByRole('menuitem', { name: 'Settings' }).click()
     await expect(page).toHaveURL(/\/settings/)
 
     await page.getByRole('button', { name: 'Ask mne' }).click()
