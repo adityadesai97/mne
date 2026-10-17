@@ -62,7 +62,7 @@ export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: n
             </div>
           </div>
         </td>
-        <td className="r pf-hide-sm">{qtyLabel ? qtyLabel.split(' ')[0] : '—'}</td>
+        <td className="r pf-hide-sm"><span className={hiddenValueClass(hideValues)}>{qtyLabel ? qtyLabel.split(' ')[0] : '—'}</span></td>
         <td className="r">
           {noPriceData ? <span className="mne-muted">Price pending</span> : <span className={hiddenValueClass(hideValues)}>{fmt(value)}</span>}
         </td>
