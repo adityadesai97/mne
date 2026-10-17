@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { deleteTicker, getAllTickers, updateTickerPrice, upsertTicker } from '@/lib/db/tickers'
 import { getAllAssets } from '@/lib/db/assets'
+import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { isTickerAsset } from '@/lib/portfolio'
 import { ensureCryptoTicker } from '@/lib/db/cryptoTickers'
 import { config } from '@/store/config'
@@ -69,7 +70,11 @@ export default function Watchlist() {
   }
 
   useEffect(() => {
-    loadTickers().catch(console.error).finally(() => setLoaded(true))
+    // Refresh prices first (once per page load) so the list shows current quotes.
+    refreshPricesOncePerLoad()
+      .then(() => loadTickers())
+      .catch(console.error)
+      .finally(() => setLoaded(true))
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {

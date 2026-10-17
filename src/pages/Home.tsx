@@ -1,17 +1,15 @@
 // src/pages/Home.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { animate } from 'framer-motion'
-import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown, RefreshCw } from 'lucide-react'
+import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown } from 'lucide-react'
 import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { dropDipOutliers } from '@/lib/snapshotBackfill'
 import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
-import { refreshAllPrices } from '@/lib/db/tickers'
-import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
-import { config } from '@/store/config'
+import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { CardEyebrow } from '@/components/CardEyebrow'
 import { AskChip } from '@/components/AskChip'
 import { NetWorthChart } from '@/components/NetWorthChart'
@@ -81,7 +79,7 @@ export default function Home() {
     () => (localStorage.getItem(HOME_CHART_RANGE_KEY) as HomeChartRange | null) ?? '1Y'
   )
   const [moverSort, setMoverSort] = useState<'percent' | 'value'>('percent')
-  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false)
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(true)
   const heroRef = useRef<HTMLSpanElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
   const [hideValues] = useHideValues()
@@ -96,6 +94,7 @@ export default function Home() {
     // page load renders with current prices instead of whatever was cached
     // from the last visit — see src/lib/priceRefresh.ts.
     refreshPricesOncePerLoad().finally(() => {
+      setIsRefreshingPrices(false)
       getAllAssets()
         .then(setAssets)
         .catch(() => showAppAlert('Failed to load portfolio data. Please refresh.', { variant: 'error' }))
@@ -126,39 +125,6 @@ export default function Home() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  const handleRefresh = useCallback(async () => {
-    if (config.hasFinnhubKey) {
-      try {
-        await refreshAllPrices()
-        // Portfolio still shows a "Prices refreshed" timestamp read from
-        // this key, even though Home's own copy of that display is gone.
-        localStorage.setItem(PRICES_REFRESHED_AT_KEY, new Date().toISOString())
-      } catch {
-        showAppAlert('Price refresh failed. Check your Finnhub API key.', { variant: 'error' })
-      }
-    }
-    const [fresh] = await Promise.all([
-      getAllAssets().catch(() => {
-        showAppAlert('Failed to reload portfolio.', { variant: 'error' })
-        return assets
-      }),
-      getSnapshots().then(setSnapshots).catch(() => {}),
-    ])
-    setAssets((fresh as any[]) ?? assets)
-  }, [assets])
-
-  // Explicit click-to-refresh, so there is a way to force a price refresh
-  // instead of waiting for the hourly check-prices cron.
-  const handleManualRefresh = useCallback(async () => {
-    if (isRefreshingPrices) return
-    setIsRefreshingPrices(true)
-    try {
-      await handleRefresh()
-    } finally {
-      setIsRefreshingPrices(false)
-    }
-  }, [handleRefresh, isRefreshingPrices])
 
   const totalValue = computeTotalNetWorth(assets)
 
@@ -324,18 +290,7 @@ export default function Home() {
   return (
     <>
     <div className="mne-main">
-      <PageHead title={heroGreeting}>
-        <button
-          type="button"
-          className="mne-btn is-ghost is-sm"
-          onClick={handleManualRefresh}
-          disabled={isRefreshingPrices}
-          aria-label="Refresh prices"
-        >
-          <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" className={`sm:hidden${isRefreshingPrices ? ' animate-spin' : ''}`} />
-          <span className="max-sm:sr-only">{isRefreshingPrices ? 'Updating…' : 'Refresh prices'}</span>
-        </button>
-      </PageHead>
+      <PageHead title={heroGreeting} />
 
       <Masonry>
 

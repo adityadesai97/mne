@@ -1,5 +1,6 @@
 // src/pages/AssetDetail.tsx
 import { useEffect, useState } from 'react'
+import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { useParams, useNavigate } from 'react-router-dom'
 import { TaxLotList } from '@/components/TaxLotList'
 import { FixedIncomeLotList } from '@/components/FixedIncomeLotList'
@@ -56,7 +57,8 @@ export default function AssetDetail() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    getAssetById(id)
+    refreshPricesOncePerLoad()
+      .then(() => getAssetById(id))
       .then(setAsset)
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))

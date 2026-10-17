@@ -40,7 +40,7 @@ npm run types                     # regenerate src/lib/database.types.ts (needs 
 
 On every app load, `src/layouts/AppLayout.tsx` runs a startup effect: loads assets, records a daily net worth snapshot, promotes stale Short Term tax lots to Long Term, and syncs API keys and the LLM provider to `user_settings`.
 
-`src/lib/priceRefresh.ts`'s `refreshPricesOncePerLoad()` refreshes every ticker's price (Finnhub for stocks, CoinGecko for crypto) at most once per page load (module-scoped promise, resets only on a real reload). Home and Portfolio both await it before their initial asset fetch, so whichever page is open on a fresh load renders current prices — not one triggered by AppLayout's own effect, since AppLayout doesn't own the asset state either page renders from.
+`src/lib/priceRefresh.ts`'s `refreshPricesOncePerLoad()` refreshes every ticker's price (Finnhub for stocks, CoinGecko for crypto) at most once per page load (module-scoped promise, resets only on a real reload). Home, Portfolio, Charts, Watchlist and Asset detail all await it before their initial data fetch, so whichever of them is open on a fresh load renders current prices — not one triggered by AppLayout's own effect, since AppLayout doesn't own the asset state either page renders from.
 
 ### Data Model
 
@@ -102,7 +102,7 @@ Seven pages in `src/pages/`:
 - `Landing` — marketing/intro page shown when `VITE_LANDING_AS_HOME=true`
 - `Onboarding` — first-run wizard (API key setup, includes LLM provider picker)
 
-There is no pull-to-refresh (removed: its animation was jerky); Home has a **Refresh prices** button (icon-only on phones), and `useNoBottomOverscroll` (`src/hooks/useNoBottomOverscroll.ts`, used in `AppLayout`) stops iOS rubber-banding the page past its bottom.
+There is no pull-to-refresh (removed: its animation was jerky); a full page reload is the way to refresh prices (no manual button), and `useNoBottomOverscroll` (`src/hooks/useNoBottomOverscroll.ts`, used in `AppLayout`) stops iOS rubber-banding the page past its bottom.
 
 ### Design System
 

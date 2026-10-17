@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Masonry, MasonryItem } from '@/components/mne/Masonry'
 import { PieChart, Landmark, Layers, TrendingUp, Scale, BarChart3, CalendarClock } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
+import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { getAllThemes } from '@/lib/db/themes'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { Delta, Eyebrow, PageHead } from '@/components/mne'
@@ -43,7 +44,9 @@ export default function Charts() {
   const [hideValues] = useHideValues()
 
   useEffect(() => {
-    getAllAssets()
+    // Refresh prices first (once per page load) so the charts use current quotes.
+    refreshPricesOncePerLoad()
+      .then(() => getAllAssets())
       .then(setAssets)
       .catch(console.error)
       .finally(() => setAssetsLoaded(true))
