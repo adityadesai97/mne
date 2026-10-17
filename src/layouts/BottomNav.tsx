@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { AiMark } from '@/components/mne/AiMark'
 import { useHasAssets } from '@/hooks/useHasAssets'
 import { NAV_ITEMS } from './Sidebar'
@@ -9,11 +9,20 @@ import '@/styles/shell.css'
 // the bar stays at four destinations plus the action.
 export default function BottomNav({ onAsk }: { onAsk?: () => void }) {
   const { hasAssets } = useHasAssets()
+  const { pathname } = useLocation()
   const tabs = NAV_ITEMS.filter(item => item.to !== '/settings' && (!item.requiresAssets || hasAssets))
   const mid = Math.ceil(tabs.length / 2)
 
   const renderTab = ({ to, icon: Icon, label }: (typeof tabs)[number]) => (
-    <NavLink key={to} to={to} end={to === '/'}>
+    <NavLink
+      key={to}
+      to={to}
+      end={to === '/'}
+      // Re-tapping the current page's tab doesn't navigate, so scroll to the top by hand.
+      onClick={() => {
+        if (pathname === to) window.scrollTo({ top: 0, behavior: 'smooth' })
+      }}
+    >
       <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
       <span>{label}</span>
     </NavLink>
