@@ -15,6 +15,7 @@ import { Info, Plus, Star, Trash2 } from 'lucide-react'
 import { AiMark } from '@/components/mne/AiMark'
 import { Tooltip } from '@/components/mne/Tooltip'
 import '@/styles/watchlist.css'
+import { computeTickerPercentChange } from '@/lib/portfolio'
 import { finnhubFetch } from '@/lib/marketData'
 import { SymbolCombobox } from '@/components/mne/Combobox'
 import type { SymbolSuggestion } from '@/lib/symbolSearch'
@@ -314,10 +315,7 @@ export default function Watchlist() {
               </div>
               {tickers.map(t => {
                 const currentPrice = Number(t.current_price ?? 0)
-                const previousClose = t.previous_close != null ? Number(t.previous_close) : null
-                const percentChange = previousClose != null && previousClose !== 0
-                  ? ((currentPrice - previousClose) / previousClose) * 100
-                  : null
+                const percentChange = computeTickerPercentChange(t)
                 const isOpen = expanded.has(t.id)
                 const dragging = drag != null && drag.id === t.id
                 const revealed = dragging || swipeOpenId === t.id

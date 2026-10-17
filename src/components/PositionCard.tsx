@@ -1,19 +1,11 @@
 // src/components/PositionCard.tsx
 import { Link, useNavigate } from 'react-router-dom'
-import { computeAssetValue, computeCostBasis, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset } from '@/lib/portfolio'
+import { computeAssetValue, computeCostBasis, computeDailyChange, computeShareCount, isTradableFixedIncome, computeFixedIncomeLotCount, isTickerAsset } from '@/lib/portfolio'
 import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { Delta } from '@/components/mne'
 import { AssetLogo } from '@/components/AssetLogo'
 import { AssetTags } from '@/components/AssetTags'
 import '@/styles/portfolio.css'
-
-/** Percent move vs the ticker's previous close (24h for crypto); null when unknown. */
-function todayPct(asset: any): number | null {
-  const price = asset.ticker?.current_price
-  const prev = asset.ticker?.previous_close
-  if (price == null || prev == null || Number(prev) === 0) return null
-  return ((Number(price) - Number(prev)) / Number(prev)) * 100
-}
 
 function caption(asset: any): string {
   const parts: string[] = []
@@ -38,7 +30,7 @@ export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: n
   const basis = computeCostBasis(asset)
   const shareCount = isStock ? computeShareCount(asset) : 0
   const unitCount = isTradable ? computeFixedIncomeLotCount(asset) : 0
-  const pct = isStock ? todayPct(asset) : null
+  const pct = isStock ? (computeDailyChange(asset)?.percentChange ?? null) : null
   const [hideValues] = useHideValues()
   const navigate = useNavigate()
   const href = `/portfolio/${asset.id}`
