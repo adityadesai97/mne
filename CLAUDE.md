@@ -75,7 +75,7 @@ All DB access goes through thin wrappers in `src/lib/db/`: `assets.ts`, `transac
 
 ### Portfolio Math
 
-`src/lib/portfolio.ts` contains all value calculations:
+`src/lib/portfolio.ts` contains all value calculations, and it is the **only** place a number is calculated: no page, component or tool reads `ticker.current_price` / `previous_close` or multiplies lots itself. Use `getLivePrice`, `computeAssetValue`, `computeSubtypeValue`, `computeCostBasis`, `computeShareCount`, `computeDailyChange` (one position), `computePortfolioDailyChange` (the whole portfolio: Home hero, command bar `get_portfolio_summary.today`, Pulse) and `computeTickerPercentChange` (a bare watchlist ticker with no lots). `src/__tests__/consistency.test.ts` fails if Home, Pulse and the command bar disagree. The command bar's `get_net_worth_timeseries` is chart history only, never "today's change".
 - Stock value = shares (sum of `transactions.count`) × `tickers.current_price`
 - Tradable Fixed Income value (Bond/T-Bill) = sum of `fixed_income_lots.count × cost_price` — held at cost, not marked to market (there's no live bond/bill quote feed)
 - Other non-stock value (401k, Cash, HSA, CD, Deposit) = `assets.price`

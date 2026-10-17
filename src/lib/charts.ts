@@ -1,4 +1,4 @@
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain, isTickerAsset, netCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeUnrealizedGain, isTickerAsset, netCount, getLivePrice, computeSubtypeValue } from './portfolio'
 import { formatDateMDY } from './dates'
 
 // ── Portfolio Allocation ──────────────────────────────────────
@@ -19,14 +19,8 @@ function filteredStockValue(asset: any, activeSubtypes: Set<string>): number {
   // lot-based Bond/T-Bill) uses the same valuation as net worth, so the
   // allocation total reconciles with it.
   if (!isTickerAsset(asset)) return computeAssetValue(asset)
-  const price = asset.ticker?.current_price
   // No live price → net worth counts the position as 0, so the chart does too.
-  if (price == null) return 0
-  const shares = (asset.stock_subtypes ?? [])
-    .filter((st: any) => activeSubtypes.has(st.subtype))
-    .flatMap((st: any) => st.transactions ?? [])
-    .reduce((sum: number, t: any) => sum + netCount(t), 0)
-  return Math.round(price * shares * 100) / 100
+  return computeSubtypeValue(asset, activeSubtypes)
 }
 
 // ── By Location ───────────────────────────────────────────────
@@ -72,7 +66,7 @@ export function computeCapitalGainsExposure(assets: any[], symbol?: string) {
     if (symbol && a.ticker?.symbol !== symbol) continue
     // No live price → no meaningful gain (treating it as $0 would report the
     // whole cost basis as a loss).
-    const price = a.ticker?.current_price
+    const price = getLivePrice(a)
     if (price == null) continue
     for (const st of a.stock_subtypes ?? []) {
       for (const t of st.transactions ?? []) {

@@ -7,7 +7,7 @@ import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { dropDipOutliers } from '@/lib/snapshotBackfill'
-import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computeDailyChange, isTickerAsset } from '@/lib/portfolio'
+import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computePortfolioDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { CardEyebrow } from '@/components/CardEyebrow'
@@ -205,21 +205,14 @@ export default function Home() {
   // the net worth snapshot series. Positions without a previous_close yet
   // (never refreshed since this field was added) are excluded rather than
   // shown as a false 0% move.
-  const dailyMovers = useMemo(() => {
-    return stockAssets
-      .map((a) => {
-        const change = computeDailyChange(a)
-        if (!change) return null
-        return {
-          id: a.id,
-          symbol: a.ticker?.symbol ?? a.name,
-          name: a.name,
-          dollarChange: change.dollarChange,
-          percentChange: change.percentChange,
-        }
-      })
-      .filter((m): m is NonNullable<typeof m> => m !== null)
-  }, [stockAssets])
+  const portfolioDaily = useMemo(() => computePortfolioDailyChange(assets, totalValue), [assets, totalValue])
+  const dailyMovers = useMemo(() => portfolioDaily.positions.map(({ asset: a, change }) => ({
+    id: a.id,
+    symbol: a.ticker?.symbol ?? a.name,
+    name: a.name,
+    dollarChange: change.dollarChange,
+    percentChange: change.percentChange,
+  })), [portfolioDaily])
 
   const sortedMovers = useMemo(() => {
     const key = moverSort === 'percent' ? 'percentChange' : 'dollarChange'
@@ -236,8 +229,8 @@ export default function Home() {
   // yesterday's session rather than its actual close, and silently understated
   // or overstated the real move depending on when that was. Drives both the
   // ambient glow's color and the daily change figure under the hero number.
-  const todayChange = dailyMovers.reduce((sum, m) => sum + m.dollarChange, 0)
-  const todayChangePercent = totalValue > 0 ? (todayChange / totalValue) * 100 : 0
+  const todayChange = portfolioDaily.dollarChange
+  const todayChangePercent = portfolioDaily.percentChange
   const hasMood = dailyMovers.length > 0 && todayChange !== 0
 
   const heroGreeting = `${greeting.text}${firstName ? `, ${firstName}` : ''}`

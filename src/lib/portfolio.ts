@@ -85,13 +85,38 @@ export function computeFixedIncomeCostBasis(asset: AssetTyped): number {
   return Math.round(raw * 100) / 100
 }
 
+/** The ticker's live price as a number, or null when there is none (never
+ *  refreshed, or not a finite number). The one place a position's price is
+ *  read: every surface that needs "the price" goes through this. */
+export function getLivePrice(asset: { ticker?: { current_price?: number | string | null } | null }): number | null {
+  const raw = asset.ticker?.current_price
+  if (raw == null) return null
+  const price = Number(raw)
+  return Number.isFinite(price) ? price : null
+}
+
+/** Dollar value of `units` at `price`, rounded to cents. */
+export function valueAtPrice(price: number, units: number): number {
+  return Math.round(price * units * 100) / 100
+}
+
+/** Value of just some of a ticker position's subtypes (e.g. the Charts
+ *  subtype filter). With every subtype active this equals computeAssetValue. */
+export function computeSubtypeValue(asset: AssetTyped, subtypes: ReadonlySet<string>): number {
+  const price = getLivePrice(asset)
+  if (price == null) return 0
+  const units = (asset.stock_subtypes ?? [])
+    .filter((st) => subtypes.has((st as { subtype?: string }).subtype ?? ''))
+    .flatMap((st) => st.transactions ?? [])
+    .reduce((sum, t) => sum + netCount(t), 0)
+  return valueAtPrice(price, units)
+}
+
 export function computeAssetValue(asset: AssetTyped): number {
   if (isTickerAsset(asset)) {
-    if (asset.ticker?.current_price == null) return 0
-    const price = asset.ticker.current_price
-    const shares = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
-      .reduce((sum, t) => sum + netCount(t), 0) ?? 0
-    return Math.round(price * shares * 100) / 100
+    const price = getLivePrice(asset)
+    if (price == null) return 0
+    return valueAtPrice(price, computeShareCount(asset))
   }
   if (isTradableFixedIncome(asset) && (asset.fixed_income_lots?.length ?? 0) > 0) {
     return computeFixedIncomeCostBasis(asset)
@@ -203,7 +228,45 @@ export function computeDailyChange(asset: AssetTyped, today: string = localDateK
   }
 }
 
-const MS_PER_YEAR = 365 * 24 * 60 * 60 * 1000
+/** Today's percent move for a bare ticker (a watchlist row has no lots, so
+ *  there is no purchase to anchor on): current price vs previous_close. Null
+ *  when either is missing. A held position uses computeDailyChange instead. */
+export function computeTickerPercentChange(ticker: { current_price?: number | string | null; previous_close?: number | string | null }): number | null {
+  if (ticker.current_price == null || ticker.previous_close == null) return null
+  const current = Number(ticker.current_price)
+  const previous = Number(ticker.previous_close)
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null
+  return ((current - previous) / previous) * 100
+}
+
+export type PortfolioDailyChange<A extends AssetTyped = AssetTyped> = {
+  /** Σ position dollar changes, rounded to cents. */
+  dollarChange: number
+  /** dollarChange as a percent of `netWorth` (the whole portfolio, cash
+   *  included) — the figure under Home's hero number. */
+  percentChange: number
+  positions: { asset: A; change: DailyChange }[]
+}
+
+/** Today's move for the whole portfolio: the sum of every ticker position's
+ *  computeDailyChange. The ONE definition of "today's change" — Home's hero,
+ *  Daily Movers, Portfolio Pulse and the command bar all read it (or its
+ *  per-position parts). Never derive it from net_worth_snapshots. */
+export function computePortfolioDailyChange<A extends AssetTyped>(
+  assets: A[],
+  netWorth: number = computeTotalNetWorth(assets),
+  today: string = localDateKey(),
+): PortfolioDailyChange<A> {
+  const positions: PortfolioDailyChange<A>['positions'] = []
+  for (const asset of assets) {
+    const change = computeDailyChange(asset, today)
+    if (change) positions.push({ asset, change })
+  }
+  const dollarChange = Math.round(positions.reduce((sum, p) => sum + p.change.dollarChange, 0) * 100) / 100
+  return { dollarChange, percentChange: netWorth > 0 ? (dollarChange / netWorth) * 100 : 0, positions }
+}
+
+const MS_PER_YEAR =365 * 24 * 60 * 60 * 1000
 
 function yearsBetween(startIso: string, endIso: string): number {
   const start = new Date(`${startIso}T00:00:00`).getTime()

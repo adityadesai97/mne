@@ -4,7 +4,7 @@
 // functions over data PortfolioPulseCarousel already holds; nothing fetched.
 import { TrendingUp, TrendingDown, CalendarClock, Gift, Percent, Scale, CalendarDays, type LucideIcon } from 'lucide-react'
 import { computeRsuVestEvents } from '@/lib/charts'
-import { computeAssetValue, computeShareCount, isTickerAsset, netCount } from '@/lib/portfolio'
+import { computeAssetValue, computeShareCount, isTickerAsset, netCount, getLivePrice } from '@/lib/portfolio'
 import type { MoversResult, PortfolioInsightSlot } from '@/lib/portfolioExplanation'
 import type { PulseItem, PulseEvent } from '@/lib/portfolioPulseEvents'
 import type { TickerPricePoint } from '@/lib/db/tickerPriceHistory'
@@ -103,7 +103,7 @@ export function seriesForAssets(
   const perTicker = new Map<string, { shares: number; points: TickerPricePoint[]; live: number }>()
   for (const a of held) {
     const id = a.ticker.id as string
-    const entry = perTicker.get(id) ?? { shares: 0, points: (history.get(id) ?? []).filter(p => p.date >= cutoff), live: Number(a.ticker.current_price) }
+    const entry = perTicker.get(id) ?? { shares: 0, points: (history.get(id) ?? []).filter(p => p.date >= cutoff), live: getLivePrice(a) ?? NaN }
     entry.shares += computeShareCount(a)
     perTicker.set(id, entry)
   }

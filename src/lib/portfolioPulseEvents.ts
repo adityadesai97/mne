@@ -14,7 +14,7 @@
 // can rank the two kinds together.
 
 import { computeRsuVestEvents } from './charts'
-import { computeAssetValue, computeShareCount, isTickerAsset, netCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeShareCount, getLivePrice, isTickerAsset, netCount } from './portfolio'
 import { formatDateMDY } from './dates'
 import { MAX_PULSE_CARDS, type PortfolioInsightSlot } from './portfolioExplanation'
 import { finnhubFetch } from './marketData'
@@ -99,7 +99,7 @@ export function computeRsuVestEventCards(assets: any[], netWorth: number, now: D
   for (const asset of assets) {
     const symbol = asset.ticker?.symbol
     if (!symbol) continue
-    const price = Number(asset.ticker?.current_price) || 0
+    const price = getLivePrice(asset) ?? 0
     for (const st of asset.stock_subtypes ?? []) {
       if (st.subtype !== 'RSU') continue
       for (const grant of st.rsu_grants ?? []) {
@@ -139,8 +139,8 @@ export function computeLongTermEventCards(assets: any[], netWorth: number, now: 
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
-    const price = Number(asset.ticker?.current_price)
-    if (!symbol || !Number.isFinite(price)) continue
+    const price = getLivePrice(asset)
+    if (!symbol || price == null) continue
     for (const lot of openLots(asset)) {
       if (lot.capital_gains_status !== 'Short Term' || typeof lot.purchase_date !== 'string') continue
       const purchased = new Date(`${lot.purchase_date.slice(0, 10)}T00:00:00Z`)
@@ -178,14 +178,12 @@ export function computeHarvestEventCards(assets: any[], netWorth: number, now: D
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
     const symbol = asset.ticker?.symbol
-    const price = Number(asset.ticker?.current_price)
-    if (!symbol || !Number.isFinite(price) || price <= 0) continue
-    const shares = computeShareCount(asset)
-    if (shares <= 0) continue
-    const cost = openLots(asset).reduce((sum: number, t: any) => sum + netCount(t) * Number(t.cost_price), 0)
+    const price = getLivePrice(asset)
+    if (!symbol || price == null || price <= 0) continue
+    if (computeShareCount(asset) <= 0) continue
     const existing = bySymbol.get(symbol) ?? { value: 0, cost: 0 }
-    existing.value += shares * price
-    existing.cost += cost
+    existing.value += computeAssetValue(asset)
+    existing.cost += computeCostBasis(asset)
     bySymbol.set(symbol, existing)
   }
   return [...bySymbol.entries()].flatMap(([symbol, v]) => {

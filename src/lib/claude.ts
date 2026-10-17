@@ -11,7 +11,7 @@ import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
 import { computeThemeDistribution, computeRsuVestEvents, rsuVestedSharesAsOf } from './charts'
 import type { RsuVestingFrequency } from './charts'
 import { ensureCryptoTicker } from './db/cryptoTickers'
-import { computeAssetValue, computeCostBasis, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeDailyChange, computePortfolioDailyChange, computeShareCount, getLivePrice, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
 import { findMatchingLot, isLotFixedIncomeSubtype } from './plaidMatching'
@@ -359,7 +359,7 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
     const symbol = normalizeSymbol(asset?.ticker?.symbol)
     if (!symbol) continue
 
-    const currentPrice = asset?.ticker?.current_price == null ? null : Number(asset.ticker.current_price)
+    const currentPrice = getLivePrice(asset)
     const themes = Array.from(new Set(
       ((asset?.ticker?.ticker_themes ?? []) as any[])
         .map((entry) => String(entry?.theme?.name ?? '').trim())
@@ -412,7 +412,7 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
       }
     }
 
-    const accountMarketValue = currentPrice == null ? 0 : accountShares * currentPrice
+    const accountMarketValue = computeAssetValue(asset)
     summary.totalShares += accountShares
     summary.costBasis += accountCostBasis
     summary.marketValue += accountMarketValue
@@ -552,6 +552,9 @@ type PositionRow = {
   costBasis: number | null
   unrealizedGain: number | null
   unrealizedGainPct: number | null
+  /** Today's move on what's held (computeDailyChange); null when unknown or not a ticker asset. */
+  dayChange: number | null
+  dayChangePct: number | null
   themes: string[]
   subtypes: string[]
   fixedIncome: FixedIncomeInfo | null
@@ -590,19 +593,20 @@ function buildPositionRows(assets: any[]): PositionRow[] {
         costBasis: null,
         unrealizedGain: null,
         unrealizedGainPct: null,
+        dayChange: null,
+        dayChangePct: null,
         themes: [],
         subtypes: [],
         fixedIncome,
       }
     }
 
-    const shares = (asset?.stock_subtypes ?? [])
-      .flatMap((st: any) => st?.transactions ?? [])
-      .reduce((sum: number, tx: any) => sum + Math.max(0, toNumber(tx?.count, 0) - toNumber(tx?.sold_at_vest, 0)), 0)
+    const shares = computeShareCount(asset)
     const costBasis = computeCostBasis(asset)
     const marketValue = computeAssetValue(asset)
     const unrealizedGain = computeUnrealizedGain(asset)
     const unrealizedGainPct = costBasis > 0 ? (unrealizedGain / costBasis) * 100 : null
+    const daily = computeDailyChange(asset)
     const themes = Array.from(new Set(
       ((asset?.ticker?.ticker_themes ?? []) as any[])
         .map((entry) => String(entry?.theme?.name ?? '').trim())
@@ -619,11 +623,13 @@ function buildPositionRows(assets: any[]): PositionRow[] {
       location,
       accountType,
       shares: Math.round(shares * 10000) / 10000,
-      currentPrice: asset?.ticker?.current_price == null ? null : toNumber(asset.ticker.current_price, 0),
+      currentPrice: getLivePrice(asset),
       marketValue: Math.round(marketValue * 100) / 100,
       costBasis: Math.round(costBasis * 100) / 100,
       unrealizedGain: Math.round(unrealizedGain * 100) / 100,
       unrealizedGainPct: unrealizedGainPct == null ? null : Math.round(unrealizedGainPct * 100) / 100,
+      dayChange: daily ? daily.dollarChange : null,
+      dayChangePct: daily ? Math.round(daily.percentChange * 100) / 100 : null,
       themes,
       subtypes,
       fixedIncome: null,
@@ -843,12 +849,8 @@ function buildSimulationState(assets: any[]) {
       currentPrice: toNumber(asset?.ticker?.current_price, 0),
     }
 
-    const lotShares = (asset?.stock_subtypes ?? [])
-      .flatMap((st: any) => st?.transactions ?? [])
-      .reduce((sum: number, tx: any) => sum + toNumber(tx?.count, 0), 0)
-    const lotCostBasis = (asset?.stock_subtypes ?? [])
-      .flatMap((st: any) => st?.transactions ?? [])
-      .reduce((sum: number, tx: any) => sum + toNumber(tx?.count, 0) * toNumber(tx?.cost_price, 0), 0)
+    const lotShares = computeShareCount(asset)
+    const lotCostBasis = computeCostBasis(asset)
 
     existing.shares += lotShares
     existing.costBasis += lotCostBasis
@@ -1259,8 +1261,16 @@ export async function executeReadTool(
     const totalStockValue = stockPositions.reduce((sum, row) => sum + row.marketValue, 0)
     const totalCashLikeValue = cashLikePositions.reduce((sum, row) => sum + row.marketValue, 0)
     const unrealizedStockPnL = stockPositions.reduce((sum, row) => sum + (row.unrealizedGain ?? 0), 0)
+    const daily = computePortfolioDailyChange(context.assets, totalNetWorth)
     return {
       asOf: new Date().toISOString(),
+      today: {
+        // The same figure as the Net worth card on Home. Use this (never the
+        // net worth history) for any "why is my net worth up/down today" answer.
+        change: daily.dollarChange,
+        changePct: Math.round(daily.percentChange * 100) / 100,
+        positionsMeasured: daily.positions.length,
+      },
       totals: {
         netWorth: Math.round(totalNetWorth * 100) / 100,
         stockValue: Math.round(totalStockValue * 100) / 100,
@@ -1280,6 +1290,8 @@ export async function executeReadTool(
           symbol: row.symbol,
           assetName: row.assetName,
           marketValue: row.marketValue,
+          dayChange: row.dayChange,
+          dayChangePct: row.dayChangePct,
           allocationPct: totalStockValue > 0 ? Math.round((row.marketValue / totalStockValue) * 10000) / 100 : 0,
         })),
     }
@@ -1682,7 +1694,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_portfolio_summary',
-      description: 'Return canonical portfolio totals and top holdings for exact read-only answers.',
+      description: "Return canonical portfolio totals and top holdings for exact read-only answers. `today` is the portfolio's change today (dollars and % of net worth), identical to the Net worth card on Home; each top holding carries its own dayChange/dayChangePct.",
       parameters: {
         type: 'object' as const,
         properties: {},
@@ -1693,7 +1705,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_positions',
-      description: 'Return normalized positions with optional filters.',
+      description: "Return normalized positions with optional filters. Each stock/crypto row has dayChange and dayChangePct: today's move on what is held, the same figures shown in the app. Use these to explain which holdings moved net worth today.",
       parameters: {
         type: 'object' as const,
         properties: {
@@ -1727,7 +1739,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_net_worth_timeseries',
-      description: 'Return net worth history and changes for a selected range.',
+      description: "Return net worth history and changes for a selected range. This is a chart series of daily snapshots, NOT today's market move: never use it to say how much net worth changed today or why. For today's change use get_portfolio_summary (`today`) and get_positions (dayChange).",
       parameters: {
         type: 'object' as const,
         properties: {

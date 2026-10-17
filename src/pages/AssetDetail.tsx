@@ -14,7 +14,7 @@ import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/
 import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@/lib/db/fixedIncomeLots'
 import {
-  computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
+  computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, computeDailyChange, getLivePrice,
   isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
@@ -266,9 +266,8 @@ export default function AssetDetail() {
   const basis = computeCostBasis(asset)
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
   const noPriceData = isStock && asset.ticker?.current_price == null
-  const tickerPrice = Number(asset.ticker?.current_price ?? 0)
-  const tickerPreviousClose = asset.ticker?.previous_close != null ? Number(asset.ticker.previous_close) : null
-  const todayPct = tickerPreviousClose ? ((tickerPrice - tickerPreviousClose) / tickerPreviousClose) * 100 : null
+  const tickerPrice = getLivePrice(asset) ?? 0
+  const todayPct = isStock ? (computeDailyChange(asset)?.percentChange ?? null) : null
   const stockTransactionCount = isStock
     ? (asset.stock_subtypes ?? []).reduce(
       (sum: number, st: any) => sum + (st.transactions?.length ?? 0),

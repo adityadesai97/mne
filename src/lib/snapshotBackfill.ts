@@ -1,4 +1,4 @@
-import { isTickerAsset, netCount } from './portfolio'
+import { isTickerAsset, netCount, computeShareCount, getLivePrice } from './portfolio'
 import type { TickerPricePoint } from './db/tickerPriceHistory'
 
 /** How far back from a date we'll reach for a ticker's last recorded price
@@ -117,12 +117,9 @@ export function dropDipOutliers<T extends { date: string; value: number }>(point
 export function isNetWorthComplete(assets: any[]): boolean {
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
-    const shares = (asset.stock_subtypes ?? [])
-      .flatMap((st: any) => st.transactions ?? [])
-      .reduce((sum: number, t: any) => sum + netCount(t), 0)
-    if (shares <= 0) continue
-    const price = asset.ticker?.current_price
-    if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return false
+    if (computeShareCount(asset) <= 0) continue
+    const price = getLivePrice(asset)
+    if (price == null || price <= 0) return false
   }
   return true
 }
