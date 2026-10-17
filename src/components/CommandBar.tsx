@@ -404,6 +404,7 @@ const RESET_AFTER_CLOSE_MS = 460
 const SUGGESTIONS = ["What's my net worth?", 'What changed this month?', 'Show my short-term lots']
 const HALF_SHEET_RATIO = 0.58 // keep in step with .cmdk-sheet height in cmdbar.css
 const DRAG_COMMIT_PX = 40
+const DRAG_DISMISS_PX = 60 // dragging the sheet this far below its half height closes it
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /** The command bar: a docked right-hand panel beside the page on wide screens (>= 1024px), a bottom sheet
@@ -796,8 +797,9 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     }
   }
 
-  // Drag the sheet's top edge to move between the half and full heights. The height follows the
-  // pointer while dragging; on release it snaps to whichever detent the drag headed toward.
+  // Drag the sheet's top edge to move between the half and full heights, or past half to dismiss it.
+  // The height follows the pointer while dragging; on release it snaps to whichever detent the drag
+  // headed toward, or closes when it was pushed well below the half height.
   const dragMovedRef = useRef(false)
   const handleSheetDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button:not(.cmdk-grabber)')) return
@@ -816,19 +818,25 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       if (Math.abs(dy) > 4) dragMovedRef.current = true
       if (!dragMovedRef.current) return
       sheet.style.transition = 'none'
-      sheet.style.height = `${Math.min(maxH, Math.max(minH, startH - dy))}px`
+      sheet.style.height = `${Math.min(maxH, Math.max(0, startH - dy))}px`
     }
     const end = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', end)
       window.removeEventListener('pointercancel', end)
       if (dragMovedRef.current) {
+        const dismiss = startH - dy < minH - DRAG_DISMISS_PX
         const next: Detent = dy <= -DRAG_COMMIT_PX ? 'full' : dy >= DRAG_COMMIT_PX ? 'half' : startDetent
         // Re-enable the height transition so the release animates to the snapped height.
         sheet.style.transition = ''
-        void sheet.offsetHeight
-        sheet.style.height = ''
-        setDetent(next)
+        if (dismiss) {
+          // Keep the dragged height while the sheet slides away.
+          handleClose()
+        } else {
+          void sheet.offsetHeight
+          sheet.style.height = ''
+          setDetent(next)
+        }
         // The release can synthesise a click on a common ancestor (the scrim, which closes the
         // sheet): swallow it once.
         const swallow = (ev: MouseEvent) => { ev.stopPropagation(); ev.preventDefault() }
