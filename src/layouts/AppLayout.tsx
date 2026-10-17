@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import BottomNav from './BottomNav'
 import TopBar from './TopBar'
@@ -235,6 +235,11 @@ export default function AppLayout() {
     const id = window.setTimeout(() => setSafeInsets(readSafeAreaInsets()), 80)
     return () => window.clearTimeout(id)
   }, [cmdOpen, location.pathname])
+
+  // The window is the scroller, so without this a new page opens at the old page's scroll offset.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0)
+  }, [location.pathname])
 
   useEffect(() => {
     if (location.pathname !== '/settings') {
