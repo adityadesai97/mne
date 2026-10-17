@@ -29,6 +29,9 @@
 .cmdk-sheet[data-detent="full"] { height: calc(100% - env(safe-area-inset-top, 0px) - 8px); }
 /* Keyboard up: the visual viewport is short, so use all of it; the keyboard already covers the home-indicator inset. */
 .cmdk-sheet[data-keyboard="true"] { height: calc(100% - 8px); padding-bottom: 0; }
+/* iOS draws its input accessory bar (and, on newer versions, a translucent keyboard) below the visual
+   viewport; keep the sheet's colour there instead of letting the page show through. */
+.cmdk-sheet-wrap[data-keyboard="true"]::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 40vh; background: var(--mne-surface-200); pointer-events: auto; }
 .cmdk-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(27, 22, 18, .4); }
 
 .cmdk-head { flex: none; padding: 6px 12px 0; }

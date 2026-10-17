@@ -422,7 +422,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight)
   const [viewportTop, setViewportTop] = useState(0)
   // On-screen keyboard up: the sheet takes the whole (small) visual viewport instead of 58% of it.
-  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [viewportShrunk, setViewportShrunk] = useState(false)
+  // Some iOS browsers resize the window itself for the keyboard, which the viewport comparison above can't
+  // see, so a focused composer on the phone sheet counts as "keyboard up" too.
+  const [inputFocused, setInputFocused] = useState(false)
+  const keyboardOpen = !docked && (viewportShrunk || inputFocused)
   // Where a pending write confirmation's Confirm/Cancel bar is pinned (just above the composer).
   const [pinSlot, setPinSlot] = useState<HTMLElement | null>(null)
   // Saved-conversation history: an in-panel view when docked, a dropdown under the header on the phone sheet.
@@ -519,7 +523,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
       const top = Math.round(vv?.offsetTop ?? 0)
       setViewportHeight(height)
       setViewportTop(top)
-      setKeyboardOpen(window.innerHeight - height - top > KEYBOARD_MIN_PX)
+      setViewportShrunk(window.innerHeight - height - top > KEYBOARD_MIN_PX)
     }
 
     updateHeight()
@@ -540,23 +544,37 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
     if (!open || docked) return
     const bodyStyle = document.body.style
     const htmlStyle = document.documentElement.style
+    const scrollY = window.scrollY
     const prev = {
       bodyOverflow: bodyStyle.overflow,
       bodyTouchAction: bodyStyle.touchAction,
+      bodyPosition: bodyStyle.position,
+      bodyTop: bodyStyle.top,
+      bodyWidth: bodyStyle.width,
       htmlOverflow: htmlStyle.overflow,
       htmlOverscrollBehaviorY: htmlStyle.overscrollBehaviorY,
     }
 
     bodyStyle.overflow = 'hidden'
     bodyStyle.touchAction = 'none'
+    // `overflow: hidden` alone doesn't stop iOS scrolling the document to reveal a focused input, and the
+    // page then stays scrolled after the keyboard closes. Freeze the page in place instead and put the
+    // scroll position back when the sheet closes.
+    bodyStyle.position = 'fixed'
+    bodyStyle.top = `-${scrollY}px`
+    bodyStyle.width = '100%'
     htmlStyle.overflow = 'hidden'
     htmlStyle.overscrollBehaviorY = 'none'
 
     return () => {
       bodyStyle.overflow = prev.bodyOverflow
       bodyStyle.touchAction = prev.bodyTouchAction
+      bodyStyle.position = prev.bodyPosition
+      bodyStyle.top = prev.bodyTop
+      bodyStyle.width = prev.bodyWidth
       htmlStyle.overflow = prev.htmlOverflow
       htmlStyle.overscrollBehaviorY = prev.htmlOverscrollBehaviorY
+      window.scrollTo(0, scrollY)
     }
   }, [open, docked])
 
@@ -1016,6 +1034,8 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
               placeholder={hasMessages ? 'Reply...' : 'Ask anything or issue a command...'}
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSubmit() }
               }}
@@ -1087,6 +1107,7 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
           <motion.div
             key="sheet"
             className="cmdk-sheet-wrap"
+            data-keyboard={keyboardOpen ? 'true' : undefined}
             style={{ top: `${viewportTop}px`, height: `${viewportHeight}px` }}
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
