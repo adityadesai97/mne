@@ -1,5 +1,6 @@
 // src/pages/AssetDetail.tsx
 import { useEffect, useState } from 'react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { useParams, useNavigate } from 'react-router-dom'
 import { TaxLotList } from '@/components/TaxLotList'
@@ -400,8 +401,8 @@ export default function AssetDetail() {
                 </div>
               </div>
               <div className="pf-actions" style={{ alignSelf: 'flex-start' }}>
-                <button type="button" className="mne-btn is-ghost is-sm" onClick={startEditing} aria-label="Edit asset">Edit</button>
-                <button type="button" className="mne-btn is-ghost is-sm" onClick={handleDeleteAsset} aria-label="Delete asset">Delete</button>
+                <button type="button" className="pf-iconbtn" onClick={startEditing} aria-label="Edit asset" title="Edit asset"><Pencil size={16} aria-hidden="true" /></button>
+                <button type="button" className="pf-iconbtn is-danger" onClick={handleDeleteAsset} aria-label="Delete asset" title="Delete asset"><Trash2 size={16} aria-hidden="true" /></button>
               </div>
             </div>
 

@@ -69,19 +69,19 @@ export function RowActions({ onEdit, onDelete, editLabel, deleteLabel }: {
   )
 }
 
-/** Text edit/delete pair used inside an expanded timeline entry. */
+/** Edit/delete pair used inside an expanded timeline entry: the same icon buttons as everywhere else. */
 export function TextActions({ onEdit, onDelete }: { onEdit?: () => void; onDelete?: () => void }) {
   if (!onEdit && !onDelete) return null
   return (
     <div className="lot-text-acts">
       {onEdit && (
-        <button type="button" className="lot-textbtn" onClick={onEdit}>
-          <Pencil size={14} aria-hidden="true" /> Edit
+        <button type="button" className="pf-iconbtn" aria-label="Edit" title="Edit" onClick={onEdit}>
+          <Pencil size={14} aria-hidden="true" />
         </button>
       )}
       {onDelete && (
-        <button type="button" className="lot-textbtn is-danger" onClick={onDelete}>
-          <Trash2 size={14} aria-hidden="true" /> Delete
+        <button type="button" className="pf-iconbtn is-danger" aria-label="Delete" title="Delete" onClick={onDelete}>
+          <Trash2 size={14} aria-hidden="true" />
         </button>
       )}
     </div>

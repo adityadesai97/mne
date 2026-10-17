@@ -897,7 +897,7 @@ export default function Settings() {
                       >
                         Admin
                       </button>
-                      <button type="button" className="mne-btn is-quiet is-sm" onClick={() => void handleRemoveAllowedEmail(e.id)} aria-label={`Remove ${e.email}`}>
+                      <button type="button" className="pf-iconbtn is-danger" onClick={() => void handleRemoveAllowedEmail(e.id)} aria-label={`Remove ${e.email}`} title={`Remove ${e.email}`}>
                         <Trash2 size={14} aria-hidden="true" />
                       </button>
                     </div>

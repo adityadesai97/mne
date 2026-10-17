@@ -302,7 +302,7 @@ export default function Watchlist() {
                           {!t.is_owned && (
                             <button
                               type="button"
-                              className="mne-btn is-quiet is-sm"
+                              className="pf-iconbtn is-danger"
                               onClick={e => handleDeleteTicker(t, e)}
                               disabled={deletingTickerId === t.id}
                               aria-label={`Delete ${t.symbol}`}

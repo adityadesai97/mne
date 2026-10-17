@@ -86,10 +86,6 @@ div.lot-tli-hd { cursor: default; }
 .lot-togo { margin-bottom: 10px; }
 .lot-togo .mne-help { white-space: nowrap; }
 .lot-text-acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.lot-textbtn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-radius: var(--mne-radius-pill); padding: 6px 10px; color: var(--mne-ink-muted); cursor: pointer; font: 500 14px/18px var(--mne-font-sans); transition: background var(--mne-dur) var(--mne-ease), color var(--mne-dur) var(--mne-ease); }
-.lot-textbtn:hover { background: var(--mne-surface-300); color: var(--mne-ink); }
-.lot-textbtn.is-danger:hover { color: var(--mne-loss); }
-.lot-textbtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
 .lot-today { display: flex; align-items: center; gap: 8px; padding: 6px 10px 10px 44px; position: relative; font: 500 12px/16px var(--mne-font-sans); color: var(--mne-accent); text-transform: uppercase; letter-spacing: .06em; }
 .lot-today::before { content: ""; position: absolute; left: 12px; top: 5px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--mne-accent); background: var(--mne-surface-200); box-sizing: border-box; }
 .lot-grant .lot-today::before, .lot-grant .lot-pin, .lot-grant .lot-pin .lot-dot { background-color: var(--mne-surface-300); }
@@ -108,5 +104,5 @@ div.lot-tli-hd { cursor: default; }
   .lot-legend-end { margin-left: 0; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .lot-bar i, .lot-row, .lot-acts, .lot-textbtn { transition: none; }
+  .lot-bar i, .lot-row, .lot-acts { transition: none; }
 }
