@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { CircleUser, LogOut, Repeat } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CircleUser, LogOut, Repeat, Settings } from 'lucide-react'
 import { Tooltip } from '@/components/mne/Tooltip'
 import { getAccountInfo, signOutOfMne, switchGoogleAccount, type AccountInfo } from '@/lib/account'
 import '@/styles/account.css'
 
-// Account button with a menu: who is signed in, switch Google account, sign out. The sidebar clips its
+// Account button with a menu: who is signed in, switch Google account, sign out. The phone header (`top`)
+// has a single button, so its menu also leads with Settings. The sidebar clips its
 // children (overflow: hidden), so the menu is portalled to <body> and positioned from the trigger.
 export default function AccountMenu({ variant }: { variant: 'side' | 'top' }) {
   const [open, setOpen] = useState(false)
@@ -16,6 +18,7 @@ export default function AccountMenu({ variant }: { variant: 'side' | 'top' }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const id = useId()
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!open) return
@@ -67,7 +70,7 @@ export default function AccountMenu({ variant }: { variant: 'side' | 'top' }) {
       ref={trigger}
       type="button"
       className={variant === 'side' ? 'mne-side-btn' : 'mne-topbar-btn'}
-      aria-label="Account"
+      aria-label={variant === 'top' ? 'Account and settings' : 'Account'}
       aria-haspopup="menu"
       aria-expanded={open}
       aria-controls={open ? id : undefined}
@@ -81,7 +84,13 @@ export default function AccountMenu({ variant }: { variant: 'side' | 'top' }) {
     <>
       {variant === 'side' ? <Tooltip content="Account" side="right">{button}</Tooltip> : button}
       {open && createPortal(
-        <div ref={menu} id={id} role="menu" aria-label="Account" className="mne-acct-menu" style={pos}>
+        <div ref={menu} id={id} role="menu" aria-label={variant === 'top' ? 'Account and settings' : 'Account'} className="mne-acct-menu" style={pos}>
+          {variant === 'top' && (
+            <button type="button" role="menuitem" className="mne-acct-item" onClick={() => { setOpen(false); navigate('/settings') }}>
+              <Settings size={16} strokeWidth={1.5} aria-hidden="true" />
+              Settings
+            </button>
+          )}
           <div className="mne-acct-who">
             {info?.name && <strong>{info.name}</strong>}
             <span>{info ? info.email : 'Signed in'}</span>

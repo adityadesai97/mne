@@ -1,4 +1,4 @@
-/* App shell chrome: the slim header with the command pill (desktop) / wordmark + Settings (phone), the
+/* App shell chrome: the slim header with the command pill (desktop) / wordmark + account menu (phone), the
    raised centre action in the phone tab bar, and the quiet "Ask about this" chips. mne tokens only. */
 
 .mne-topbar { position: sticky; top: 0; z-index: 30; background: var(--mne-surface-100); border-bottom: 1px solid var(--mne-line); }

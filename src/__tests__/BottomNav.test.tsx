@@ -65,7 +65,11 @@ test('the header pill opens the command bar and advertises the shortcut', async 
   expect(onAsk).toHaveBeenCalledTimes(1)
 })
 
-test('Settings stays reachable from the header on phones', () => {
+test('the phone header has one menu button that leads to Settings and the account options', async () => {
+  const user = userEvent.setup()
   renderWithRouter(<TopBar onAsk={() => {}} open={false} controlsId="cmdk-panel" />)
-  expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+  expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'Account and settings' }))
+  expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
 })
