@@ -77,7 +77,12 @@ export async function signedInApp(page: Page, tables: Record<string, Row[]> = {}
     if (url.pathname.startsWith('/rest/v1/')) {
       const table = url.pathname.replace('/rest/v1/', '')
       if (req.method() !== 'GET') {
-        db.calls.push({ method: req.method(), path: url.pathname, body: req.postDataJSON?.() })
+        const body = req.postDataJSON?.()
+        db.calls.push({ method: req.method(), path: url.pathname, body })
+        // user_settings is upserted by the app (layout, preferences): keep the row so a reload reads it back.
+        if (table === 'user_settings' && body && typeof body === 'object') {
+          db.tables.user_settings = [{ ...(db.tables.user_settings?.[0] ?? {}), ...(body as Row) }]
+        }
         return json(route, [], req.method() === 'POST' ? 201 : 200)
       }
       const rows = db.tables[table] ?? []

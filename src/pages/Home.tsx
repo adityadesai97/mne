@@ -1,5 +1,5 @@
 // src/pages/Home.tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { animate } from 'framer-motion'
 import { TrendingUp, TrendingDown, Wallet, PieChart, Activity, Crown } from 'lucide-react'
@@ -19,6 +19,20 @@ import { useHideValues, hiddenValueClass } from '@/hooks/useHideValues'
 import { PortfolioPulseCarousel } from '@/components/PortfolioPulseCarousel'
 import '@/styles/home.css'
 import { Masonry, MasonryItem } from '@/components/mne/Masonry'
+import { DashboardEditButton, DashboardGrid } from '@/components/mne/DashboardGrid'
+import { useDashboardLayout } from '@/hooks/useDashboardLayout'
+import type { CardDef } from '@/lib/dashboardLayout'
+
+/** Home's cards in their default order and width; users can reorder, resize and hide them (see useDashboardLayout). */
+const HOME_CARDS: readonly CardDef[] = [
+  { id: 'net-worth', label: 'Net worth', span: 2 },
+  { id: 'allocation', label: 'Allocation', span: 1 },
+  { id: 'pulse', label: 'Portfolio Pulse', span: 'all' },
+  { id: 'daily-movers', label: 'Daily movers', span: 1 },
+  { id: 'largest-holding', label: 'Largest holding', span: 1 },
+  { id: 'pnl', label: 'P&L', span: 1 },
+  { id: 'best-performer', label: 'Best performer', span: 1 },
+]
 
 const HOME_CHART_RANGE_KEY = 'mne_home_chart_range'
 const HOME_CHART_RANGES = ['1M', '3M', '6M', '1Y', 'ALL'] as const
@@ -83,6 +97,7 @@ export default function Home() {
   const heroRef = useRef<HTMLSpanElement>(null)
   const greeting = useMemo(() => getGreeting(), [])
   const [hideValues] = useHideValues()
+  const dash = useDashboardLayout('home', HOME_CARDS)
 
   function handleRangeChange(range: HomeChartRange) {
     localStorage.setItem(HOME_CHART_RANGE_KEY, range)
@@ -278,15 +293,9 @@ export default function Home() {
   const hasMovers = dailyMovers.length > 0
   const rangeLabel = homeChartRange === 'ALL' ? 'all time' : homeChartRange
 
-  return (
-    <>
-    <div className="mne-main">
-      <PageHead title={heroGreeting} />
-
-      <Masonry>
-
-        {/* NET WORTH HERO */}
-        <MasonryItem span={2}>
+  // Cards with nothing to show on this screen (no movers; phone width) are null and skipped entirely.
+  const nodes: Record<string, ReactNode> = {
+    'net-worth': (
         <section className="mne-card is-hero">
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <CardEyebrow icon={Wallet}>Net worth</CardEyebrow>
@@ -333,9 +342,8 @@ export default function Home() {
             />
           </div>
         </section>
-        </MasonryItem>
-
-        {/* ALLOCATION */}
+    ),
+    allocation: (
         <section className="mne-card">
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <CardEyebrow icon={PieChart}>Allocation</CardEyebrow>
@@ -363,12 +371,10 @@ export default function Home() {
             </>
           )}
         </section>
-
-        {/* PORTFOLIO PULSE (renders nothing when there's no relevant insight) */}
-        <MasonryItem span="all"><PortfolioPulseCarousel assets={assets} netWorth={totalValue} /></MasonryItem>
-
-        {/* DAILY MOVERS */}
-        {hasMovers && (
+    ),
+    // Renders nothing itself when there's no relevant insight.
+    pulse: <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />,
+    'daily-movers': hasMovers ? (
           <section className="mne-card">
             <div className="flex items-center justify-between gap-2">
               <CardEyebrow icon={Activity}>Daily movers</CardEyebrow>
@@ -399,10 +405,9 @@ export default function Home() {
               </tbody>
             </table>
           </section>
-        )}
-
-        {/* LARGEST HOLDING */}
-        {!isPhone && <section className="mne-card">
+    ) : null,
+    'largest-holding': isPhone ? null : (
+<section className="mne-card">
           <CardEyebrow icon={Crown} accent>Largest holding</CardEyebrow>
           {largestAsset ? (
             <Link to={`/portfolio/${largestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -416,9 +421,9 @@ export default function Home() {
           ) : (
             <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
           )}
-        </section>}
-
-        {/* P&L */}
+        </section>
+    ),
+    pnl: (
         <section className="mne-card">
           <CardEyebrow icon={stockIsGain ? TrendingUp : TrendingDown} className={stockIsGain ? 'text-gain' : 'text-loss'}>P&amp;L</CardEyebrow>
           <Stat
@@ -428,9 +433,9 @@ export default function Home() {
             sub={<Delta value={stockGainLossPercent} />}
           />
         </section>
-
-        {/* BEST PERFORMER */}
-        {!isPhone && <section className="mne-card">
+    ),
+    'best-performer': isPhone ? null : (
+<section className="mne-card">
           <CardEyebrow icon={bestAssetGain >= 0 ? TrendingUp : TrendingDown} className={bestAssetGain >= 0 ? 'text-gain' : 'text-loss'}>Best performer</CardEyebrow>
           {bestAsset ? (
             <Link to={`/portfolio/${bestAsset.id}`} className="block" style={{ marginTop: 10 }}>
@@ -443,10 +448,14 @@ export default function Home() {
           ) : (
             <p className="mne-muted" style={{ marginTop: 10 }}>—</p>
           )}
-        </section>}
+        </section>
+    ),
+  }
 
-      </Masonry>
+  return (
+    <div className="mne-main">
+      <PageHead title={heroGreeting}><DashboardEditButton dash={dash} /></PageHead>
+      <DashboardGrid dash={dash} nodes={nodes} />
     </div>
-    </>
   )
 }

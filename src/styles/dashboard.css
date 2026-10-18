@@ -1,0 +1,25 @@
+/* Customizable card grids (Home, Charts): edit toolbar, per-card edit bar, hidden-card tray. */
+.mne-dash-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 20px; padding: 12px 16px; background: var(--mne-surface-200); border: 1px solid var(--mne-line); border-radius: var(--mne-radius-md); }
+.mne-dash-toolbar > p { flex: 1 1 260px; margin: 0; }
+.mne-dash-tray { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mne-dash-tray > span { font: 500 12px/16px var(--mne-font-sans); color: var(--mne-ink-muted); text-transform: uppercase; letter-spacing: .08em; }
+.mne-dash-empty { text-align: center; }
+.mne-dash-btn { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* One card in edit mode: a slim bar above the card, the card itself inert. */
+.mne-dash-frame { display: flex; flex-direction: column; gap: 8px; }
+.mne-dash-bar { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 6px 4px 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-pill); }
+.mne-dash-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/18px var(--mne-font-sans); }
+.mne-dash-handle { touch-action: none; cursor: grab; }
+.mne-dash-handle:active { cursor: grabbing; }
+.mne-dash-bar .mne-seg button { padding: 4px 10px; }
+.mne-dash-content { min-height: 56px; border-radius: var(--mne-radius-lg); outline: 2px dashed var(--mne-line-strong); outline-offset: 3px; pointer-events: none; user-select: none; }
+
+/* The card being dragged follows the pointer on top of the others; its slot in the grid shows where it will land. */
+.mne-masonry > .mne-masonry-item.is-dragging { z-index: 40; cursor: grabbing; }
+.mne-masonry.is-ready > .mne-masonry-item.is-dragging { transition: none; }
+.mne-masonry-item.is-dragging .mne-dash-content { outline-color: var(--mne-accent); box-shadow: var(--shadow-xl, 0 20px 40px rgba(0, 0, 0, .25)); }
+.mne-masonry-item.is-settling { transition: translate var(--dur-standard, 180ms) var(--ease-standard, cubic-bezier(.4, 0, .2, 1)); }
+@media (prefers-reduced-motion: reduce) {
+  .mne-masonry-item.is-settling { transition: none; }
+}
