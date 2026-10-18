@@ -14,13 +14,14 @@
 // can rank the two kinds together.
 
 import { computeRsuVestEvents } from './charts'
-import { computeAssetValue, computeCostBasis, computeShareCount, getLivePrice, isTickerAsset, netCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computePortfolioDailyChange, computeShareCount, getLivePrice, isTickerAsset, localDateKey, netCount } from './portfolio'
+import { isUsMarketClosed, lastSessionBefore } from './marketCalendar'
 import { formatDateMDY } from './dates'
 import { MAX_PULSE_CARDS, type PortfolioInsightSlot } from './portfolioExplanation'
 import { finnhubFetch } from './marketData'
 import { config } from '@/store/config'
 
-export type PulseEventKind = 'rsu_vest' | 'long_term' | 'harvest' | 'allocation_drift' | 'earnings'
+export type PulseEventKind = 'rsu_vest' | 'long_term' | 'harvest' | 'allocation_drift' | 'earnings' | 'last_session'
 
 export interface PulseEvent {
   /** Stable per occurrence (includes the date) — what "seen" is keyed on. */
@@ -32,6 +33,8 @@ export interface PulseEvent {
   question: string
   /** Percent of net worth at stake — the carousel's ranking score. */
   score: number
+  /** Signed percent move, for cards that are about one (last_session). */
+  delta?: number
 }
 
 // ── Tunables ──────────────────────────────────────────────────────────────
@@ -52,6 +55,12 @@ export const EARNINGS_TYPICAL_MOVE = 0.05
 /** Earnings dates are looked up for only the largest holdings (one Finnhub
  *  call each). */
 export const EARNINGS_MAX_SYMBOLS = 5
+/** A last-session move needs to be at least this big (percent of net worth) to
+ *  get a card, same bar as a daily portfolio move. */
+export const LAST_SESSION_MIN_PCT = 1
+/** ...and to differ from the Net worth card's own daily figure by at least
+ *  this many percentage points, otherwise the card would repeat it. */
+export const LAST_SESSION_MIN_DIFFERENCE_PP = 0.5
 
 const DAY_MS = 86_400_000
 
@@ -330,14 +339,53 @@ export function computeEarningsEventCards(
 
 /** All the synchronous event cards (everything except earnings, which needs
  *  the fetched dates — see computeEarningsEventCards). */
+/** While the market is closed (weekends and US holidays) the Net worth card
+ *  compares with yesterday, so a real move in the last trading session can
+ *  vanish from it (Saturday vs Friday is flat). This card keeps that move
+ *  visible, but only when it is a meaningful one and differs from the Net
+ *  worth card's figure. It is the stock market's move on what's held
+ *  (computePortfolioDailyChange), the same figure as the daily Pulse card
+ *  on a trading day. */
+export function computeLastSessionEventCards(
+  assets: any[],
+  netWorth: number,
+  dailyChange: { percentChange: number } | null | undefined,
+  now: Date = new Date(),
+): PulseEvent[] {
+  const today = localDateKey(now)
+  if (!isUsMarketClosed(today)) return []
+  const session = computePortfolioDailyChange(assets, netWorth, today)
+  if (session.positions.length === 0 || netWorth <= 0) return []
+  const pct = session.percentChange
+  if (Math.abs(pct) < LAST_SESSION_MIN_PCT) return []
+  if (dailyChange && Math.abs(pct - dailyChange.percentChange) < LAST_SESSION_MIN_DIFFERENCE_PP) return []
+
+  const sessionDate = lastSessionBefore(today)
+  const weekday = new Date(`${sessionDate}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
+  const direction = pct >= 0 ? 'rose' : 'fell'
+  const sinceYesterday = dailyChange
+    ? ` Your net worth is ${dailyChange.percentChange >= 0 ? 'up' : 'down'} ${Math.abs(dailyChange.percentChange).toFixed(2)}% since yesterday.`
+    : ''
+  return [{
+    id: `last_session:${sessionDate}`,
+    kind: 'last_session',
+    text: `Markets are closed. Your holdings ${direction} ${fmtMoney(session.dollarChange)} (${Math.abs(pct).toFixed(2)}% of net worth) in ${weekday}'s session.${sinceYesterday}`,
+    question: `What drove my portfolio's move in ${weekday}'s market session?`,
+    score: Math.abs(pct),
+    delta: pct,
+  }]
+}
+
 export function computeEventCards(
   assets: any[],
   netWorth: number,
   themes: { name: string; theme_targets?: { target_percentage: number | string }[] | null }[],
   earnings: Map<string, string> = new Map(),
   now: Date = new Date(),
+  dailyChange?: { percentChange: number } | null,
 ): PulseEvent[] {
   return [
+    ...computeLastSessionEventCards(assets, netWorth, dailyChange, now),
     ...computeRsuVestEventCards(assets, netWorth, now),
     ...computeLongTermEventCards(assets, netWorth, now),
     ...computeHarvestEventCards(assets, netWorth, now),

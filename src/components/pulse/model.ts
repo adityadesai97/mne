@@ -56,6 +56,7 @@ export const EVENT_LABEL: Record<string, string> = {
   harvest: 'Tax-loss candidate',
   allocation_drift: 'Allocation drift',
   earnings: 'Earnings',
+  last_session: 'Last session',
 }
 const EVENT_ICON: Record<string, LucideIcon> = {
   rsu_vest: Gift,
@@ -63,6 +64,7 @@ const EVENT_ICON: Record<string, LucideIcon> = {
   harvest: Percent,
   allocation_drift: Scale,
   earnings: CalendarDays,
+  last_session: TrendingDown,
 }
 
 const DAY_MS = 86_400_000
@@ -230,6 +232,8 @@ function eventModel(event: PulseEvent, assets: any[], now: Date): Pick<PulseCard
           visual: { kind: 'target', actual, target, label: `${actual}% vs ${target}% target` },
         }
       }
+      case 'last_session':
+        return { delta: event.delta, unit: 'of net worth', visual: null }
       case 'earnings': {
         const date = event.id.split(':')[2]
         const when = new Date(`${date}T00:00:00Z`)

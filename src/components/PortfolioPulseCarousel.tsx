@@ -114,8 +114,8 @@ export function PortfolioPulseCarousel({ assets, netWorth, dailyChange }: { asse
   const slotsKey = slots.map(slotKey).join('|')
 
   const eventCards = useMemo(
-    () => (assets.length === 0 ? [] : filterEventsByLifecycle(computeEventCards(assets, netWorth, themes, earnings))),
-    [assets, netWorth, themes, earnings],
+    () => (assets.length === 0 ? [] : filterEventsByLifecycle(computeEventCards(assets, netWorth, themes, earnings, new Date(), dailyChange))),
+    [assets, netWorth, themes, earnings, dailyChange],
   )
 
   // One cheap DB read per currently-relevant slot (typically a handful),
