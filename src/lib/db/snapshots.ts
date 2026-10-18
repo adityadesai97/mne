@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '../supabase'
-import { isTickerAsset } from '../portfolio'
+import { isTickerAsset, localDateKey } from '../portfolio'
 import { getTickerPriceHistory } from './tickerPriceHistory'
 import { estimateNetWorthOn, findDipOutliers, isNetWorthComplete, MAX_PRICE_STALENESS_DAYS } from '../snapshotBackfill'
 
@@ -29,7 +29,7 @@ export async function backfillHistoricalSnapshots(assets: any[]) {
   const real = all.filter(r => r.value > 0 && !badAnchors.has(r.date))
 
   // Candidate dates: purchase dates inside real history with no snapshot.
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateKey()
   const candidates = new Set<string>()
   for (const asset of assets) {
     if (!isTickerAsset(asset)) continue
@@ -72,7 +72,7 @@ export async function recordDailySnapshot(value: number, assets?: any[]) {
   const supabase = getSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateKey()
   await supabase.from('net_worth_snapshots')
     .upsert({ user_id: user.id, date: today, value }, { onConflict: 'user_id,date' })
 }
