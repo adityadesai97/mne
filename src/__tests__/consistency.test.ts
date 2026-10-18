@@ -64,3 +64,16 @@ test('net worth daily change is measured from the previous day, any day of the w
   expect(sat.percentChange).toBeCloseTo(0.1157, 3)
   expect(computeNetWorthDailyChange(100, [{ date: '2026-10-17', value: 100 }], '2026-10-17')).toBeNull()
 })
+
+test('Pulse portfolio card uses the Net worth card figure when given it', () => {
+  const netWorth = computeTotalNetWorth(assets)
+  const card = computeNetWorthDailyChange(netWorth, [{ date: '2024-06-14', value: netWorth + 120 }])!
+  const market = computeMovers(assets, netWorth)
+  const synced = computeMovers(assets, netWorth, card)
+  expect(synced.dayChangeDollars).toBe(card.dollarChange)
+  expect(synced.dayChangePercent).toBeCloseTo(card.percentChange, 10)
+  // Per-stock movers are market moves either way.
+  expect(synced.movers.map(m => m.dollarChange)).toEqual(market.movers.map(m => m.dollarChange))
+  // Without an override it is still the market move.
+  expect(market.dayChangeDollars).toBe(computePortfolioDailyChange(assets, netWorth).dollarChange)
+})

@@ -6,6 +6,7 @@ import {
   buildSlotTeaser,
   isSlotSeenAndUnchanged,
   type PortfolioInsightSlot,
+  type PortfolioChangeOverride,
 } from '@/lib/portfolioExplanation'
 import {
   computeEventCards,
@@ -36,9 +37,9 @@ function slotKey(slot: PortfolioInsightSlot): string {
   return `${slot.scope}:${slot.scopeKey}:${slot.timeframe}`
 }
 
-function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>, slot: PortfolioInsightSlot) {
+function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>, slot: PortfolioInsightSlot, portfolioChange?: PortfolioChangeOverride | null) {
   return slot.timeframe === 'daily'
-    ? computeMovers(assets, netWorth)
+    ? computeMovers(assets, netWorth, portfolioChange)
     : computeMoversForWindow(assets, netWorth, priceHistory, slot.windowDays, slot.timeframe)
 }
 
@@ -54,7 +55,7 @@ function resultForSlot(assets: any[], netWorth: number, priceHistory: Map<string
  *  layouts chosen in Settings → Appearance (`config.pulseView`): 'carousel'
  *  (PulseCarouselA) or 'headline' (PulseHeadlineD). Renders nothing when
  *  there's nothing to show. */
-export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; netWorth: number }) {
+export function PortfolioPulseCarousel({ assets, netWorth, dailyChange }: { assets: any[]; netWorth: number; dailyChange?: PortfolioChangeOverride | null }) {
   const [priceHistory, setPriceHistory] = useState<Map<string, TickerPricePoint[]> | null>(null)
   const [previousBySlot, setPreviousBySlot] = useState<Map<string, PortfolioExplanationRow | null>>(new Map())
   const [themes, setThemes] = useState<{ name: string; theme_targets?: { target_percentage: number | string }[] | null }[]>([])
@@ -107,8 +108,8 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
 
   const moveCards = useMemo(() => {
     if (!priceHistory || assets.length === 0) return []
-    return computeCandidateCards(assets, netWorth, priceHistory)
-  }, [assets, netWorth, priceHistory])
+    return computeCandidateCards(assets, netWorth, priceHistory, dailyChange)
+  }, [assets, netWorth, priceHistory, dailyChange])
   const slots = useMemo(() => moveCards.map(c => c.slot), [moveCards])
   const slotsKey = slots.map(slotKey).join('|')
 
@@ -144,7 +145,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
     if (!priceHistory) return { items: [] as PulseItem[], results }
     const items: PulseItem[] = []
     for (const card of moveCards) {
-      const result = resultForSlot(assets, netWorth, priceHistory, card.slot)
+      const result = resultForSlot(assets, netWorth, priceHistory, card.slot, dailyChange)
       const previous = previousBySlot.get(slotKey(card.slot)) ?? null
       const teaser = buildSlotTeaser(card.slot, result, previous)
       if (!teaser) continue
@@ -163,7 +164,7 @@ export function PortfolioPulseCarousel({ assets, netWorth }: { assets: any[]; ne
       items.push({ type: 'event', key: event.id, event, seen: seenEventIds.has(event.id) })
     }
     return { items: rankPulseItems(items), results }
-  }, [moveCards, eventCards, assets, netWorth, priceHistory, previousBySlot, seenEventIds])
+  }, [moveCards, eventCards, assets, netWorth, priceHistory, previousBySlot, seenEventIds, dailyChange])
 
   const cards = useMemo<PulseCardModel[]>(() => {
     if (!priceHistory) return []
