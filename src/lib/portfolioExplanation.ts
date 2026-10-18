@@ -21,7 +21,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
+import { localDateKey, computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
 import { createLLMClient, LLM_MODEL } from './llm'
 import { finnhubFetch } from './marketData'
 import { config } from '@/store/config'
@@ -486,11 +486,11 @@ export function computeMoversForWindow(
 }
 
 /** Calendar-day key used as a (deliberately simple) stand-in for "which
- *  market session are we in" — the same UTC-date granularity already used
- *  elsewhere in this app for "daily" things (net_worth_snapshots.date,
- *  tickers.last_updated), not a timezone-aware NYSE-open calculation. */
+ *  market session are we in": the user's local date, the same one
+ *  net_worth_snapshots.date and tickers.last_updated use, not a
+ *  timezone-aware NYSE-open calculation. */
 export function todayMarketDate(): string {
-  return new Date().toISOString().split('T')[0]
+  return localDateKey()
 }
 
 /** The set of holdings crossing the individual-mover bar — the "stock

@@ -266,7 +266,39 @@ export function computePortfolioDailyChange<A extends AssetTyped>(
   return { dollarChange, percentChange: netWorth > 0 ? (dollarChange / netWorth) * 100 : 0, positions }
 }
 
-const MS_PER_YEAR =365 * 24 * 60 * 60 * 1000
+export type NetWorthDailyChange = {
+  dollarChange: number
+  /** Percent of the previous day's net worth. */
+  percentChange: number
+  /** Date (YYYY-MM-DD) of the snapshot the change is measured from. */
+  fromDate: string
+  /** The previous day's net worth. */
+  fromValue: number
+}
+
+/** Net worth change since the previous day: live net worth minus the latest
+ *  snapshot dated before `today` (the user's local date). Unlike
+ *  computePortfolioDailyChange (what the stock market did to what you hold) this
+ *  covers every account, so it moves on weekends and holidays when a cash,
+ *  401k or crypto balance changes, and it is exactly the last step of the
+ *  Home chart. Null when there is no earlier snapshot to compare against. */
+export function computeNetWorthDailyChange(
+  netWorth: number,
+  snapshots: ReadonlyArray<{ date: string; value: number | string }>,
+  today: string = localDateKey(),
+): NetWorthDailyChange | null {
+  let previous: { date: string; value: number } | null = null
+  for (const row of snapshots) {
+    const value = Number(row.value)
+    if (!row.date || row.date >= today || !Number.isFinite(value) || value <= 0) continue
+    if (!previous || row.date > previous.date) previous = { date: row.date, value }
+  }
+  if (!previous) return null
+  const dollarChange = Math.round((netWorth - previous.value) * 100) / 100
+  return { dollarChange, percentChange: (dollarChange / previous.value) * 100, fromDate: previous.date, fromValue: previous.value }
+}
+
+const MS_PER_YEAR = 365 * 24 * 60 * 60 * 1000
 
 function yearsBetween(startIso: string, endIso: string): number {
   const start = new Date(`${startIso}T00:00:00`).getTime()

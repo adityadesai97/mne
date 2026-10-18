@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase'
+import { localDateKey } from '../portfolio'
 
 export interface TickerPricePoint {
   date: string
@@ -15,7 +16,7 @@ export async function recordTickerPriceSnapshots(prices: { tickerId: string; pri
   const supabase = getSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateKey()
   const { error } = await supabase
     .from('ticker_price_history')
     .upsert(
@@ -33,7 +34,7 @@ export async function backfillTickerPriceHistory(tickerId: string, points: Ticke
   const supabase = getSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateKey()
   const rows = points
     .filter(p => p.date < today)
     .map(p => ({ user_id: user.id, ticker_id: tickerId, date: p.date, price: p.price }))

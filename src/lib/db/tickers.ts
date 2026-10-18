@@ -1,5 +1,6 @@
 import type { TablesInsert } from '../database.types'
 import { getSupabaseClient } from '../supabase'
+import { localDateKey } from '../portfolio'
 import { recordTickerPriceSnapshots } from './tickerPriceHistory'
 import { CoinGeckoError, fetchCryptoQuotes } from '../coingecko'
 import { showAppAlert } from '../appAlerts'
@@ -46,7 +47,7 @@ export async function upsertTicker(ticker: TablesInsert<'tickers'>) {
 }
 
 export async function updateTickerPrice(symbol: string, price: number, previousClose?: number | null) {
-  const update: Record<string, unknown> = { current_price: price, last_updated: new Date().toISOString().split('T')[0] }
+  const update: Record<string, unknown> = { current_price: price, last_updated: localDateKey() }
   if (previousClose != null) update.previous_close = previousClose
   const { error } = await getSupabaseClient()
     .from('tickers')

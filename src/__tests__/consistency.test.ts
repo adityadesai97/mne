@@ -1,4 +1,4 @@
-import { computePortfolioDailyChange, computeTotalNetWorth, computeDailyChange, localDateKey } from '../lib/portfolio'
+import { computePortfolioDailyChange, computeNetWorthDailyChange, computeTotalNetWorth, computeDailyChange, localDateKey } from '../lib/portfolio'
 import { computeMovers } from '../lib/portfolioExplanation'
 import { executeReadTool } from '../lib/claude'
 
@@ -32,11 +32,19 @@ test('Home, Pulse and the command bar agree on net worth and today\'s change', a
   expect(pulse.dayChangeDollars).toBe(daily.dollarChange)
   expect(pulse.dayChangePercent).toBeCloseTo(daily.percentChange, 10)
 
-  const ctx = { assets, getSnapshotsCached: async () => [] } as any
+  // Yesterday's snapshot, plus a stale row dated today and a future-dated (UTC) one, both ignored.
+  const snapshots = [{ date: '2000-01-01', value: 1 }, { date: '2024-06-14', value: netWorth - 1500 }, { date: today, value: netWorth }, { date: '2999-01-01', value: netWorth }]
+  const ctx = { assets, getSnapshotsCached: async () => snapshots } as any
   const summary: any = await executeReadTool('get_portfolio_summary', {}, ctx)
   expect(summary.totals.netWorth).toBe(Math.round(netWorth * 100) / 100)
-  expect(summary.today.change).toBe(daily.dollarChange)
-  expect(summary.today.changePct).toBeCloseTo(Math.round(daily.percentChange * 100) / 100, 10)
+  expect(summary.today.stockMarketMove).toBe(daily.dollarChange)
+  expect(summary.today.stockMarketMovePct).toBeCloseTo(Math.round(daily.percentChange * 100) / 100, 10)
+  // The Home card and the command bar read the same net-worth-vs-yesterday figure.
+  const vsYesterday = computeNetWorthDailyChange(netWorth, snapshots)!
+  expect(vsYesterday.dollarChange).toBe(1500)
+  expect(vsYesterday.fromDate).toBe('2024-06-14')
+  expect(summary.today.netWorthChange).toBe(vsYesterday.dollarChange)
+  expect(summary.today.netWorthChangePct).toBeCloseTo(Math.round(vsYesterday.percentChange * 100) / 100, 10)
 
   const positions: any = await executeReadTool('get_positions', {}, ctx)
   const rows: any[] = positions.rows ?? positions.positions ?? []
@@ -45,4 +53,14 @@ test('Home, Pulse and the command bar agree on net worth and today\'s change', a
     expect(row.dayChange).toBe(change.dollarChange)
     expect(computeDailyChange(asset)!.dollarChange).toBe(change.dollarChange)
   }
+})
+
+test('net worth daily change is measured from the previous day, any day of the week', () => {
+  const snaps = [{ date: '2026-10-16', value: '1288904.86' }, { date: '2026-10-17', value: 1290375.93 }, { date: '2026-10-18', value: 1290395.88 }]
+  // Saturday (markets closed): compared to Friday, not Saturday's own row or the UTC-dated Sunday row.
+  const sat = computeNetWorthDailyChange(1290395.88, snaps, '2026-10-17')!
+  expect(sat.fromDate).toBe('2026-10-16')
+  expect(sat.dollarChange).toBeCloseTo(1491.02, 2)
+  expect(sat.percentChange).toBeCloseTo(0.1157, 3)
+  expect(computeNetWorthDailyChange(100, [{ date: '2026-10-17', value: 100 }], '2026-10-17')).toBeNull()
 })

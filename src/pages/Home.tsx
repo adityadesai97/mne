@@ -7,7 +7,7 @@ import { AiMark } from '@/components/mne/AiMark'
 import { getAllAssets } from '@/lib/db/assets'
 import { getSnapshots } from '@/lib/db/snapshots'
 import { dropDipOutliers } from '@/lib/snapshotBackfill'
-import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computePortfolioDailyChange, isTickerAsset } from '@/lib/portfolio'
+import { computeCostBasis, computeUnrealizedGain, computeTotalNetWorth, computeAssetValue, computePortfolioDailyChange, computeNetWorthDailyChange, isTickerAsset } from '@/lib/portfolio'
 import { getSupabaseClient } from '@/lib/supabase'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
 import { CardEyebrow } from '@/components/CardEyebrow'
@@ -219,19 +219,17 @@ export default function Home() {
     return [...dailyMovers].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 5)
   }, [dailyMovers, moverSort])
 
-  // Today's change: the sum of each stock position's (current price − last
-  // close) move — the same computeDailyChange basis Portfolio Pulse uses
-  // (via computeMovers), so the hero and the explanation card always agree.
-  // Deliberately NOT derived from the net worth snapshot series anymore —
-  // that compared today's live net worth to whatever net worth happened to
-  // be recorded the last time the app was open yesterday (recordDailySnapshot
-  // overwrites "today"'s row on every visit), which could be any point in
-  // yesterday's session rather than its actual close, and silently understated
-  // or overstated the real move depending on when that was. Drives both the
-  // ambient glow's color and the daily change figure under the hero number.
-  const todayChange = portfolioDaily.dollarChange
-  const todayChangePercent = portfolioDaily.percentChange
-  const hasMood = dailyMovers.length > 0 && todayChange !== 0
+  // The daily change under the hero is net worth vs the previous day's
+  // snapshot (every account, every day of the week), so it is exactly the last
+  // step of the chart below. Until a previous snapshot exists it falls back
+  // to the stock market's move on what's held (computePortfolioDailyChange).
+  const netWorthDaily = useMemo(
+    () => computeNetWorthDailyChange(totalValue, snapshots),
+    [totalValue, snapshots],
+  )
+  const todayChange = netWorthDaily?.dollarChange ?? portfolioDaily.dollarChange
+  const todayChangePercent = netWorthDaily?.percentChange ?? portfolioDaily.percentChange
+  const hasMood = snapshotsLoaded && (netWorthDaily != null || dailyMovers.length > 0)
 
   const heroGreeting = `${greeting.text}${firstName ? `, ${firstName}` : ''}`
   const isUpdating = isRefreshingPrices
@@ -306,9 +304,9 @@ export default function Home() {
             {isUpdating && <div className="mne-progress" style={{ width: 160, height: 6 }} role="status" aria-label="Updating prices" />}
           </div>
 
-          {hasMood && Math.abs(todayChange) >= 1 && (
+          {hasMood && (
             <div className={hiddenValueClass(hideValues)} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span className="mne-chip"><Delta value={todayChangePercent} suffix="today" /></span>
+              <span className="mne-chip"><Delta value={todayChangePercent} suffix="vs yesterday" /></span>
               <span className="mne-muted mne-num">{todayChange >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(todayChange))}</span>
             </div>
           )}

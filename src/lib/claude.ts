@@ -11,7 +11,7 @@ import { autoAssignThemesForTickerIfEnabled } from './autoThemes'
 import { computeThemeDistribution, computeRsuVestEvents, rsuVestedSharesAsOf } from './charts'
 import type { RsuVestingFrequency } from './charts'
 import { ensureCryptoTicker } from './db/cryptoTickers'
-import { computeAssetValue, computeCostBasis, computeDailyChange, computePortfolioDailyChange, computeShareCount, getLivePrice, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
+import { computeAssetValue, computeCostBasis, computeDailyChange, computePortfolioDailyChange, computeNetWorthDailyChange, localDateKey, computeShareCount, getLivePrice, computeTotalNetWorth, computeUnrealizedGain, isTradableFixedIncome, isTickerAsset, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount } from './portfolio'
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
 import { findMatchingLot, isLotFixedIncomeSubtype } from './plaidMatching'
@@ -55,7 +55,7 @@ async function fetchAndStorePrice(tickerId: string, symbol: string): Promise<voi
     if (quote.c) {
       await getSupabaseClient().from('tickers').update({
         current_price: quote.c,
-        last_updated: new Date().toISOString().split('T')[0],
+        last_updated: localDateKey(),
       }).eq('id', tickerId)
     }
   } catch { /* best effort */ }
@@ -1262,13 +1262,20 @@ export async function executeReadTool(
     const totalCashLikeValue = cashLikePositions.reduce((sum, row) => sum + row.marketValue, 0)
     const unrealizedStockPnL = stockPositions.reduce((sum, row) => sum + (row.unrealizedGain ?? 0), 0)
     const daily = computePortfolioDailyChange(context.assets, totalNetWorth)
+    const vsYesterday = computeNetWorthDailyChange(totalNetWorth, await context.getSnapshotsCached())
     return {
       asOf: new Date().toISOString(),
       today: {
-        // The same figure as the Net worth card on Home. Use this (never the
-        // net worth history) for any "why is my net worth up/down today" answer.
-        change: daily.dollarChange,
-        changePct: Math.round(daily.percentChange * 100) / 100,
+        // netWorthChange is the same figure as the Net worth card on Home:
+        // all accounts vs the previous day's net worth, available every day of
+        // the week. Use it for "how much is my net worth up/down". stockMarketMove
+        // is only what the market did to the stocks/crypto held (zero on a
+        // closed-market day); explain *why* with get_positions dayChange.
+        netWorthChange: vsYesterday?.dollarChange ?? null,
+        netWorthChangePct: vsYesterday ? Math.round(vsYesterday.percentChange * 100) / 100 : null,
+        comparedTo: vsYesterday?.fromDate ?? null,
+        stockMarketMove: daily.dollarChange,
+        stockMarketMovePct: Math.round(daily.percentChange * 100) / 100,
         positionsMeasured: daily.positions.length,
       },
       totals: {
@@ -1354,7 +1361,7 @@ export async function executeReadTool(
   if (toolName === 'get_net_worth_timeseries') {
     const range = normalizeNetWorthRange(input?.range)
     const snapshots = await context.getSnapshotsCached()
-    const fallbackDate = new Date().toISOString().slice(0, 10)
+    const fallbackDate = localDateKey()
     const seed = snapshots.length > 0
       ? snapshots
       : [{ date: fallbackDate, value: Math.round(computeTotalNetWorth(context.assets) * 100) / 100 }]
@@ -1672,7 +1679,7 @@ RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. In
 Any message describing shares that "vested"/"just vested"/"vesting" — even if the word "grant" or "RSU" is never used — is an RSU vest into an EXISTING grant. Do NOT treat it as a Market purchase. This always requires THREE pieces of information before you may call add_stock_transaction/add_stock_transactions: cost_price (FMV at vest), purchase_date (the vest date), AND grant_date (the award/grant date of the existing grant this vest belongs to — NOT the vest date). Always set subtype: 'RSU'. When asking the user for missing details, ask for all three together (FMV, vest date, and which grant/grant date) rather than asking for FMV and vest date first and grant_date later. Never guess or infer grant_date from the vest date or from context — if the user does not explicitly state which grant (by its award date) a vest belongs to, call get_positions first to see the recorded grant dates for that symbol, then ask the user to confirm.
 If the user mentions moving sale proceeds, put destination into sell_shares.proceeds_destination_asset_name and transfer amount (default to count×sale_price). Do NOT ask for a new total value.
 If the user says they sold shares and does not mention proceeds transfer, ask whether they want to transfer the sale proceeds to another asset/account.
-Today's date is ${new Date().toISOString().split('T')[0]}${attachmentSection}`
+Today's date is ${localDateKey()}${attachmentSection}`
 }
 
 const tools = [
@@ -1739,7 +1746,7 @@ const tools = [
     type: 'function' as const,
     function: {
       name: 'get_net_worth_timeseries',
-      description: "Return net worth history and changes for a selected range. This is a chart series of daily snapshots, NOT today's market move: never use it to say how much net worth changed today or why. For today's change use get_portfolio_summary (`today`) and get_positions (dayChange).",
+      description: "Return net worth history and changes for a selected range. This is a chart series of daily snapshots, NOT today's market move: never use it to say how much net worth changed today or why. For today's change use get_portfolio_summary (`today.netWorthChange`) and get_positions (dayChange).",
       parameters: {
         type: 'object' as const,
         properties: {
