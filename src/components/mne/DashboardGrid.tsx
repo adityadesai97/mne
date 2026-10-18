@@ -61,7 +61,7 @@ const spanKey = (s: CardSpan) => String(s) as '1' | '2' | 'all'
  * column only hiding is offered. `nodes` maps card id to content; a missing or
  * null entry means the card has nothing to show and is skipped entirely.
  */
-export function DashboardGrid({ dash, nodes, fill = false }: { dash: DashboardLayoutApi; nodes: Record<string, ReactNode>; fill?: boolean }) {
+export function DashboardGrid({ dash, nodes }: { dash: DashboardLayoutApi; nodes: Record<string, ReactNode> }) {
   const { cards, editing } = dash
   const available = cards.filter((c) => nodes[c.id] != null && nodes[c.id] !== false)
   const shown = available.filter((c) => !c.hidden)
@@ -77,9 +77,6 @@ export function DashboardGrid({ dash, nodes, fill = false }: { dash: DashboardLa
   latest.current = { dash, shown }
 
   const canDrag = editing && columns > 1
-  // The gap-filling packer reorders and widens cards, so it only runs on an untouched arrangement and never while editing.
-  const useFill = fill && !editing && dash.isDefaultArrangement
-
   const isShown = useCallback((c: ResolvedCard) => latest.current.shown.some((s) => s.id === c.id), [])
 
   // Keyboard moves re-parent the card's DOM node, which drops focus; put it back on the same handle.
@@ -264,7 +261,7 @@ export function DashboardGrid({ dash, nodes, fill = false }: { dash: DashboardLa
         </section>
       )}
 
-      <Masonry fill={useFill} onColumnsChange={setColumns} onPack={onPack}>
+      <Masonry onColumnsChange={setColumns} onPack={onPack}>
         {shown.map((c) => (
           <MasonryItem key={c.id} span={c.span}>
             {editing ? (

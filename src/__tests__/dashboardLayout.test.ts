@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest'
 import {
-  CARD_SPANS, defaultLayout, effectiveColumns, findDropTarget, isDefaultArrangement, isDefaultLayout, moveCard, moveRelative,
+  CARD_SPANS, defaultLayout, effectiveColumns, findDropTarget, isDefaultLayout, moveCard, moveRelative,
   resolveLayout, sanitizeLayout, sanitizeLayouts, setCardHidden, setCardSpan, shownPosition, toSavedLayout,
   type CardDef, type CardSpan, type ResolvedCard,
 } from '@/lib/dashboardLayout'
@@ -101,14 +101,6 @@ test('setCardSpan marks a custom width only when it differs from the default', (
   expect(isDefaultLayout(DEFS, back)).toBe(true)
   expect(setCardSpan(cards, DEFS, 'nope', 2)).toEqual(cards)
   expect(setCardSpan(cards, DEFS, 'b', 5 as unknown as CardSpan)).toEqual(cards)
-})
-
-test('hiding does not change the arrangement; reordering or resizing does', () => {
-  const cards = defaultLayout(DEFS)
-  expect(isDefaultArrangement(DEFS, setCardHidden(cards, 'a', true))).toBe(true)
-  expect(isDefaultLayout(DEFS, setCardHidden(cards, 'a', true))).toBe(false)
-  expect(isDefaultArrangement(DEFS, moveCard(cards, 'a', 'b'))).toBe(false)
-  expect(isDefaultArrangement(DEFS, setCardSpan(cards, DEFS, 'b', 'all'))).toBe(false)
 })
 
 test('a card never takes more columns than the grid has, and narrow grids clamp wide spans', () => {

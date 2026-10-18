@@ -13,7 +13,7 @@
 .mne-dash-handle { touch-action: none; cursor: grab; }
 .mne-dash-handle:active { cursor: grabbing; }
 .mne-dash-bar .mne-seg button { padding: 4px 10px; }
-.mne-dash-content { min-height: 56px; border-radius: var(--mne-radius-lg); outline: 2px dashed var(--mne-line-strong); outline-offset: 3px; pointer-events: none; user-select: none; }
+.mne-dash-content { flex: 1 1 auto; min-height: 56px; border-radius: var(--mne-radius-lg); outline: 2px dashed var(--mne-line-strong); outline-offset: 3px; pointer-events: none; user-select: none; }
 
 /* The card being dragged follows the pointer on top of the others; its slot in the grid shows where it will land. */
 .mne-masonry > .mne-masonry-item.is-dragging { z-index: 40; cursor: grabbing; }
@@ -23,3 +23,6 @@
 @media (prefers-reduced-motion: reduce) {
   .mne-masonry-item.is-settling { transition: none; }
 }
+
+/* In a packed row the frame is as tall as the row; the card inside grows to fill it. */
+.mne-dash-content > .mne-card { height: 100%; }

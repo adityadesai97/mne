@@ -1,46 +1,74 @@
 import { test, expect } from 'vitest'
-import { packMasonry, columnsForWidth, resolveSpan } from '@/components/mne/Masonry'
+import { packRows, columnsForWidth, resolveSpan } from '@/components/mne/Masonry'
+
+const tops = (r: ReturnType<typeof packRows>) => r.placements.map((p) => p.top)
+const cols = (r: ReturnType<typeof packRows>) => r.placements.map((p) => p.column)
+/** Height each card ends up with (its own plus the stretch to its row). */
+const heights = (r: ReturnType<typeof packRows>, items: { height: number }[]) => r.placements.map((p, i) => items[i].height + (p.stretch ?? 0))
 
 test('single column stacks in order with gaps', () => {
-  const { placements, height } = packMasonry([{ height: 100 }, { height: 50 }, { height: 20 }], 1, 10)
-  expect(placements.map(p => p.top)).toEqual([0, 110, 170])
+  const { placements, height } = packRows([{ height: 100 }, { height: 50 }, { height: 20 }], 1, 10)
+  expect(placements.map((p) => p.top)).toEqual([0, 110, 170])
   expect(height).toBe(190)
 })
 
-test('shortest column first, ties go left', () => {
-  const { placements, height } = packMasonry(
-    [{ height: 100 }, { height: 40 }, { height: 40 }, { height: 40 }], 2, 0)
-  expect(placements.map(p => p.column)).toEqual([0, 1, 1, 1])
-  expect(placements.map(p => p.top)).toEqual([0, 0, 40, 80])
-  expect(height).toBe(120)
+test('cards in a row share the row height and the next row starts below it', () => {
+  const items = [{ height: 100 }, { height: 160 }, { height: 40 }, { height: 70 }, { height: 90 }]
+  const r = packRows(items, 3, 20)
+  expect(cols(r)).toEqual([0, 1, 2, 0, 1])
+  expect(tops(r)).toEqual([0, 0, 0, 180, 180])
+  expect(heights(r, items)).toEqual([160, 160, 160, 90, 90])
+  expect(r.height).toBe(180 + 90)
 })
 
-test('zero-height items are hidden and add no gap', () => {
-  const { placements, height } = packMasonry([{ height: 10 }, { height: 0 }, { height: 10 }], 1, 24)
+test('the tallest card in a row is not stretched', () => {
+  const r = packRows([{ height: 100 }, { height: 160 }], 2, 0)
+  expect(r.placements[1].stretch).toBeUndefined()
+  expect(r.placements[0].stretch).toBe(60)
+})
+
+test('a wide card shares its row with the cards that fit beside it', () => {
+  const items = [{ height: 300, span: 2 as const }, { height: 120 }, { height: 200 }, { height: 80 }]
+  const r = packRows(items, 3, 24)
+  expect(r.placements[0]).toMatchObject({ column: 0, span: 2, top: 0 })
+  expect(r.placements[1]).toMatchObject({ column: 2, span: 1, top: 0 })
+  expect(heights(r, items).slice(0, 2)).toEqual([300, 300])
+  expect(r.placements[2].top).toBe(324)
+})
+
+test('a full-width card gets a row to itself', () => {
+  const r = packRows([{ height: 100 }, { height: 50, span: 'all' }, { height: 100, span: 'all' }], 3, 10)
+  expect(r.placements[0]).toMatchObject({ column: 0, span: 3, top: 0 }) // alone in its row, so it widens to the edge
+  expect(r.placements[1]).toMatchObject({ column: 0, span: 3, top: 110 })
+  expect(r.placements[2]).toMatchObject({ column: 0, span: 3, top: 170 })
+})
+
+test('a later card that fits is pulled into the space left in a row; the skipped card keeps its turn', () => {
+  // row 1: [2-wide][?] — the next card is 2-wide and does not fit, the 1-wide after it does
+  const items = [{ height: 100, span: 2 as const }, { height: 100, span: 2 as const }, { height: 60 }]
+  const r = packRows(items, 3, 0)
+  expect(r.placements[2]).toMatchObject({ column: 2, top: 0 })
+  expect(r.placements[1]).toMatchObject({ column: 0, top: 100 })
+})
+
+test('a row that cannot be filled widens its last card to the edge, the final row included', () => {
+  // 2 columns: [1][all][all] -> nothing later fits beside the first card, so it widens
+  const r = packRows([{ height: 50 }, { height: 50, span: 'all' }, { height: 50, span: 'all' }], 2, 0)
+  expect(r.placements[0]).toMatchObject({ column: 0, span: 2, top: 0 })
+  // a lone 1-wide card in the last row also fills it
+  const last = packRows([{ height: 50, span: 'all' }, { height: 50 }], 2, 0)
+  expect(last.placements[1]).toMatchObject({ column: 0, span: 2, top: 50 })
+  // and so does a short last row of several cards: the final card takes the leftover
+  const three = packRows([{ height: 50 }, { height: 50 }, { height: 50 }, { height: 50 }], 3, 0)
+  expect(three.placements.map((p) => [p.column, p.span])).toEqual([[0, 1], [1, 1], [2, 1], [0, 3]])
+})
+
+test('zero-height cards are hidden and add no gap', () => {
+  const { placements, height } = packRows([{ height: 10 }, { height: 0 }, { height: 10 }], 1, 24)
   expect(placements[1].hidden).toBe(true)
   expect(placements[2].top).toBe(34)
   expect(height).toBe(44)
-  expect(packMasonry([], 3, 24).height).toBe(0)
-})
-
-test('span all starts below every column', () => {
-  const { placements } = packMasonry([{ height: 100 }, { height: 30 }, { height: 50, span: 'all' }], 2, 0)
-  expect(placements[2]).toMatchObject({ column: 0, span: 2, top: 100 })
-})
-
-test('a wide item pulls later small items forward to fill the hole above it', () => {
-  const items = [{ height: 200 }, { height: 80 }, { height: 60, span: 'all' as const }, { height: 100 }, { height: 100 }]
-  const { placements } = packMasonry(items, 2, 0)
-  // item 3 (100) fits under item 1 (80+100=180 <= 200) instead of leaving a hole
-  expect(placements[3]).toMatchObject({ column: 1, top: 80 })
-  expect(placements[2].top).toBe(200)
-  // pulling item 4 as well would push the wide item down, so it goes after
-  expect(placements[4].top).toBeGreaterThanOrEqual(260)
-})
-
-test('two-of-three span picks the lowest pair', () => {
-  const { placements } = packMasonry([{ height: 50 }, { height: 50 }, { height: 50 }, { height: 30, span: 2 }], 3, 0)
-  expect(placements[3]).toMatchObject({ column: 0, span: 2, top: 50 })
+  expect(packRows([], 3, 24).height).toBe(0)
 })
 
 test('span is clamped to the column count', () => {
@@ -57,35 +85,12 @@ test('column count follows container width', () => {
   expect(columnsForWidth(3000, 300, 24, 3)).toBe(3)
 })
 
-test('packFill leaves no ragged column bottoms and no empty column beside a wide card', async () => {
-  const { packFill } = await import('@/components/mne/Masonry')
-  const items = [{ height: 260 }, { height: 100 }, { height: 260, span: 2 }, { height: 220 }, { height: 280, span: 2 }, { height: 230, span: 2 }]
-  const { placements, height } = packFill(items, 3, 24)
-  const bottoms = [0, 0, 0]
-  placements.forEach((p, i) => {
-    if (p.hidden) return
-    for (let c = p.column; c < p.column + p.span; c++) bottoms[c] = Math.max(bottoms[c], p.top + items[i].height + (p.stretch ?? 0))
-  })
-  for (const b of bottoms) expect(Math.abs(b - height)).toBeLessThan(1)
-})
-
-test('packFill falls back to plain packing in one column', async () => {
-  const { packFill } = await import('@/components/mne/Masonry')
-  const { placements } = packFill([{ height: 10 }, { height: 20 }], 1, 5)
-  expect(placements.map(p => p.top)).toEqual([0, 15])
-})
-
-test('equally good hole fillers keep DOM order despite sub-pixel height noise', async () => {
-  const { packMasonry } = await import('@/components/mne/Masonry')
-  // Net worth (2 cols), a short card under it, a wide card, then three same-height cards that all fit the hole beside the short card.
-  for (const noise of [[0, 0.01, -0.01], [0.01, -0.01, 0], [-0.01, 0, 0.01]]) {
-    const items = [
-      { height: 400, span: 2 }, { height: 134 }, { height: 600, span: 'all' as const },
-      { height: 138 + noise[0] }, { height: 138 + noise[1] }, { height: 138 + noise[2] },
-    ]
-    const { placements } = packMasonry(items, 2, 24)
-    expect(placements[3].top).toBeLessThan(placements[2].top) // first candidate fills the hole
-    expect(placements[4].top).toBeGreaterThan(placements[2].top)
-    expect(placements[5].top).toBeGreaterThan(placements[2].top)
+test('sub-pixel height noise never changes which cards share a row or their order', () => {
+  const base = [{ height: 400, span: 2 as const }, { height: 134 }, { height: 600, span: 'all' as const }, { height: 138 }, { height: 138 }, { height: 138 }]
+  const ref = packRows(base, 3, 24)
+  for (const noise of [0.01, -0.01, 0.4, -0.4]) {
+    const r = packRows(base.map((it, i) => ({ ...it, height: it.height + (i % 2 ? noise : -noise) })), 3, 24)
+    expect(cols(r)).toEqual(cols(ref))
+    expect(r.placements.map((p) => p.span)).toEqual(ref.placements.map((p) => p.span))
   }
 })

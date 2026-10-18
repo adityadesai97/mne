@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  defaultLayout, isDefaultArrangement, isDefaultLayout, moveCard, moveRelative, resolveLayout, setCardHidden, setCardSpan,
+  defaultLayout, isDefaultLayout, moveCard, moveRelative, resolveLayout, setCardHidden, setCardSpan,
   toSavedLayout, type CardDef, type CardSpan, type DashboardPage, type ResolvedCard,
 } from '@/lib/dashboardLayout'
 import { getCachedDashboardLayout, loadDashboardLayouts, saveDashboardLayout } from '@/lib/db/dashboardLayouts'
@@ -15,8 +15,6 @@ export interface DashboardLayoutApi {
   setEditing: (v: boolean) => void
   /** Order, width and hidden state all match the defaults. */
   isDefault: boolean
-  /** Order and widths match the defaults (hiding is ignored): the gap-filling packer may be used. */
-  isDefaultArrangement: boolean
   /** Live reorder while dragging: updates the view, saves on `endDrag`. */
   previewMove: (id: string, targetId: string) => void
   endDrag: () => void
@@ -72,7 +70,6 @@ export function useDashboardLayout(page: DashboardPage, defs: readonly CardDef[]
     editing,
     setEditing,
     isDefault: isDefaultLayout(defs, cards),
-    isDefaultArrangement: isDefaultArrangement(defs, cards),
     previewMove: (id, targetId) => commit(moveCard(cardsRef.current, id, targetId), false),
     endDrag: () => commit(cardsRef.current, true),
     moveBy: (id, direction, isShown) => {

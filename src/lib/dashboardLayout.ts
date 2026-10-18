@@ -115,15 +115,6 @@ export function isDefaultLayout(defs: readonly CardDef[], cards: readonly Resolv
     && cards.every((c, i) => c.id === defs[i].id && !c.hidden && !c.spanCustom)
 }
 
-/**
- * True when the arrangement (order and widths) is untouched; hiding cards does
- * not count. Charts only uses its gap-filling packer in this case, because that
- * packer reorders and widens cards, which would override a user's choices.
- */
-export function isDefaultArrangement(defs: readonly CardDef[], cards: readonly ResolvedCard[]): boolean {
-  return cards.length === defs.length && cards.every((c, i) => c.id === defs[i].id && !c.spanCustom)
-}
-
 export function defaultLayout(defs: readonly CardDef[]): ResolvedCard[] {
   return resolveLayout(defs, [])
 }

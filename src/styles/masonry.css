@@ -1,4 +1,4 @@
-/* Masonry: packed card layout (see src/components/mne/Masonry.tsx).
+/* Masonry (row-aligned card grid): packed card layout (see src/components/mne/Masonry.tsx).
    One column (and before the first measurement) the items simply stack in
    DOM order. With two or more columns the component positions each item with
    a transform and sets the container height. No overflow is clipped anywhere,
@@ -22,5 +22,6 @@
   .mne-masonry.is-ready > .mne-masonry-item { transition: none; }
 }
 
-/* Fill mode: a stretched item has an explicit height, so its card grows to fill it. */
-.mne-masonry.is-fill > .mne-masonry-item > .mne-card { height: 100%; }
+/* Every item in a packed row has the row's height, so its card (or, in layout edit mode, the edit frame and the card inside it) grows to fill it. */
+.mne-masonry.is-packed > .mne-masonry-item > .mne-card,
+.mne-masonry.is-packed > .mne-masonry-item > .mne-dash-frame { height: 100%; }
