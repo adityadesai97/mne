@@ -9,6 +9,7 @@
 // hook) needs no LLM call at all, it's derived straight from computeMovers.
 
 import { getAllAssets } from './db/assets'
+import { getSnapshots } from './db/snapshots'
 import {
   getPortfolioExplanation,
   upsertPortfolioExplanation,
@@ -21,7 +22,7 @@ import {
 } from './db/portfolioExplanations'
 import { getTickerPriceHistory, type TickerPricePoint } from './db/tickerPriceHistory'
 import { logLlmUsage } from './db/llmUsage'
-import { localDateKey, computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
+import { computeNetWorthDailyChange, localDateKey, computeDailyPosition, computeShareCount, computeTotalNetWorth, isTickerAsset, netCount } from './portfolio'
 import { createLLMClient, LLM_MODEL } from './llm'
 import { finnhubFetch } from './marketData'
 import { config } from '@/store/config'
@@ -393,9 +394,18 @@ function computeSymbolMovesForWindow(assets: any[], priceHistory: Map<string, Ti
  *  each tier only fires (or fetches supporting news) when its own condition
  *  is met. `stockPct`/`portfolioPct` are the timeframe-scaled "major move"
  *  bars (see MAJOR_MOVE_*_PCT_BY_TIMEFRAME). */
-function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: number, portfolioPct: number): MoversResult {
-  const dayChangeDollars = Math.round(symbolMoves.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100
-  const dayChangePercent = netWorth > 0 ? (dayChangeDollars / netWorth) * 100 : 0
+function attributeMoves(
+  symbolMoves: SymbolMove[],
+  netWorth: number,
+  stockPct: number,
+  portfolioPct: number,
+  portfolioChange?: PortfolioChangeOverride,
+): MoversResult {
+  const marketDollars = Math.round(symbolMoves.reduce((sum, m) => sum + m.dollarChange, 0) * 100) / 100
+  // The headline figure is the override when given (the Net worth card's own
+  // number); breadth/direction signals below keep reading the market moves.
+  const dayChangeDollars = portfolioChange ? portfolioChange.dollarChange : marketDollars
+  const dayChangePercent = portfolioChange ? portfolioChange.percentChange : netWorth > 0 ? (marketDollars / netWorth) * 100 : 0
 
   const totalAbsSwing = symbolMoves.reduce((sum, m) => sum + Math.abs(m.dollarChange), 0)
   const ranked = [...symbolMoves].sort((a, b) => Math.abs(b.dollarChange) - Math.abs(a.dollarChange))
@@ -403,7 +413,7 @@ function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: n
   const themeMoves = detectThemeMoves(symbolMoves)
   const themeMemberSymbols = new Set(themeMoves.flatMap(t => t.memberSymbols))
 
-  const overallDirection = Math.sign(dayChangeDollars)
+  const overallDirection = Math.sign(marketDollars)
   const agreeingWithOverall = symbolMoves.filter(m =>
     overallDirection !== 0 && Math.abs(m.percentChange) >= NOISE_BAND_PCT && Math.sign(m.percentChange) === overallDirection,
   )
@@ -459,12 +469,27 @@ function attributeMoves(symbolMoves: SymbolMove[], netWorth: number, stockPct: n
   return { movers, dayChangeDollars, dayChangePercent, hasMajorMove, isBroadMarketMove, themeMoves }
 }
 
-/** The daily basis — current price vs. previous_close, summed. Unchanged
- *  from before this file gained other timeframes; every existing caller
- *  (Home's hero/Daily Movers, the Portfolio Pulse teaser) keeps working
- *  exactly as documented in CLAUDE.md. */
-export function computeMovers(assets: any[], netWorth: number): MoversResult {
-  return attributeMoves(computeSymbolMoves(assets), netWorth, MAJOR_MOVE_STOCK_PCT, MAJOR_MOVE_PORTFOLIO_PCT)
+/** The portfolio-level daily figure when it should be the Net worth card's own
+ *  number (net worth vs the previous day, see computeNetWorthDailyChange)
+ *  rather than the sum of stock price moves. */
+export type PortfolioChangeOverride = { dollarChange: number; percentChange: number }
+
+/** The daily basis — current price vs. previous_close per position, summed.
+ *  Pass `portfolioChange` (the Net worth card's figure) so the portfolio-level
+ *  headline, and whether it counts as a major move, agree with that card;
+ *  per-stock and sector moves stay market moves either way. */
+export function computeMovers(assets: any[], netWorth: number, portfolioChange?: PortfolioChangeOverride | null): MoversResult {
+  return attributeMoves(computeSymbolMoves(assets), netWorth, MAJOR_MOVE_STOCK_PCT, MAJOR_MOVE_PORTFOLIO_PCT, portfolioChange ?? undefined)
+}
+
+/** Loads the previous-day snapshots and returns the Net worth card's change,
+ *  or null when unavailable (no earlier snapshot, or the read failed). */
+export async function loadNetWorthDailyChange(netWorth: number): Promise<PortfolioChangeOverride | null> {
+  try {
+    return computeNetWorthDailyChange(netWorth, await getSnapshots())
+  } catch {
+    return null
+  }
 }
 
 /** The weekly/monthly/yearly/custom basis — same attribution pipeline as
@@ -855,9 +880,9 @@ export function isSlotSeenAndUnchanged(slot: PortfolioInsightSlot, fullResult: M
  *  their sector) live in deriveCardsFromResult. `priceHistory` should cover
  *  at least a year back (see getTickerPriceHistory) so every pass below has
  *  what it needs from one shared fetch. */
-export function computeCandidateCards(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>): PulseMoveCard[] {
+export function computeCandidateCards(assets: any[], netWorth: number, priceHistory: Map<string, TickerPricePoint[]>, portfolioChange?: PortfolioChangeOverride | null): PulseMoveCard[] {
   const fixed = [
-    { result: computeMovers(assets, netWorth), timeframe: 'daily' as const, windowDays: 1 },
+    { result: computeMovers(assets, netWorth, portfolioChange), timeframe: 'daily' as const, windowDays: 1 },
     { result: computeMoversForWindow(assets, netWorth, priceHistory, 7, 'weekly'), timeframe: 'weekly' as const, windowDays: 7 },
     { result: computeMoversForWindow(assets, netWorth, priceHistory, 30, 'monthly'), timeframe: 'monthly' as const, windowDays: 30 },
     { result: computeMoversForWindow(assets, netWorth, priceHistory, 365, 'yearly'), timeframe: 'yearly' as const, windowDays: 365 },
@@ -1105,7 +1130,7 @@ export async function generatePortfolioExplanation(slot: PortfolioInsightSlot, o
 
   let fullResult: MoversResult
   if (slot.timeframe === 'daily') {
-    fullResult = computeMovers(assets, netWorth)
+    fullResult = computeMovers(assets, netWorth, await loadNetWorthDailyChange(netWorth))
   } else {
     const tickerIds = [...new Set(
       assets.filter((a: any) => isTickerAsset(a) && a.ticker?.id).map((a: any) => a.ticker.id as string),

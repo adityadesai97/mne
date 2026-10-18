@@ -373,7 +373,7 @@ export default function Home() {
         </section>
     ),
     // Renders nothing itself when there's no relevant insight.
-    pulse: <PortfolioPulseCarousel assets={assets} netWorth={totalValue} />,
+    pulse: <PortfolioPulseCarousel assets={assets} netWorth={totalValue} dailyChange={netWorthDaily} />,
     'daily-movers': hasMovers ? (
           <section className="mne-card">
             <div className="flex items-center justify-between gap-2">
