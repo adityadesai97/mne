@@ -403,6 +403,7 @@ alter table public.user_settings drop column if exists llm_provider;
 alter table public.user_settings drop column if exists groq_api_key;
 alter table public.user_settings add column if not exists coingecko_api_key text;
 alter table public.user_settings drop column if exists tax_harvest_threshold;
+alter table public.user_settings add column if not exists dashboard_layouts jsonb;
 -- Was a toggle for the (now removed) background generation path; the
 -- feature is on-demand only now, so there's nothing to opt in/out of.
 alter table public.user_settings drop column if exists portfolio_explanation_enabled;

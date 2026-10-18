@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Masonry, MasonryItem } from '@/components/mne/Masonry'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Masonry } from '@/components/mne/Masonry'
+import { DashboardEditButton, DashboardGrid } from '@/components/mne/DashboardGrid'
+import { useDashboardLayout } from '@/hooks/useDashboardLayout'
+import type { CardDef } from '@/lib/dashboardLayout'
 import { PieChart, Landmark, Layers, TrendingUp, Scale, BarChart3, CalendarClock } from 'lucide-react'
 import { getAllAssets } from '@/lib/db/assets'
 import { refreshPricesOncePerLoad } from '@/lib/priceRefresh'
@@ -27,6 +30,17 @@ import {
   computeThemeDistribution,
 } from '@/lib/charts'
 
+/** Charts' cards in their default order and width; users can reorder, resize and hide them (see useDashboardLayout). */
+const CHART_CARDS: readonly CardDef[] = [
+  { id: 'allocation', label: 'Portfolio allocation', span: 1 },
+  { id: 'by-account', label: 'By account', span: 1 },
+  { id: 'pnl', label: 'Unrealized P&L', span: 2 },
+  { id: 'theme-distribution', label: 'Stock distribution by theme', span: 1 },
+  { id: 'capital-gains', label: 'Capital gains exposure', span: 1 },
+  { id: 'cost-vs-value', label: 'Cost basis vs value', span: 2 },
+  { id: 'rsu-vesting', label: 'RSU vesting progress', span: 2 },
+]
+
 type Subtype = 'Market' | 'ESPP' | 'RSU'
 const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
 
@@ -42,6 +56,7 @@ export default function Charts() {
   const [includeCashInThemeDistribution, setIncludeCashInThemeDistribution] = useState(false)
   const [gainsSymbol, setGainsSymbol] = useState('')
   const [hideValues] = useHideValues()
+  const dash = useDashboardLayout('charts', CHART_CARDS)
 
   useEffect(() => {
     // Refresh prices first (once per page load) so the charts use current quotes.
@@ -118,13 +133,9 @@ export default function Charts() {
     { name: 'Short term', value: shortTerm, display: signed(shortTerm) },
   ]
 
-  return (
-    <>
-      <div className="mne-main">
-        <PageHead title="Charts" />
-
-        <Masonry fill>
-          {/* PORTFOLIO ALLOCATION */}
+  // A chart with no data to show is null and skipped entirely (it also can't be placed or hidden).
+  const nodes: Record<string, ReactNode> = {
+    allocation: (
           <section className="mne-card">
             <div className="mne-chart-head">
               <Eyebrow icon={PieChart}>Portfolio allocation</Eyebrow>
@@ -140,8 +151,8 @@ export default function Charts() {
               <StackBreakdown segments={allocation} label="Portfolio allocation by asset type" />
             </div>
           </section>
-
-{/* BY ACCOUNT */}
+    ),
+    'by-account': (
           <section className="mne-card">
             <Eyebrow icon={Landmark}>By account</Eyebrow>
             <div className={hiddenValueClass(hideValues)}>
@@ -150,10 +161,9 @@ export default function Charts() {
                 : <p className="mne-help" style={{ marginTop: 14 }}>No data</p>}
             </div>
           </section>
-
-{/* UNREALIZED P&L BY POSITION */}
-          {pnlData.length > 0 && (
-            <MasonryItem span={2}><section className="mne-card">
+    ),
+    pnl: pnlData.length > 0 ? (
+<section className="mne-card">
               <div className="mne-chart-head">
                 <Eyebrow icon={TrendingUp}>Unrealized P&amp;L</Eyebrow>
                 <span className={hiddenValueClass(hideValues)}>{signed(totalPnl)}</span>
@@ -161,10 +171,9 @@ export default function Charts() {
               <div className={hiddenValueClass(hideValues)}>
                 <DivergingBars rows={pnlData.map((p) => ({ name: p.name, value: p.gain }))} />
               </div>
-            </section></MasonryItem>
-          )}
-
-{/* STOCK DISTRIBUTION BY THEME */}
+            </section>
+    ) : null,
+    'theme-distribution': (
           <section className="mne-card">
             <div className="mne-chart-head">
               <Eyebrow icon={Layers}>Stock distribution by theme</Eyebrow>
@@ -188,9 +197,8 @@ export default function Charts() {
                 : <p className="mne-help" style={{ marginTop: 14 }}>No themed stock data yet</p>}
             </div>
           </section>
-
-{/* CAPITAL GAINS EXPOSURE */}
-          {(activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) && (
+    ),
+    'capital-gains': (activeGainsSymbol !== '' || shortTerm !== 0 || longTerm !== 0) ? (
             <section className="mne-card">
               <div className="mne-chart-head">
                 <Eyebrow icon={Scale}>Capital gains exposure</Eyebrow>
@@ -208,29 +216,29 @@ export default function Charts() {
                   : <p className="mne-help" style={{ marginTop: 14 }}>No gains or losses for this ticker.</p>}
               </div>
             </section>
-          )}
-
-{/* COST BASIS VS CURRENT VALUE */}
-          {cvvData.length > 0 && (
-            <MasonryItem span={2}><section className="mne-card">
+    ) : null,
+    'cost-vs-value': cvvData.length > 0 ? (
+<section className="mne-card">
               <Eyebrow icon={BarChart3}>Cost basis vs value</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <CostValueBars rows={cvvData} />
               </div>
-            </section></MasonryItem>
-          )}
-
-{/* RSU VESTING PROGRESS */}
-          {rsuData.length > 0 && (
-            <MasonryItem span={2}><section className="mne-card">
+            </section>
+    ) : null,
+    'rsu-vesting': rsuData.length > 0 ? (
+<section className="mne-card">
               <Eyebrow icon={CalendarClock}>RSU vesting progress</Eyebrow>
               <div className={hiddenValueClass(hideValues)}>
                 <RsuVestChart rows={rsuData} hideValues={hideValues} />
               </div>
-            </section></MasonryItem>
-          )}
-        </Masonry>
-      </div>
-    </>
+            </section>
+    ) : null,
+  }
+
+  return (
+    <div className="mne-main">
+      <PageHead title="Charts"><DashboardEditButton dash={dash} /></PageHead>
+      <DashboardGrid dash={dash} nodes={nodes} fill />
+    </div>
   )
 }

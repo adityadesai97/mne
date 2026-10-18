@@ -228,10 +228,18 @@ interface MasonryProps {
   className?: string
   /** Gap-free mode (`packFill`): reorder/widen cards and stretch column ends so no column is ragged. */
   fill?: boolean
+  /** Called with the current column count on mount and whenever it changes. */
+  onColumnsChange?: (columns: number) => void
+  /** Called after every layout pass in a multi-column grid (cards have just been repositioned). */
+  onPack?: () => void
 }
 
-export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns = 3, className, fill = false }: MasonryProps) {
+export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns = 3, className, fill = false, onColumnsChange, onPack }: MasonryProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const onPackRef = useRef(onPack)
+  onPackRef.current = onPack
+  const onColumnsRef = useRef(onColumnsChange)
+  onColumnsRef.current = onColumnsChange
   const [cols, setCols] = useState(1)
   const colsRef = useRef(1)
   const [ready, setReady] = useState(false)
@@ -270,6 +278,7 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
       k.style.transform = p.hidden ? 'translate(0px, 0px)' : `translate(${p.column * (colW + gap)}px, ${p.top}px)`
     })
     el.style.height = `${height}px`
+    onPackRef.current?.()
   }, [gap, fill])
 
   const clearPacked = useCallback(() => {
@@ -299,6 +308,7 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
   }, [minColumnWidth, gap, maxColumns, pack, clearPacked])
 
   useLayoutEffect(() => { measureColumns() }, [measureColumns])
+  useEffect(() => { onColumnsRef.current?.(cols) }, [cols])
 
   // Re-pack whenever the children, the column count or any child's size changes.
   useLayoutEffect(() => {
@@ -353,7 +363,7 @@ export function Masonry({ children, gap = 24, minColumnWidth = 300, maxColumns =
 
   const cls = ['mne-masonry', cols > 1 && 'is-packed', cols > 1 && fill && 'is-fill', cols > 1 && ready && 'is-ready', className].filter(Boolean).join(' ')
   return (
-    <div ref={ref} className={cls} style={{ ['--mne-masonry-gap' as string]: `${gap}px` }}>
+    <div ref={ref} className={cls} data-columns={cols} style={{ ['--mne-masonry-gap' as string]: `${gap}px` }}>
       {items.map((it, i) => (
         <div key={it.key ?? i} className="mne-masonry-item" data-span={it.span === 'all' ? 'all' : it.span ?? 1}>
           {it.node}

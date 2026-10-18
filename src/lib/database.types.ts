@@ -1186,6 +1186,7 @@ export type Database = {
         Row: {
           auto_theme_assignment_enabled: boolean
           capital_gains_alerts_enabled: boolean
+          dashboard_layouts: Json | null
           gemini_api_key: string | null
           id: string
           price_alert_threshold: number | null
@@ -1197,6 +1198,7 @@ export type Database = {
         Insert: {
           auto_theme_assignment_enabled?: boolean
           capital_gains_alerts_enabled?: boolean
+          dashboard_layouts?: Json | null
           gemini_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
@@ -1208,6 +1210,7 @@ export type Database = {
         Update: {
           auto_theme_assignment_enabled?: boolean
           capital_gains_alerts_enabled?: boolean
+          dashboard_layouts?: Json | null
           gemini_api_key?: string | null
           id?: string
           price_alert_threshold?: number | null
