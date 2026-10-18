@@ -39,7 +39,9 @@ function rectOf(el: HTMLElement) {
   const t = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(el.style.transform)
   const f = /^([-\d.]+)px ([-\d.]+)px$/.exec(el.style.translate || '')
   const inner = el.querySelector<HTMLElement>('[data-h]')
-  const height = (inner ? num(inner.dataset.h!) : 0) + (el.querySelector('.mne-dash-frame') ? EDIT_BAR : 0)
+  // The packer clears the height before measuring and sets the row's height afterwards: honour both.
+  const natural = (inner ? num(inner.dataset.h!) : 0) + (el.querySelector('.mne-dash-frame') ? EDIT_BAR : 0)
+  const height = el.style.height ? num(el.style.height) : natural
   const left = (t ? num(t[1]) : 0) + (f ? num(f[1]) : 0)
   const top = (t ? num(t[2]) : 0) + (f ? num(f[2]) : 0)
   const width = num(el.style.width)
@@ -82,9 +84,9 @@ const NODES: Record<string, ReactNode> = {
   hero: card('hero', 300), alloc: card('alloc', 200), pulse: card('pulse', 120), movers: card('movers', 180), pnl: card('pnl', 100),
 }
 
-function Host({ nodes = NODES, fill = false }: { nodes?: Record<string, ReactNode>; fill?: boolean }) {
+function Host({ nodes = NODES }: { nodes?: Record<string, ReactNode> }) {
   const dash = useDashboardLayout('home', DEFS)
-  return (<><DashboardEditButton dash={dash} /><DashboardGrid dash={dash} nodes={nodes} fill={fill} /></>)
+  return (<><DashboardEditButton dash={dash} /><DashboardGrid dash={dash} nodes={nodes} /></>)
 }
 
 /** Render and let the async layout load settle, as the app would after its first paint. */
@@ -113,6 +115,12 @@ function expectSoundLayout(label = '') {
     expect(r.right, `${label} card ${i} right edge ${r.right} vs container ${container}`).toBeLessThanOrEqual(container + 0.5)
     expect(r.height, `${label} card ${i} height`).toBeGreaterThan(0)
   })
+  // A real grid: cards that share a top share a bottom too (a row has one height).
+  if (grid().dataset.columns !== '1') {
+    const byTop = new Map<number, number[]>()
+    rects.forEach((r) => byTop.set(Math.round(r.top), [...(byTop.get(Math.round(r.top)) ?? []), r.bottom]))
+    for (const [top, bottoms] of byTop) for (const b of bottoms) expect(b, `${label} row at ${top}: cards end at different heights ${bottoms}`).toBeCloseTo(bottoms[0], 0)
+  }
   for (let i = 0; i < rects.length; i++) {
     for (let j = i + 1; j < rects.length; j++) {
       const a = rects[i], b = rects[j]
@@ -133,7 +141,7 @@ test('three columns: each card gets the width of its span, nothing overlaps', as
     Math.round(colW),           // alloc: 1
     1152,                       // pulse: all
     Math.round(colW),           // movers
-    Math.round(colW),           // pnl
+    Math.round(2 * colW + GAP), // pnl: alone in the last row beside movers, so it widens to close the row
   ])
   expectSoundLayout()
 })
@@ -176,22 +184,31 @@ test('sweeping the container width finds no overlapping or overflowing layout at
   }
 })
 
-test('changing a card to another width resizes just that card', async () => {
+test('changing a card to another width resizes it, the rows reflow around it, and setting it back restores the original layout', async () => {
   await mount(<Host />)
-  const before = items().map((el) => rectOf(el).width)
+  const widths = () => Object.fromEntries(order().map((id, i) => [id, Math.round(rectOf(items()[i]).width)]))
+  const before = widths()
   fireEvent.click(screen.getByRole('button', { name: /edit layout/i }))
   const allocWidth = within(screen.getByRole('group', { name: 'Width of Allocation' }))
+  const colW = (1152 - 2 * GAP) / 3
+
   fireEvent.click(allocWidth.getByRole('button', { name: 'Full' }))
-  const after = items().map((el) => rectOf(el).width)
-  const allocIndex = order().indexOf('alloc')
-  expect(after[allocIndex]).toBe(1152)
-  after.forEach((w, i) => { if (i !== allocIndex) expect(Math.round(w)).toBe(Math.round(before[i])) })
-  expectSoundLayout()
+  expect(widths().alloc).toBe(1152)
+  // Hero no longer has Allocation beside it, so the next card that fits (Movers) moves up into the gap
+  const top = (id: string) => rectOf(items()[order().indexOf(id)]).top
+  expect(top('movers')).toBe(top('hero'))
+  expect(widths().hero).toBe(before.hero)
+  expectSoundLayout('alloc full')
   expect(lastSave()).toEqual(expect.arrayContaining([{ id: 'alloc', span: 'all' }]))
 
+  fireEvent.click(allocWidth.getByRole('button', { name: '2' }))
+  expect(widths().alloc).toBe(Math.round(2 * colW + GAP))
+  expectSoundLayout('alloc 2 cols')
+
   fireEvent.click(allocWidth.getByRole('button', { name: '1' }))
-  expect(lastSave()).toEqual(expect.arrayContaining([{ id: 'alloc' }]))
-  expect(lastSave()!.find((e) => e.id === 'alloc')).toEqual({ id: 'alloc' }) // back to default width: nothing stored
+  expect(widths()).toEqual(before)
+  expect(lastSave()!.find((e) => e.id === 'alloc')).toEqual({ id: 'alloc' }) // back to the default width: nothing stored
+  expectSoundLayout('alloc back to 1')
 })
 
 test('a wider card on a narrow grid never exceeds the grid', async () => {
@@ -419,24 +436,51 @@ test('every arrangement reached by dragging keeps all cards on screen without ov
 
 // ── which packer runs ──────────────────────────────────────────────────────────────────────────────────────
 
-test('the gap-filling packer runs only on an untouched arrangement, never while editing', async () => {
-  await mount(<Host fill />)
-  expect(grid().classList.contains('is-fill')).toBe(true)
+test('cards of different natural heights end up one height per row, at every width and after every edit', async () => {
+  await mount(<Host />)
+  const rowsAreEven = (label: string) => {
+    expectSoundLayout(label)
+    const rects = items().map(rectOf)
+    const tops = new Set(rects.map((r) => Math.round(r.top)))
+    // 5 cards of 300/200/120/180/100 px cannot all be in distinct rows in 3 columns
+    if (grid().dataset.columns === '3') expect(tops.size, label).toBeLessThan(rects.length)
+  }
+  rowsAreEven('view')
+  for (const w of [1152, 900, 700, 500]) { containerWidth = w; fireResize(); rowsAreEven(`view @${w}`) }
+  containerWidth = 1152
+  fireResize()
   await edit()
-  expect(grid().classList.contains('is-fill')).toBe(false) // card order must match what the user sees
+  rowsAreEven('edit')
   fireEvent.click(screen.getByRole('button', { name: 'Hide Allocation' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
-  expect(grid().classList.contains('is-fill')).toBe(true) // hiding doesn't disturb the arrangement
-  await edit()
+  rowsAreEven('hid a card')
   fireEvent.keyDown(screen.getByRole('button', { name: 'Move Hero' }), { key: 'ArrowDown' })
-  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
-  expect(grid().classList.contains('is-fill')).toBe(false) // user chose an order
-  await edit()
-  fireEvent.click(screen.getByRole('button', { name: 'Reset layout' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
-  expect(grid().classList.contains('is-fill')).toBe(true)
-  // no leftover stretch from fill mode in plain packing
-  expectSoundLayout()
+  rowsAreEven('moved a card')
+  fireEvent.click(within(screen.getByRole('group', { name: 'Width of Movers' })).getByRole('button', { name: 'Full' }))
+  rowsAreEven('resized a card')
+})
+
+test('the tallest card in a row sets the row height and shorter neighbours stretch to it', async () => {
+  await mount(<Host />)
+  // hero (300) shares a row with alloc (200): alloc is stretched to the hero's height
+  const [hero, alloc] = [items()[order().indexOf('hero')], items()[order().indexOf('alloc')]]
+  expect(rectOf(hero).height).toBe(300)
+  expect(rectOf(alloc).height).toBe(300)
+  expect(rectOf(hero).top).toBe(rectOf(alloc).top)
+})
+
+test('a card that cannot share its row widens to fill it, wherever the row is', async () => {
+  containerWidth = 700 // 2 columns
+  const widthOf = (id: string) => rectOf(items()[order().indexOf(id)]).width
+  // a 1-wide card followed only by a full-width card has no partner: it fills its row
+  const a = await mount(<Host nodes={{ alloc: NODES.alloc, pulse: NODES.pulse }} />)
+  expect(widthOf('alloc')).toBe(700)
+  expectSoundLayout('hole')
+  a.unmount()
+  // so does a 1-wide card alone in the final row
+  await mount(<Host nodes={{ pulse: NODES.pulse, pnl: NODES.pnl }} />)
+  expect(widthOf('pulse')).toBe(700)
+  expect(widthOf('pnl')).toBe(700)
+  expectSoundLayout('last row')
 })
 
 test('Reset layout restores order, widths and hidden cards, and is disabled when nothing differs', async () => {

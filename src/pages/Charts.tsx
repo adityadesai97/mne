@@ -238,7 +238,7 @@ export default function Charts() {
   return (
     <div className="mne-main">
       <PageHead title="Charts"><DashboardEditButton dash={dash} /></PageHead>
-      <DashboardGrid dash={dash} nodes={nodes} fill />
+      <DashboardGrid dash={dash} nodes={nodes} />
     </div>
   )
 }

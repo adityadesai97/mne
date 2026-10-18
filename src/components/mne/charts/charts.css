@@ -7,7 +7,7 @@
 .mne-seg.is-multi button[aria-pressed="false"] { color: var(--mne-ink-muted); }
 @media (max-width: 760px) { .mne-bars.is-wide .mne-bar-row { grid-template-columns: 76px 1fr minmax(88px, auto); } }
 
-/* Charts page layout: see Masonry (src/components/mne/Masonry.tsx). */
+/* Charts page layout: see Masonry, row-aligned (src/components/mne/Masonry.tsx). */
 .mne-chart-head .mne-dd-trigger { min-width: 0; }
 
 /* Bar legend with swatches shaped like the bars (thick = value, thin = cost basis). */

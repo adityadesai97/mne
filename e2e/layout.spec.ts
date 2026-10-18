@@ -16,7 +16,10 @@ async function readGrid(page: Page) {
       .map((el) => {
         const r = el.getBoundingClientRect()
         const label = el.querySelector('.mne-dash-label')?.textContent ?? el.textContent?.slice(0, 24) ?? ''
-        return { label, l: r.left, t: r.top, r: r.right, b: r.bottom }
+        // Empty space between the card and the bottom of its cell: a card that did not stretch to its row.
+        const card = el.querySelector('.mne-card')
+        const cardGap = card ? r.bottom - card.getBoundingClientRect().bottom : 0
+        return { label, l: r.left, t: r.top, r: r.right, b: r.bottom, cardGap }
       })
       .filter((x) => x.b - x.t > 0 && x.r - x.l > 0)
     return { columns: Number(grid.dataset.columns), container: { l: g.left, t: g.top, r: g.right, b: g.bottom }, boxes }
@@ -47,6 +50,17 @@ async function expectSoundGrid(page: Page, label: string) {
       const a = boxes[i], b = boxes[j]
       const overlap = a.l < b.r - E && b.l < a.r - E && a.t < b.b - E && b.t < a.b - E
       expect(overlap, `${label} (${columns} cols): "${a.label}" overlaps "${b.label}"`).toBe(false)
+    }
+  }
+  // A grid: cards that share a top share a bottom, and every card fills its cell (one height per row).
+  if (columns > 1) {
+    const rows = new Map<number, typeof boxes>()
+    for (const x of boxes) rows.set(Math.round(x.t), [...(rows.get(Math.round(x.t)) ?? []), x])
+    for (const [top, cells] of rows) {
+      for (const x of cells) {
+        expect(Math.abs(x.b - cells[0].b), `${label} (${columns} cols): row at ${top}: "${x.label}" ends at ${x.b} but "${cells[0].label}" at ${cells[0].b}`).toBeLessThanOrEqual(E)
+        expect(x.cardGap, `${label} (${columns} cols): "${x.label}" leaves ${x.cardGap}px empty under its card`).toBeLessThanOrEqual(E + 4) // 4px: the edit-mode outline offset
+      }
     }
   }
   const lowest = Math.max(...boxes.map((x) => x.b))
@@ -244,27 +258,26 @@ test('resizing from desktop to phone while editing swaps the controls and keeps 
   await expectSoundGrid(page, 'desktop again')
 })
 
-test('charts: gap-filling layout is used until the user rearranges, and reset brings it back', async ({ page }) => {
+test('charts: rows stay one height per row after rearranging, and reset restores the default order', async ({ page }) => {
   await signedInApp(page)
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/charts')
-  const grid = page.locator('.mne-masonry')
-  await expect(grid).toHaveClass(/is-fill/, { timeout: 15_000 })
-  await editButton(page).click()
-  await expect(grid).not.toHaveClass(/is-fill/)
-  await expectSoundGrid(page, 'charts editing')
+  await expect(page.locator('.mne-masonry-item').first()).toBeVisible({ timeout: 15_000 })
+  await expectSoundGrid(page, 'charts default')
 
-  const first = (await labels(page))[0]
-  await page.getByRole('button', { name: `Move ${first}` }).focus()
+  await editButton(page).click()
+  const original = await labels(page)
+  await page.getByRole('button', { name: `Move ${original[0]}` }).focus()
   await page.keyboard.press('ArrowRight')
-  await page.getByRole('button', { name: 'Done' }).click()
-  await expect(grid).not.toHaveClass(/is-fill/)
+  await page.keyboard.press('ArrowRight')
+  expect(await labels(page)).not.toEqual(original)
   await expectSoundGrid(page, 'charts custom order')
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expectSoundGrid(page, 'charts custom order, view')
 
   await editButton(page).click()
   await page.getByRole('button', { name: 'Reset layout' }).click()
-  await page.getByRole('button', { name: 'Done' }).click()
-  await expect(grid).toHaveClass(/is-fill/)
+  expect(await labels(page)).toEqual(original)
   await expectSoundGrid(page, 'charts reset')
 })
 
