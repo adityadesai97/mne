@@ -683,3 +683,33 @@ test('option grants and their exercises round-trip through the workbook', () => 
     expect.objectContaining({ exerciseDate: '2025-06-01', count: 100, strikePrice: 4.5, costPrice: 20, transactionId: lotId }),
   ])
 })
+
+test('private company price and option contracts round-trip through the workbook', () => {
+  const assetId = '99999999-9999-4999-8999-999999999999'
+  const contractId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const payload = serializeForExport({
+    assets: [
+      {
+        id: assetId, name: 'Acme Inc', asset_type: 'Stock', manual_price: 12.5, manual_price_date: '2026-09-01',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Carta', account_type: 'Investment' },
+        ticker: null, stock_subtypes: [],
+      },
+      {
+        id: '11111111-1111-4111-8111-111111111111', name: 'SPY', asset_type: 'Stock',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Carta', account_type: 'Investment' },
+        ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'SPY', current_price: 500 },
+        stock_subtypes: [],
+        option_contracts: [{ id: contractId, option_type: 'put', strike_price: 480, expiry_date: '2027-01-15', contracts: 2, multiplier: 100, premium_per_share: 6.5, purchase_date: '2026-09-01', closed_date: null, close_premium_per_share: null }],
+      },
+    ],
+    tickers: [], themes: [],
+  } as any)
+  const buffer = XLSX.write(buildExportWorkbook(payload), { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const parsed = parseWorkbookImport(buffer)
+  const priv = parsed.assets.find((a: any) => a.name === 'Acme Inc')!
+  expect(priv).toMatchObject({ manualPrice: 12.5, manualPriceDate: '2026-09-01', tickerSymbol: null })
+  const spy = parsed.assets.find((a: any) => a.name === 'SPY')!
+  expect(spy.optionContracts).toEqual([
+    expect.objectContaining({ id: contractId, optionType: 'put', strikePrice: 480, expiryDate: '2027-01-15', contracts: 2, premiumPerShare: 6.5 }),
+  ])
+})

@@ -14,10 +14,12 @@ import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/
 import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { addEsopGrant, exerciseOptions, endEsopGrant, deleteEsopGrant, type ExerciseInput, type NewEsopGrant } from '@/lib/db/esop'
 import { AddEsopGrantForm } from '@/components/EsopGrantList'
+import { AddOptionContractForm, OptionContractList } from '@/components/OptionContractList'
+import { addOptionContract, closeOptionContract, deleteOptionContract, type NewOptionContract } from '@/lib/db/optionContracts'
 import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@/lib/db/fixedIncomeLots'
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, computeDailyChange, getLivePrice,
-  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset, computeOptionValue,
+  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset, computeOptionValue, computeContractValue,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
@@ -36,6 +38,7 @@ interface EditAssetValues {
   interestRate: string
   maturityDate: string
   faceValue: string
+  manualPrice: string
 }
 
 export default function AssetDetail() {
@@ -55,6 +58,7 @@ export default function AssetDetail() {
     interestRate: '',
     maturityDate: '',
     faceValue: '',
+    manualPrice: '',
   })
 
   useEffect(() => {
@@ -193,6 +197,46 @@ export default function AssetDetail() {
     }
   }
 
+  async function handleAddOptionContract(contract: NewOptionContract) {
+    await addOptionContract(asset.id, contract)
+    await reloadAsset()
+  }
+
+  async function handleCloseOptionContract(contractId: string) {
+    const premium = await requestAppPrompt({
+      title: 'Close option contract',
+      message: 'Premium received per share when it was sold (0 if it expired worthless)',
+      defaultValue: '0',
+      placeholder: '0.00',
+      submitLabel: 'Close',
+      cancelLabel: 'Cancel',
+    })
+    if (premium == null || premium === '') return
+    try {
+      await closeOptionContract(contractId, new Date().toISOString().split('T')[0], parseFloat(premium))
+      await reloadAsset()
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function handleDeleteOptionContract(contractId: string) {
+    const confirmed = await requestAppConfirm({
+      title: 'Delete contract?',
+      message: 'Delete this option contract? This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await deleteOptionContract(contractId)
+      await reloadAsset()
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
   async function handleAddMarketLot(values: { count: number; cost_price: number; purchase_date: string }) {
     try {
       await addMarketLot(asset.id, values)
@@ -245,6 +289,9 @@ export default function AssetDetail() {
         interest_rate: isFixedIncome ? (editValues.interestRate ? Number(editValues.interestRate) : null) : asset.interest_rate ?? null,
         maturity_date: isFixedIncome ? (editValues.maturityDate || null) : asset.maturity_date ?? null,
         face_value: isFixedIncome ? (editValues.faceValue ? Number(editValues.faceValue) : null) : asset.face_value ?? null,
+        ...(isPrivate && editValues.manualPrice !== '' && Number(editValues.manualPrice) !== Number(asset.manual_price)
+          ? { manual_price: Number(editValues.manualPrice), manual_price_date: new Date().toISOString().split('T')[0] }
+          : {}),
       })
       setEditing(false)
       if (id) setAsset(await getAssetById(id))
@@ -306,6 +353,7 @@ export default function AssetDetail() {
   const lotLayout = config.lotView
   const isStock = isTickerAsset(asset)
   const isCrypto = asset.asset_type === 'Crypto'
+  const isPrivate = isStock && !asset.ticker_id
   const isFixedIncome = asset.asset_type === 'Fixed Income'
   const isTradable = isTradableFixedIncome(asset)
   const fixedIncomeLots = asset.fixed_income_lots ?? []
@@ -316,7 +364,7 @@ export default function AssetDetail() {
   const gain = computeUnrealizedGain(asset)
   const basis = computeCostBasis(asset)
   const gainPct = basis > 0 ? (gain / basis) * 100 : 0
-  const noPriceData = isStock && asset.ticker?.current_price == null
+  const noPriceData = isStock && getLivePrice(asset) == null
   const tickerPrice = getLivePrice(asset) ?? 0
   const todayPct = isStock ? (computeDailyChange(asset)?.percentChange ?? null) : null
   const stockTransactionCount = isStock
@@ -338,10 +386,13 @@ export default function AssetDetail() {
     )
     : 0
   const optionValue = isStock ? computeOptionValue(asset) : 0
+  const optionContracts = isStock ? (asset.option_contracts ?? []) : []
+  const contractValue = isStock ? computeContractValue(asset) : 0
   const hasStockActivity = stockTransactionCount + stockGrantCount + esopGrantCount > 0
 
   const subtitle = [
     isStock && asset.ticker?.symbol ? asset.ticker.symbol : null,
+    isPrivate ? 'Private company' : null,
     asset.location?.name,
     asset.asset_type + (isFixedIncome && asset.fixed_income_subtype ? ` (${asset.fixed_income_subtype})` : ''),
   ].filter(Boolean).join(' · ')
@@ -357,6 +408,7 @@ export default function AssetDetail() {
       interestRate: asset.interest_rate != null ? String(asset.interest_rate) : '',
       maturityDate: asset.maturity_date ?? '',
       faceValue: asset.face_value != null ? String(asset.face_value) : '',
+      manualPrice: asset.manual_price != null ? String(asset.manual_price) : '',
     })
   }
 
@@ -395,6 +447,14 @@ export default function AssetDetail() {
                 <label htmlFor="asset-price">Value ($)</label>
                 <input id="asset-price" className="mne-input" type="number" step="0.01" value={editValues.price}
                   onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))} />
+              </div>
+            )}
+            {isPrivate && (
+              <div className="mne-field">
+                <label htmlFor="asset-manual-price">Price per share ($)</label>
+                <input id="asset-manual-price" className="mne-input" type="number" step="any" min="0" value={editValues.manualPrice}
+                  onChange={e => setEditValues(v => ({ ...v, manualPrice: e.target.value }))} />
+                <span className="mne-help">A private company has no live quote: enter its latest 409A or last-round value per share.</span>
               </div>
             )}
             {isTradable && (
@@ -492,6 +552,8 @@ export default function AssetDetail() {
                   className="max-sm:hidden"
                   label="Price"
                   value={<span className={hiddenValueClass(hideValues)}>${tickerPrice.toFixed(tickerPrice > 0 && tickerPrice < 1 ? 6 : 2)}</span>}
+                  sub={isPrivate ? (asset.manual_price_date ? `manual · as of ${formatDateMDY(asset.manual_price_date)}` : 'manual valuation') : undefined}
+                  subClassName="mne-muted"
                 />
               )}
               {isStock && (
@@ -500,6 +562,9 @@ export default function AssetDetail() {
               {isTradable && <Stat label="Units" value={fmtShares(lotUnits)} />}
               {isStock && optionValue > 0 && (
                 <Stat label="Options (vested)" value={<span className={hiddenValueClass(hideValues)}>{fmt(optionValue)}</span>} />
+              )}
+              {isStock && contractValue > 0 && (
+                <Stat label="Calls / puts" value={<span className={hiddenValueClass(hideValues)}>{fmt(contractValue)}</span>} sub="intrinsic" subClassName="mne-muted" />
               )}
               {(isStock || isTradable) && basis > 0 && (
                 <Stat label="Cost basis" value={<span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span>} />
@@ -544,6 +609,26 @@ export default function AssetDetail() {
               <AddEsopGrantForm onAdd={handleAddEsopGrant} />
             </div>
           )}
+        </section>
+      )}
+
+      {isStock && !isCrypto && !isPrivate && (
+        <section className="mne-card pf-fade">
+          <h3 className="mne-card-title" style={{ marginBottom: 4 }}>Calls &amp; puts</h3>
+          <p className="mne-help" style={{ marginBottom: 12 }}>
+            Exchange-traded options on {asset.ticker?.symbol ?? 'this stock'}. Valued at intrinsic value only.
+          </p>
+          {optionContracts.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <OptionContractList
+                contracts={optionContracts}
+                price={getLivePrice(asset)}
+                onClose={handleCloseOptionContract}
+                onDelete={handleDeleteOptionContract}
+              />
+            </div>
+          )}
+          <AddOptionContractForm onAdd={handleAddOptionContract} />
         </section>
       )}
 

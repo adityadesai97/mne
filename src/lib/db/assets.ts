@@ -11,6 +11,7 @@ const ASSET_SELECT = `
   location:locations(*),
   ticker:tickers(*, ticker_themes(theme:themes(*))),
   stock_subtypes(*, transactions(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))), rsu_grants(*), esop_grants(*, esop_exercises(*))),
+  option_contracts(*),
   fixed_income_lots(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))),
   plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))
 `
@@ -50,6 +51,7 @@ export async function deleteAsset(id: string) {
     await supabase.from('stock_subtypes').delete().eq('asset_id', id)
   }
   await supabase.from('fixed_income_lots').delete().eq('asset_id', id)
+  await supabase.from('option_contracts').delete().eq('asset_id', id)
   const { error } = await supabase.from('assets').delete().eq('id', id)
   if (error) throw error
 }
@@ -62,4 +64,14 @@ export async function getAssetById(id: string) {
     .maybeSingle()
   if (error) throw error
   return data
+}
+
+/** Sets a private company's per-share value (409A / last round) and the date it applies from. */
+export async function setManualPrice(assetId: string, price: number, asOf: string) {
+  if (!Number.isFinite(price) || price < 0) throw new Error('Price per share must be zero or more')
+  const { error } = await getSupabaseClient()
+    .from('assets')
+    .update({ manual_price: price, manual_price_date: asOf })
+    .eq('id', assetId)
+  if (error) throw error
 }

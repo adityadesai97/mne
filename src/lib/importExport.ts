@@ -131,6 +131,19 @@ type ParsedFixedIncomeLot = {
   purchaseDate: string
 }
 
+type ParsedOptionContract = {
+  id?: string
+  optionType: 'call' | 'put'
+  strikePrice: number
+  expiryDate: string
+  contracts: number
+  multiplier: number
+  premiumPerShare: number
+  purchaseDate: string
+  closedDate: string | null
+  closePremiumPerShare: number | null
+}
+
 type ParsedAsset = {
   id?: string
   name: string
@@ -150,6 +163,10 @@ type ParsedAsset = {
   tickerSymbol: string | null
   stockSubtypes: ParsedSubtype[]
   fixedIncomeLots: ParsedFixedIncomeLot[]
+  // Private-company price set by hand (a Stock with no ticker).
+  manualPrice?: number | null
+  manualPriceDate?: string | null
+  optionContracts?: ParsedOptionContract[]
 }
 
 type ParsedImport = {
@@ -209,7 +226,7 @@ type CanonicalExportV2 = {
     tickers: ParsedTicker[]
     tickerThemes: ParsedTickerTheme[]
     themeTargets: ParsedThemeTarget[]
-    assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots'>>
+    assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots' | 'optionContracts'>>
     stockSubtypes: Array<{ id?: string; assetId: string; subtype: StockSubtypeName }>
     transactions: Array<Omit<ParsedTransaction, 'costPrice' | 'purchaseDate' | 'capitalGainsStatus'> & {
       subtypeId: string
@@ -230,6 +247,7 @@ type CanonicalExportV2 = {
     fixedIncomeLots: Array<{ id?: string; assetId: string; count: number; costPrice: number; purchaseDate: string }>
     esopGrants: Array<Omit<ParsedEsopGrant, 'exercises'> & { subtypeId: string }>
     esopExercises: Array<ParsedEsopExercise & { grantId: string }>
+    optionContracts: Array<ParsedOptionContract & { assetId: string }>
   }
 }
 
@@ -582,6 +600,32 @@ function normalizeRsuGrants(rawGrants: unknown[]): ParsedRsuGrant[] {
       cliffDate: toIsoDate(entry.cliffDate ?? entry.cliff_date ?? entry.firstVestingDate ?? entry.first_vest_date),
       vestingFrequency: normalizeRsuVestingFrequency(entry.vestingFrequency ?? entry.vesting_frequency),
       endedAt: toIsoDate(entry.endedAt ?? entry.ended_at),
+    })
+  }
+  return results
+}
+
+function normalizeOptionContracts(rawContracts: unknown[]): ParsedOptionContract[] {
+  const results: ParsedOptionContract[] = []
+  for (const entry of rawContracts) {
+    if (!isRecord(entry)) continue
+    const type = asString(entry.optionType ?? entry.option_type).toLowerCase()
+    const expiryDate = toIsoDate(entry.expiryDate ?? entry.expiry_date)
+    const contracts = asNumber(entry.contracts)
+    const strikePrice = asNumber(entry.strikePrice ?? entry.strike_price)
+    if ((type !== 'call' && type !== 'put') || !expiryDate || contracts == null || contracts <= 0 || strikePrice == null) continue
+    const multiplier = asNumber(entry.multiplier)
+    results.push({
+      id: normalizeUuid(entry.id),
+      optionType: type,
+      strikePrice,
+      expiryDate,
+      contracts,
+      multiplier: multiplier != null && multiplier > 0 ? multiplier : 100,
+      premiumPerShare: asNumber(entry.premiumPerShare ?? entry.premium_per_share) ?? 0,
+      purchaseDate: toIsoDate(entry.purchaseDate ?? entry.purchase_date) ?? expiryDate,
+      closedDate: toIsoDate(entry.closedDate ?? entry.closed_date),
+      closePremiumPerShare: asNumber(entry.closePremiumPerShare ?? entry.close_premium_per_share) ?? null,
     })
   }
   return results
@@ -957,6 +1001,18 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
     grantsBySubtype.set(subtypeId, list)
   }
 
+  const contractsByAsset = new Map<string, ParsedOptionContract[]>()
+  for (const contractEntry of asArray(data.optionContracts ?? data.option_contracts)) {
+    if (!isRecord(contractEntry)) continue
+    const assetId = normalizeUuid(contractEntry.assetId ?? contractEntry.asset_id)
+    if (!assetId) continue
+    const contract = normalizeOptionContracts([contractEntry])[0]
+    if (!contract) continue
+    const list = contractsByAsset.get(assetId) ?? []
+    list.push(contract)
+    contractsByAsset.set(assetId, list)
+  }
+
   const exercisesByGrant = new Map<string, ParsedEsopExercise[]>()
   for (const exerciseEntry of asArray(data.esopExercises ?? data.esop_exercises)) {
     if (!isRecord(exerciseEntry)) continue
@@ -1031,6 +1087,9 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
       initialPrice: asNumber(row.initialPrice ?? row.initial_price ?? row.price),
       tickerId,
       tickerSymbol: asString(row.tickerSymbol ?? row.ticker_symbol).toUpperCase() || linkedTicker?.symbol || null,
+      manualPrice: asNumber(row.manualPrice ?? row.manual_price),
+      manualPriceDate: toIsoDate(row.manualPriceDate ?? row.manual_price_date),
+      optionContracts: contractsByAsset.get(normalizeUuid(row.id) ?? '') ?? [],
       stockSubtypes: (subtypesByAsset.get(normalizeUuid(row.id) ?? '') ?? []).map((st) => ({
         ...st,
         transactions: [...st.transactions].sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate)),
@@ -1087,7 +1146,7 @@ export function serializeForExport(
   const tickers: ParsedTicker[] = []
   const tickerThemes: ParsedTickerTheme[] = []
   const themeTargets: ParsedThemeTarget[] = []
-  const assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots'>> = []
+  const assets: Array<Omit<ParsedAsset, 'stockSubtypes' | 'fixedIncomeLots' | 'optionContracts'>> = []
   const stockSubtypes: Array<{ id?: string; assetId: string; subtype: StockSubtypeName }> = []
   const fixedIncomeLots: Array<{ id?: string; assetId: string; count: number; costPrice: number; purchaseDate: string }> = []
   const transactions: Array<{
@@ -1113,6 +1172,7 @@ export function serializeForExport(
   }> = []
   const esopGrants: CanonicalExportV2['data']['esopGrants'] = []
   const esopExercises: CanonicalExportV2['data']['esopExercises'] = []
+  const optionContracts: CanonicalExportV2['data']['optionContracts'] = []
 
   const themeByName = new Map<string, ParsedTheme>()
 
@@ -1199,7 +1259,13 @@ export function serializeForExport(
       initialPrice: asNumber(rawAsset.initial_price ?? rawAsset.initialPrice ?? rawAsset.price),
       tickerId,
       tickerSymbol,
+      manualPrice: asNumber(rawAsset.manual_price ?? rawAsset.manualPrice),
+      manualPriceDate: toIsoDate(rawAsset.manual_price_date ?? rawAsset.manualPriceDate),
     })
+
+    for (const contract of normalizeOptionContracts(asArray(rawAsset.option_contracts ?? rawAsset.optionContracts))) {
+      optionContracts.push({ ...contract, assetId })
+    }
 
     for (const lot of normalizeFixedIncomeLots(asArray(rawAsset.fixed_income_lots ?? rawAsset.fixedIncomeLots))) {
       fixedIncomeLots.push({ id: lot.id, assetId, count: lot.count, costPrice: lot.costPrice, purchaseDate: lot.purchaseDate })
@@ -1276,6 +1342,7 @@ export function serializeForExport(
       fixedIncomeLots,
       esopGrants,
       esopExercises,
+      optionContracts,
     },
   }
 }
@@ -1338,6 +1405,7 @@ const SHEET = {
   rsuGrants: 'RsuGrants',
   esopGrants: 'EsopGrants',
   esopExercises: 'EsopExercises',
+  optionContracts: 'OptionContracts',
   fixedIncomeLots: 'FixedIncomeLots',
   snapshots: 'NetWorthSnapshots',
   conversations: 'Conversations',
@@ -1346,7 +1414,7 @@ const SHEET = {
 const ASSET_SHEET_HEADERS = [
   'id', 'name', 'assetType', 'fixedIncomeSubtype', 'interestRate', 'maturityDate', 'faceValue',
   'locationId', 'locationName', 'accountType', 'ownership', 'notes', 'price', 'initialPrice',
-  'tickerId', 'tickerSymbol',
+  'tickerId', 'tickerSymbol', 'manualPrice', 'manualPriceDate',
 ]
 
 function toSheet(rows: Record<string, unknown>[], headers: string[]): XLSX.WorkSheet {
@@ -1401,6 +1469,10 @@ export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
     payload.data.esopExercises,
     ['id', 'grantId', 'exerciseDate', 'count', 'strikePrice', 'costPrice', 'transactionId'],
   ), SHEET.esopExercises)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.optionContracts,
+    ['id', 'assetId', 'optionType', 'strikePrice', 'expiryDate', 'contracts', 'multiplier', 'premiumPerShare', 'purchaseDate', 'closedDate', 'closePremiumPerShare'],
+  ), SHEET.optionContracts)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.fixedIncomeLots,
     ['id', 'assetId', 'count', 'costPrice', 'purchaseDate'],
@@ -1527,6 +1599,7 @@ function workbookToRoot(wb: XLSX.WorkBook): Record<string, unknown> {
       rsuGrants: readSheet(wb, SHEET.rsuGrants),
       esopGrants: readSheet(wb, SHEET.esopGrants),
       esopExercises: readSheet(wb, SHEET.esopExercises),
+      optionContracts: readSheet(wb, SHEET.optionContracts),
       fixedIncomeLots: readSheet(wb, SHEET.fixedIncomeLots),
     },
   }
@@ -1713,6 +1786,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     let importedTransactions = 0
     let importedRsuGrants = 0
     let importedEsopGrants = 0
+    let importedOptionContracts = 0
     let importedEsopExercises = 0
     // Exercises are written after every asset: they point at a grant and at the
     // Market lot the exercise created, which may sit in a later subtype/asset.
@@ -1933,6 +2007,9 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
         interest_rate: asset.interestRate,
         maturity_date: asset.maturityDate,
         face_value: asset.faceValue,
+        ...(asset.manualPrice != null && !tickerId
+          ? { manual_price: asset.manualPrice, manual_price_date: asset.manualPriceDate ?? null }
+          : {}),
       }
       // A natural-key match to an existing asset always wins over whatever
       // id the import row carries — that's what prevents the same asset
@@ -1967,6 +2044,31 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
           throw new Error(`Failed to import lot for "${asset.name}": ${lotResult.error.message}`)
         }
         importedFixedIncomeLots += 1
+      }
+
+      for (const contract of asset.optionContracts ?? []) {
+        throwIfImportAborted(signal)
+        const contractPayload: TablesInsert<'option_contracts'> = {
+          asset_id: assetRow.id,
+          option_type: contract.optionType,
+          strike_price: contract.strikePrice,
+          expiry_date: contract.expiryDate,
+          contracts: contract.contracts,
+          multiplier: contract.multiplier,
+          premium_per_share: contract.premiumPerShare,
+          purchase_date: contract.purchaseDate,
+          closed_date: contract.closedDate,
+          close_premium_per_share: contract.closePremiumPerShare,
+        }
+        if (contract.id) contractPayload.id = contract.id
+        const contractResult = contract.id
+          ? await supabase.from('option_contracts').upsert(contractPayload)
+          : await supabase.from('option_contracts').insert(contractPayload)
+        throwIfImportAborted(signal)
+        if (contractResult.error) {
+          throw new Error(`Failed to import option contract for "${asset.name}": ${contractResult.error.message}`)
+        }
+        importedOptionContracts += 1
       }
 
       for (const subtype of asset.stockSubtypes) {
@@ -2194,7 +2296,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     ].filter(Boolean).join(', ')
 
     showAppAlert(
-      `Imported ${importedLocations} locations, ${importedAssets} assets (${newAssets} new, ${matchedExistingAssets} matched existing), ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedEsopGrants} option grants (${importedEsopExercises} exercises), ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.${extras ? ` Also restored ${extras}.` : ''}`,
+      `Imported ${importedLocations} locations, ${importedAssets} assets (${newAssets} new, ${matchedExistingAssets} matched existing), ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedEsopGrants} option grants (${importedEsopExercises} exercises), ${importedOptionContracts} option contracts, ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.${extras ? ` Also restored ${extras}.` : ''}`,
       { variant: 'success', durationMs: 6000 },
     )
   } catch (error: any) {

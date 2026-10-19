@@ -93,3 +93,20 @@ test('option grants and exercises are private to their owner', async () => {
     `insert into public.esop_exercises (grant_id, exercise_date, count, strike_price, cost_price)
      values ($1, '2025-01-01', 1, 1, 1)`, [grantId]))).rejects.toThrow()
 })
+
+test('option contracts and a private company price are private to their owner', async () => {
+  const asset = await db.query<{ id: string }>(
+    "insert into public.assets (user_id, name, asset_type, manual_price) values ($1, 'Acme', 'Stock', 10) returning id", [alice])
+  const assetId = asset.rows[0].id
+  await asUser(db, alice, q => q(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'call', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId]))
+  expect((await asUser(db, alice, q => q('select 1 from public.option_contracts'))).rows).toHaveLength(1)
+  expect((await asUser(db, bob, q => q('select 1 from public.option_contracts'))).rows).toHaveLength(0)
+  await expect(asUser(db, bob, q => q(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'put', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId]))).rejects.toThrow()
+  await expect(db.query(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'straddle', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId])).rejects.toThrow()
+})

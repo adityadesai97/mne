@@ -75,6 +75,8 @@ export type Database = {
         Row: {
           asset_type: string
           face_value: number | null
+          manual_price: number | null
+          manual_price_date: string | null
           fixed_income_subtype: string | null
           id: string
           initial_price: number | null
@@ -91,6 +93,8 @@ export type Database = {
         Insert: {
           asset_type: string
           face_value?: number | null
+          manual_price?: number | null
+          manual_price_date?: string | null
           fixed_income_subtype?: string | null
           id?: string
           initial_price?: number | null
@@ -107,6 +111,8 @@ export type Database = {
         Update: {
           asset_type?: string
           face_value?: number | null
+          manual_price?: number | null
+          manual_price_date?: string | null
           fixed_income_subtype?: string | null
           id?: string
           initial_price?: number | null
@@ -566,6 +572,56 @@ export type Database = {
           value?: number
         }
         Relationships: []
+      }
+      option_contracts: {
+        Row: {
+          asset_id: string
+          close_premium_per_share: number | null
+          closed_date: string | null
+          contracts: number
+          expiry_date: string
+          id: string
+          multiplier: number
+          option_type: string
+          premium_per_share: number
+          purchase_date: string
+          strike_price: number
+        }
+        Insert: {
+          asset_id: string
+          close_premium_per_share?: number | null
+          closed_date?: string | null
+          contracts: number
+          expiry_date: string
+          id?: string
+          multiplier?: number
+          option_type: string
+          premium_per_share: number
+          purchase_date: string
+          strike_price: number
+        }
+        Update: {
+          asset_id?: string
+          close_premium_per_share?: number | null
+          closed_date?: string | null
+          contracts?: number
+          expiry_date?: string
+          id?: string
+          multiplier?: number
+          option_type?: string
+          premium_per_share?: number
+          purchase_date?: string
+          strike_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "option_contracts_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       plaid_credential_secrets: {
         Row: {
