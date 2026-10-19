@@ -1,9 +1,10 @@
 import type { getAllAssets } from './db/assets'
+import { esopIntrinsicValue, type EsopGrant } from './esop'
 
 export type Asset = Awaited<ReturnType<typeof getAllAssets>>[number]
 
 type Transaction = { count: number | string; cost_price: number | string; sold_at_vest?: number | string | null; purchase_date?: string | null }
-type StockSubtype = { transactions: Transaction[] | null; rsu_grants: unknown[] | null }
+type StockSubtype = { subtype?: string; transactions: Transaction[] | null; rsu_grants: unknown[] | null; esop_grants?: EsopGrant[] | null }
 type FixedIncomeLot = { count: number | string; cost_price: number | string; purchase_date: string }
 
 export function netCount(t: Transaction): number {
@@ -100,23 +101,36 @@ export function valueAtPrice(price: number, units: number): number {
   return Math.round(price * units * 100) / 100
 }
 
+/** Intrinsic value of a ticker position's unexercised, vested, in-the-money
+ *  options (ESOP grants), restricted to `subtypes` when given. Zero without a
+ *  live price: an option's worth is its spread over the strike. */
+export function computeOptionValue(asset: AssetTyped, subtypes?: ReadonlySet<string>, asOf: Date = new Date()): number {
+  const price = getLivePrice(asset)
+  if (price == null) return 0
+  const grants = (asset.stock_subtypes ?? [])
+    .filter((st) => !subtypes || subtypes.has(st.subtype ?? ''))
+    .flatMap((st) => st.esop_grants ?? [])
+  if (grants.length === 0) return 0
+  return Math.round(esopIntrinsicValue(grants, price, asOf) * 100) / 100
+}
+
 /** Value of just some of a ticker position's subtypes (e.g. the Charts
  *  subtype filter). With every subtype active this equals computeAssetValue. */
 export function computeSubtypeValue(asset: AssetTyped, subtypes: ReadonlySet<string>): number {
   const price = getLivePrice(asset)
   if (price == null) return 0
   const units = (asset.stock_subtypes ?? [])
-    .filter((st) => subtypes.has((st as { subtype?: string }).subtype ?? ''))
+    .filter((st) => subtypes.has(st.subtype ?? ''))
     .flatMap((st) => st.transactions ?? [])
     .reduce((sum, t) => sum + netCount(t), 0)
-  return valueAtPrice(price, units)
+  return valueAtPrice(price, units) + computeOptionValue(asset, subtypes)
 }
 
 export function computeAssetValue(asset: AssetTyped): number {
   if (isTickerAsset(asset)) {
     const price = getLivePrice(asset)
     if (price == null) return 0
-    return valueAtPrice(price, computeShareCount(asset))
+    return valueAtPrice(price, computeShareCount(asset)) + computeOptionValue(asset)
   }
   if (isTradableFixedIncome(asset) && (asset.fixed_income_lots?.length ?? 0) > 0) {
     return computeFixedIncomeCostBasis(asset)

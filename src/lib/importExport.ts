@@ -30,7 +30,7 @@ export function abortActiveImport() {
 }
 
 type Ownership = 'Individual' | 'Joint'
-type StockSubtypeName = 'Market' | 'ESPP' | 'RSU'
+type StockSubtypeName = 'Market' | 'ESPP' | 'RSU' | 'ESOP'
 type CapitalGainsStatus = 'Short Term' | 'Long Term'
 
 type ParsedLocation = {
@@ -92,11 +92,36 @@ type ParsedRsuGrant = {
   endedAt: string | null
 }
 
+type ParsedEsopExercise = {
+  id?: string
+  exerciseDate: string
+  count: number
+  strikePrice: number
+  costPrice: number
+  // The Market lot the exercise created, when it is part of the same backup.
+  transactionId: string | null
+}
+
+type ParsedEsopGrant = {
+  id?: string
+  grantDate: string
+  totalOptions: number
+  strikePrice: number
+  vestStart: string
+  vestEnd: string
+  cliffDate: string | null
+  vestingFrequency: string
+  expiryDate: string | null
+  endedAt: string | null
+  exercises: ParsedEsopExercise[]
+}
+
 type ParsedSubtype = {
   id?: string
   subtype: StockSubtypeName
   transactions: ParsedTransaction[]
   rsuGrants: ParsedRsuGrant[]
+  esopGrants: ParsedEsopGrant[]
 }
 
 type ParsedFixedIncomeLot = {
@@ -203,6 +228,8 @@ type CanonicalExportV2 = {
       endedAt: string | null
     }>
     fixedIncomeLots: Array<{ id?: string; assetId: string; count: number; costPrice: number; purchaseDate: string }>
+    esopGrants: Array<Omit<ParsedEsopGrant, 'exercises'> & { subtypeId: string }>
+    esopExercises: Array<ParsedEsopExercise & { grantId: string }>
   }
 }
 
@@ -374,6 +401,7 @@ function normalizeSubtype(value: unknown, hasRsuGrants: boolean): StockSubtypeNa
   const normalized = asString(value).toUpperCase()
   if (normalized === 'ESPP') return 'ESPP'
   if (normalized === 'RSU') return 'RSU'
+  if (normalized === 'ESOP') return 'ESOP'
   return 'Market'
 }
 
@@ -559,6 +587,59 @@ function normalizeRsuGrants(rawGrants: unknown[]): ParsedRsuGrant[] {
   return results
 }
 
+function normalizeEsopVestingFrequency(value: unknown): string {
+  const normalized = asString(value).toLowerCase().trim()
+  if (normalized === 'monthly' || normalized === 'quarterly' || normalized === 'annually' || normalized === 'continuous') {
+    return normalized
+  }
+  return 'monthly'
+}
+
+function normalizeEsopExercises(rawExercises: unknown[]): ParsedEsopExercise[] {
+  const results: ParsedEsopExercise[] = []
+  for (const entry of rawExercises) {
+    if (!isRecord(entry)) continue
+    const exerciseDate = toIsoDate(entry.exerciseDate ?? entry.exercise_date)
+    const count = asNumber(entry.count)
+    if (!exerciseDate || count == null || count <= 0) continue
+    results.push({
+      id: normalizeUuid(entry.id),
+      exerciseDate,
+      count,
+      strikePrice: asNumber(entry.strikePrice ?? entry.strike_price) ?? 0,
+      costPrice: asNumber(entry.costPrice ?? entry.cost_price) ?? 0,
+      transactionId: normalizeUuid(entry.transactionId ?? entry.transaction_id) ?? null,
+    })
+  }
+  return results
+}
+
+function normalizeEsopGrants(rawGrants: unknown[]): ParsedEsopGrant[] {
+  const results: ParsedEsopGrant[] = []
+  for (const entry of rawGrants) {
+    if (!isRecord(entry)) continue
+    const grantDate = toIsoDate(entry.grantDate ?? entry.grant_date)
+    const vestStart = toIsoDate(entry.vestStart ?? entry.vest_start) ?? grantDate
+    const vestEnd = toIsoDate(entry.vestEnd ?? entry.vest_end) ?? vestStart
+    const totalOptions = asNumber(entry.totalOptions ?? entry.total_options)
+    if (!grantDate || !vestStart || !vestEnd || totalOptions == null || totalOptions <= 0) continue
+    results.push({
+      id: normalizeUuid(entry.id),
+      grantDate,
+      totalOptions,
+      strikePrice: asNumber(entry.strikePrice ?? entry.strike_price) ?? 0,
+      vestStart,
+      vestEnd,
+      cliffDate: toIsoDate(entry.cliffDate ?? entry.cliff_date),
+      vestingFrequency: normalizeEsopVestingFrequency(entry.vestingFrequency ?? entry.vesting_frequency),
+      expiryDate: toIsoDate(entry.expiryDate ?? entry.expiry_date),
+      endedAt: toIsoDate(entry.endedAt ?? entry.ended_at),
+      exercises: normalizeEsopExercises(asArray(entry.exercises ?? entry.esop_exercises ?? entry.esopExercises)),
+    })
+  }
+  return results
+}
+
 function normalizeSubtypes(rawSubtypes: unknown[]): ParsedSubtype[] {
   const results: ParsedSubtype[] = []
   for (const entry of rawSubtypes) {
@@ -598,6 +679,7 @@ function normalizeSubtypes(rawSubtypes: unknown[]): ParsedSubtype[] {
       subtype,
       transactions: mergedTransactions,
       rsuGrants,
+      esopGrants: normalizeEsopGrants(asArray(entry.esopGrants ?? entry.esop_grants)),
     })
   }
   return results
@@ -875,6 +957,31 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
     grantsBySubtype.set(subtypeId, list)
   }
 
+  const exercisesByGrant = new Map<string, ParsedEsopExercise[]>()
+  for (const exerciseEntry of asArray(data.esopExercises ?? data.esop_exercises)) {
+    if (!isRecord(exerciseEntry)) continue
+    const grantId = normalizeUuid(exerciseEntry.grantId ?? exerciseEntry.grant_id)
+    if (!grantId) continue
+    const exercise = normalizeEsopExercises([exerciseEntry])[0]
+    if (!exercise) continue
+    const list = exercisesByGrant.get(grantId) ?? []
+    list.push(exercise)
+    exercisesByGrant.set(grantId, list)
+  }
+
+  const esopGrantsBySubtype = new Map<string, ParsedEsopGrant[]>()
+  for (const grantEntry of asArray(data.esopGrants ?? data.esop_grants)) {
+    if (!isRecord(grantEntry)) continue
+    const subtypeId = normalizeUuid(grantEntry.subtypeId ?? grantEntry.subtype_id)
+    if (!subtypeId) continue
+    const grant = normalizeEsopGrants([grantEntry])[0]
+    if (!grant) continue
+    grant.exercises = grant.id ? (exercisesByGrant.get(grant.id) ?? []).slice() : []
+    const list = esopGrantsBySubtype.get(subtypeId) ?? []
+    list.push(grant)
+    esopGrantsBySubtype.set(subtypeId, list)
+  }
+
   const fixedIncomeLotsByAsset = new Map<string, ParsedFixedIncomeLot[]>()
   for (const lotEntry of asArray(data.fixedIncomeLots ?? data.fixed_income_lots)) {
     if (!isRecord(lotEntry)) continue
@@ -897,6 +1004,7 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
       subtype: subtype.subtype,
       transactions,
       rsuGrants,
+      esopGrants: (esopGrantsBySubtype.get(subtype.id ?? '') ?? []).slice(),
     })
     subtypesByAsset.set(subtype.assetId, list)
   }
@@ -927,6 +1035,7 @@ function normalizeCanonicalExport(root: Record<string, unknown>): ParsedImport {
         ...st,
         transactions: [...st.transactions].sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate)),
         rsuGrants: [...st.rsuGrants].sort((a, b) => b.grantDate.localeCompare(a.grantDate)),
+        esopGrants: [...st.esopGrants].sort((a, b) => b.grantDate.localeCompare(a.grantDate)),
       })),
       fixedIncomeLots: [...(fixedIncomeLotsByAsset.get(normalizeUuid(row.id) ?? '') ?? [])]
         .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate)),
@@ -1002,6 +1111,8 @@ export function serializeForExport(
     vestingFrequency: string
     endedAt: string | null
   }> = []
+  const esopGrants: CanonicalExportV2['data']['esopGrants'] = []
+  const esopExercises: CanonicalExportV2['data']['esopExercises'] = []
 
   const themeByName = new Map<string, ParsedTheme>()
 
@@ -1128,6 +1239,14 @@ export function serializeForExport(
           endedAt: grant.endedAt,
         })
       }
+
+      for (const grant of normalizeEsopGrants(asArray(rawSubtype.esop_grants ?? rawSubtype.esopGrants))) {
+        const { exercises, ...grantFields } = grant
+        esopGrants.push({ ...grantFields, subtypeId })
+        for (const exercise of exercises) {
+          if (grant.id) esopExercises.push({ ...exercise, grantId: grant.id })
+        }
+      }
     }
   }
 
@@ -1155,6 +1274,8 @@ export function serializeForExport(
       transactions,
       rsuGrants,
       fixedIncomeLots,
+      esopGrants,
+      esopExercises,
     },
   }
 }
@@ -1215,6 +1336,8 @@ const SHEET = {
   stockSubtypes: 'StockSubtypes',
   transactions: 'Transactions',
   rsuGrants: 'RsuGrants',
+  esopGrants: 'EsopGrants',
+  esopExercises: 'EsopExercises',
   fixedIncomeLots: 'FixedIncomeLots',
   snapshots: 'NetWorthSnapshots',
   conversations: 'Conversations',
@@ -1270,6 +1393,14 @@ export function buildExportWorkbook(payload: CanonicalExportV2): XLSX.WorkBook {
     payload.data.rsuGrants,
     ['id', 'subtypeId', 'grantDate', 'totalShares', 'vestStart', 'vestEnd', 'cliffDate', 'vestingFrequency', 'endedAt'],
   ), SHEET.rsuGrants)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.esopGrants,
+    ['id', 'subtypeId', 'grantDate', 'totalOptions', 'strikePrice', 'vestStart', 'vestEnd', 'cliffDate', 'vestingFrequency', 'expiryDate', 'endedAt'],
+  ), SHEET.esopGrants)
+  XLSX.utils.book_append_sheet(wb, toSheet(
+    payload.data.esopExercises,
+    ['id', 'grantId', 'exerciseDate', 'count', 'strikePrice', 'costPrice', 'transactionId'],
+  ), SHEET.esopExercises)
   XLSX.utils.book_append_sheet(wb, toSheet(
     payload.data.fixedIncomeLots,
     ['id', 'assetId', 'count', 'costPrice', 'purchaseDate'],
@@ -1394,6 +1525,8 @@ function workbookToRoot(wb: XLSX.WorkBook): Record<string, unknown> {
       stockSubtypes: readSheet(wb, SHEET.stockSubtypes),
       transactions: readSheet(wb, SHEET.transactions),
       rsuGrants: readSheet(wb, SHEET.rsuGrants),
+      esopGrants: readSheet(wb, SHEET.esopGrants),
+      esopExercises: readSheet(wb, SHEET.esopExercises),
       fixedIncomeLots: readSheet(wb, SHEET.fixedIncomeLots),
     },
   }
@@ -1579,6 +1712,12 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     let importedSubtypes = 0
     let importedTransactions = 0
     let importedRsuGrants = 0
+    let importedEsopGrants = 0
+    let importedEsopExercises = 0
+    // Exercises are written after every asset: they point at a grant and at the
+    // Market lot the exercise created, which may sit in a later subtype/asset.
+    const pendingEsopExercises: { assetName: string; grantId: string; exercise: ParsedEsopExercise }[] = []
+    const importedTransactionIds = new Set<string>()
     let importedFixedIncomeLots = 0
     let importedSnapshots = 0
     let importedConversations = 0
@@ -1868,6 +2007,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
             throw new Error(`Failed to import transaction for "${asset.name}": ${txResult.error.message}`)
           }
           importedTransactions += 1
+          if (tx.id) importedTransactionIds.add(tx.id)
         }
 
         for (const grant of subtype.rsuGrants) {
@@ -1892,7 +2032,57 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
           }
           importedRsuGrants += 1
         }
+
+        for (const grant of subtype.esopGrants) {
+          throwIfImportAborted(signal)
+          const esopPayload: TablesInsert<'esop_grants'> = {
+            subtype_id: subtypeRow.id,
+            grant_date: grant.grantDate,
+            total_options: grant.totalOptions,
+            strike_price: grant.strikePrice,
+            vest_start: grant.vestStart,
+            vest_end: grant.vestEnd,
+            cliff_date: grant.cliffDate,
+            vesting_frequency: grant.vestingFrequency,
+            expiry_date: grant.expiryDate,
+            ended_at: grant.endedAt,
+          }
+          if (grant.id) esopPayload.id = grant.id
+          const esopResult = grant.id
+            ? await supabase.from('esop_grants').upsert(esopPayload).select('id').single()
+            : await supabase.from('esop_grants').insert(esopPayload).select('id').single()
+          throwIfImportAborted(signal)
+          if (esopResult.error) {
+            throw new Error(`Failed to import option grant for "${asset.name}": ${esopResult.error.message}`)
+          }
+          importedEsopGrants += 1
+          for (const exercise of grant.exercises) {
+            pendingEsopExercises.push({ assetName: asset.name, grantId: esopResult.data.id, exercise })
+          }
+        }
       }
+    }
+
+    for (const { assetName, grantId, exercise } of pendingEsopExercises) {
+      throwIfImportAborted(signal)
+      const exercisePayload: TablesInsert<'esop_exercises'> = {
+        grant_id: grantId,
+        exercise_date: exercise.exerciseDate,
+        count: exercise.count,
+        strike_price: exercise.strikePrice,
+        cost_price: exercise.costPrice,
+        // Only link a lot this import actually wrote (or already had); a dangling id would fail the foreign key.
+        transaction_id: exercise.transactionId && importedTransactionIds.has(exercise.transactionId) ? exercise.transactionId : null,
+      }
+      if (exercise.id) exercisePayload.id = exercise.id
+      const exerciseResult = exercise.id
+        ? await supabase.from('esop_exercises').upsert(exercisePayload)
+        : await supabase.from('esop_exercises').insert(exercisePayload)
+      throwIfImportAborted(signal)
+      if (exerciseResult.error) {
+        throw new Error(`Failed to import option exercise for "${assetName}": ${exerciseResult.error.message}`)
+      }
+      importedEsopExercises += 1
     }
 
     for (const link of data.tickerThemes) {
@@ -2004,7 +2194,7 @@ export async function importData(file: File, options: { signal?: AbortSignal } =
     ].filter(Boolean).join(', ')
 
     showAppAlert(
-      `Imported ${importedLocations} locations, ${importedAssets} assets (${newAssets} new, ${matchedExistingAssets} matched existing), ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.${extras ? ` Also restored ${extras}.` : ''}`,
+      `Imported ${importedLocations} locations, ${importedAssets} assets (${newAssets} new, ${matchedExistingAssets} matched existing), ${importedSubtypes} stock buckets, ${importedTransactions} transactions, ${importedRsuGrants} RSU grants, ${importedEsopGrants} option grants (${importedEsopExercises} exercises), ${importedFixedIncomeLots} fixed income lots, ${importedTickers} tickers, ${importedThemes} themes, ${importedTickerThemes} ticker-theme links, ${importedThemeTargets} theme targets, and ${autoAssignedTickerThemes} AI-assigned ticker-theme links.${extras ? ` Also restored ${extras}.` : ''}`,
       { variant: 'success', durationMs: 6000 },
     )
   } catch (error: any) {

@@ -10,7 +10,7 @@ const ASSET_SELECT = `
   *,
   location:locations(*),
   ticker:tickers(*, ticker_themes(theme:themes(*))),
-  stock_subtypes(*, transactions(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))), rsu_grants(*)),
+  stock_subtypes(*, transactions(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))), rsu_grants(*), esop_grants(*, esop_exercises(*))),
   fixed_income_lots(*, plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))),
   plaid_synced_positions(plaid_item:plaid_items(institution_name, last_synced_at))
 `
@@ -42,6 +42,11 @@ export async function deleteAsset(id: string) {
     const subtypeIds = subtypes.map(s => s.id)
     await supabase.from('transactions').delete().in('subtype_id', subtypeIds)
     await supabase.from('rsu_grants').delete().in('subtype_id', subtypeIds)
+    const { data: esopGrants } = await supabase.from('esop_grants').select('id').in('subtype_id', subtypeIds)
+    if (esopGrants?.length) {
+      await supabase.from('esop_exercises').delete().in('grant_id', esopGrants.map(g => g.id))
+      await supabase.from('esop_grants').delete().in('subtype_id', subtypeIds)
+    }
     await supabase.from('stock_subtypes').delete().eq('asset_id', id)
   }
   await supabase.from('fixed_income_lots').delete().eq('asset_id', id)

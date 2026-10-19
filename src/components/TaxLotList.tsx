@@ -19,6 +19,8 @@ import {
   StockLotRows, StockSummary, StockTimeline,
   type EditValues, type StockLotCtx, type TimelineExtraEvent,
 } from '@/components/lots/StockLotViews'
+import { EsopGrantList } from '@/components/EsopGrantList'
+import type { ExerciseInput } from '@/lib/db/esop'
 import '@/styles/portfolio.css'
 
 type EditTransactionUpdates = {
@@ -29,7 +31,7 @@ type EditTransactionUpdates = {
   sold_at_vest?: number
 }
 
-export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant }: {
+export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTransaction, onEditTransaction, onEndGrant, onDeleteGrant, onExerciseOptions, onEndEsopGrant, onDeleteEsopGrant }: {
   subtypes: any[]
   ticker: any
   layout?: LotLayout
@@ -37,6 +39,9 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
   onEditTransaction?: (id: string, updates: EditTransactionUpdates) => Promise<void>
   onEndGrant?: (id: string) => Promise<void>
   onDeleteGrant?: (grantId: string, transactionIds: string[]) => Promise<void>
+  onExerciseOptions?: (grant: any, input: ExerciseInput) => Promise<void>
+  onEndEsopGrant?: (grantId: string) => Promise<void>
+  onDeleteEsopGrant?: (grantId: string) => Promise<void>
 }) {
   const [hideValues] = useHideValues()
   const isCrypto = ticker?.kind === 'crypto'
@@ -57,7 +62,7 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
     })
   }
   const subtypesWithActivity = subtypes.filter(
-    (st: any) => (st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0,
+    (st: any) => (st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0 || (st.esop_grants?.length ?? 0) > 0,
   )
 
   async function handleSave(tId: string, values: EditValues) {
@@ -239,6 +244,8 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
         const isRsuSubtype = st.subtype === 'RSU'
         const rsuGrantGroups = isRsuSubtype ? groupRsuActivityByGrant(rsuGrants, transactions) : null
         const isSubtypeOpen = !collapsedSubtypeIds.has(st.id)
+        const esopGrants = st.esop_grants ?? []
+        const isEsopSubtype = st.subtype === 'ESOP'
 
         return (
           <div key={st.id} className="pf-sub">
@@ -253,14 +260,24 @@ export function TaxLotList({ subtypes, ticker, layout = 'default', onDeleteTrans
                 <span className="mne-eyebrow">{st.subtype}</span>
               </span>
               <span className="mne-help">
-                {transactions.length} {plural(transactions.length, 'transaction', 'transactions')}
+                {isEsopSubtype
+                  ? <>{esopGrants.length} {plural(esopGrants.length, 'option grant', 'option grants')}</>
+                  : <>{transactions.length} {plural(transactions.length, 'transaction', 'transactions')}</>}
                 {rsuGrants.length > 0 && <> · {rsuGrants.length} {plural(rsuGrants.length, 'grant', 'grants')}</>}
               </span>
             </button>
 
             {isSubtypeOpen && (
               <div className="pf-fade" style={{ marginTop: 8 }}>
-                {isRsuSubtype && rsuGrantGroups ? (
+                {isEsopSubtype ? (
+                  <EsopGrantList
+                    grants={esopGrants}
+                    price={price}
+                    onExercise={onExerciseOptions}
+                    onEndGrant={onEndEsopGrant}
+                    onDeleteGrant={onDeleteEsopGrant}
+                  />
+                ) : isRsuSubtype && rsuGrantGroups ? (
                   <div className="lot-stack">
                     {rsuGrantGroups.grants.map(group => renderGrant(group))}
 

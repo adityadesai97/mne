@@ -5,7 +5,7 @@ import { bootstrappedDb, createUser } from './testDb'
 import { computeAssetValue, computeTotalNetWorth } from '../../lib/portfolio'
 
 let db: PGlite
-let full: string, noPrice: string, empty: string, zero: string, existing: string
+let full: string, noPrice: string, empty: string, zero: string, existing: string, options: string
 
 const D = '2026-10-16'
 
@@ -53,6 +53,7 @@ beforeAll(async () => {
   empty = await createUser(db, 'empty@example.com')
   zero = await createUser(db, 'zero@example.com')
   existing = await createUser(db, 'existing@example.com')
+  options = await createUser(db, 'options@example.com')
 
   const seedFull = async (u: string) => {
     const aapl = await ticker(u, 'AAPL', 123.4567)
@@ -78,6 +79,17 @@ beforeAll(async () => {
   await lot(s, 'Market', 5, 100)
   await asset(noPrice, 'Cash', 'Cash', { price: 1000 })
 
+  // a user holding stock options: their value comes from the vesting schedule,
+  // which the SQL job doesn't reimplement, so nothing is written for them
+  const acme = await ticker(options, 'ACME', 50)
+  const optionStock = await asset(options, 'ACME', 'Stock', { ticker: acme })
+  await lot(optionStock, 'Market', 5, 10)
+  const esop = await one(
+    `insert into public.stock_subtypes (asset_id, subtype) values ($1, 'ESOP') returning id`, [optionStock])
+  await db.query(
+    `insert into public.esop_grants (subtype_id, grant_date, total_options, strike_price, vest_start, vest_end)
+     values ($1, '2024-01-01', 100, 10, '2024-01-01', '2026-01-01')`, [esop])
+
   // a user whose only assets total zero
   await asset(zero, 'Empty cash', 'Cash', { price: 0 })
 
@@ -102,6 +114,7 @@ test('writes the same net worth as the TS valuation, and skips incomplete / empt
   expect(await snapshots(noPrice)).toEqual([])
   expect(await snapshots(zero)).toEqual([])
   expect(await snapshots(empty)).toEqual([])
+  expect(await snapshots(options)).toEqual([])
 })
 
 test('never overwrites an existing row for the date (the app live value wins)', async () => {

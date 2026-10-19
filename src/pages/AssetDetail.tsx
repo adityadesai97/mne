@@ -12,10 +12,12 @@ import { addMarketLot } from '@/lib/db/marketLots'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
+import { addEsopGrant, exerciseOptions, endEsopGrant, deleteEsopGrant, type ExerciseInput, type NewEsopGrant } from '@/lib/db/esop'
+import { AddEsopGrantForm } from '@/components/EsopGrantList'
 import { addFixedIncomeLot, updateFixedIncomeLot, deleteFixedIncomeLot } from '@/lib/db/fixedIncomeLots'
 import {
   computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount, computeDailyChange, getLivePrice,
-  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset,
+  isTradableFixedIncome, computeFixedIncomeExpectedReturn, computeFixedIncomeLotCount, isTickerAsset, computeOptionValue,
 } from '@/lib/portfolio'
 import { requestAppConfirm, requestAppPrompt } from '@/lib/appAlerts'
 import { Delta, PageBody, PageHead, Stat } from '@/components/mne'
@@ -137,6 +139,55 @@ export default function AssetDetail() {
     try {
       await addFixedIncomeLot(asset.id, values)
       if (id) setAsset(await getAssetById(id))
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function reloadAsset() {
+    if (id) setAsset(await getAssetById(id))
+  }
+
+  async function handleAddEsopGrant(grant: NewEsopGrant) {
+    await addEsopGrant(asset.id, grant)
+    await reloadAsset()
+  }
+
+  async function handleExerciseOptions(grant: any, input: ExerciseInput) {
+    await exerciseOptions(asset.id, grant, input)
+    await reloadAsset()
+  }
+
+  async function handleEndEsopGrant(grantId: string) {
+    const date = await requestAppPrompt({
+      title: 'End option grant',
+      message: 'Enter end date (YYYY-MM-DD)',
+      defaultValue: new Date().toISOString().split('T')[0],
+      placeholder: 'YYYY-MM-DD',
+      submitLabel: 'Save',
+      cancelLabel: 'Cancel',
+    })
+    if (!date) return
+    try {
+      await endEsopGrant(grantId, date)
+      await reloadAsset()
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  async function handleDeleteEsopGrant(grantId: string) {
+    const confirmed = await requestAppConfirm({
+      title: 'Delete option grant?',
+      message: 'Delete this grant and its exercise history? Shares already created by exercises are kept. This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await deleteEsopGrant(grantId)
+      await reloadAsset()
     } catch (err: any) {
       setError(err.message)
     }
@@ -280,7 +331,14 @@ export default function AssetDetail() {
       0,
     )
     : 0
-  const hasStockActivity = stockTransactionCount + stockGrantCount > 0
+  const esopGrantCount = isStock
+    ? (asset.stock_subtypes ?? []).reduce(
+      (sum: number, st: any) => sum + (st.esop_grants?.length ?? 0),
+      0,
+    )
+    : 0
+  const optionValue = isStock ? computeOptionValue(asset) : 0
+  const hasStockActivity = stockTransactionCount + stockGrantCount + esopGrantCount > 0
 
   const subtitle = [
     isStock && asset.ticker?.symbol ? asset.ticker.symbol : null,
@@ -440,6 +498,9 @@ export default function AssetDetail() {
                 <Stat label={isCrypto ? 'Units' : 'Shares'} value={fmtShares(shareCount, isCrypto ? 8 : 2)} />
               )}
               {isTradable && <Stat label="Units" value={fmtShares(lotUnits)} />}
+              {isStock && optionValue > 0 && (
+                <Stat label="Options (vested)" value={<span className={hiddenValueClass(hideValues)}>{fmt(optionValue)}</span>} />
+              )}
               {(isStock || isTradable) && basis > 0 && (
                 <Stat label="Cost basis" value={<span className={hiddenValueClass(hideValues)}>{fmt(basis)}</span>} />
               )}
@@ -461,6 +522,7 @@ export default function AssetDetail() {
           <p className="mne-help max-sm:hidden" style={{ marginBottom: 12 }}>
             {stockTransactionCount} transaction{stockTransactionCount === 1 ? '' : 's'}
             {stockGrantCount > 0 && <> · {stockGrantCount} RSU grant{stockGrantCount === 1 ? '' : 's'}</>}
+            {esopGrantCount > 0 && <> · {esopGrantCount} option grant{esopGrantCount === 1 ? '' : 's'}</>}
           </p>
           {hasStockActivity && <TaxLotList
             subtypes={asset.stock_subtypes}
@@ -470,10 +532,18 @@ export default function AssetDetail() {
             onEditTransaction={handleEditTransaction}
             onEndGrant={handleEndGrant}
             onDeleteGrant={handleDeleteGrant}
+            onExerciseOptions={handleExerciseOptions}
+            onEndEsopGrant={handleEndEsopGrant}
+            onDeleteEsopGrant={handleDeleteEsopGrant}
           />}
           <div style={{ marginTop: hasStockActivity ? 12 : 0 }}>
             <AddLotForm isCrypto={isCrypto} onAddLot={handleAddMarketLot} />
           </div>
+          {!isCrypto && (
+            <div style={{ marginTop: 12 }}>
+              <AddEsopGrantForm onAdd={handleAddEsopGrant} />
+            </div>
+          )}
         </section>
       )}
 

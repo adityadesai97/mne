@@ -15,6 +15,8 @@ import { computeAssetValue, computeCostBasis, computeDailyChange, computePortfol
 import { getSupabaseClient } from './supabase'
 import { formatDateMDY } from './dates'
 import { findMatchingLot, isLotFixedIncomeSubtype } from './plaidMatching'
+import { computeEsopPosition } from './esop'
+import { addEsopGrant, exerciseOptions } from './db/esop'
 import type { ExistingLot, PlaidLot } from './plaidMatching'
 
 export type Message = { role: 'user' | 'assistant'; content: string }
@@ -341,6 +343,16 @@ type HoldingSummary = {
       cliffDate: string | null
       endedAt: string | null
     }>
+    optionGrants: Array<{
+      grantDate: string
+      totalOptions: number
+      strikePrice: number
+      vested: number
+      exercised: number
+      exercisable: number
+      expiryDate: string | null
+      endedAt: string | null
+    }>
   }>
 }
 
@@ -379,6 +391,7 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
 
     const accountLots: HoldingSummary['accounts'][number]['lots'] = []
     const accountGrants: HoldingSummary['accounts'][number]['rsuGrants'] = []
+    const accountOptionGrants: HoldingSummary['accounts'][number]['optionGrants'] = []
     let accountShares = 0
     let accountCostBasis = 0
     for (const subtype of asset?.stock_subtypes ?? []) {
@@ -410,6 +423,20 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
           endedAt: grant?.ended_at ? String(grant.ended_at) : null,
         })
       }
+
+      for (const grant of subtype?.esop_grants ?? []) {
+        const position = computeEsopPosition(grant)
+        accountOptionGrants.push({
+          grantDate: String(grant?.grant_date ?? ''),
+          totalOptions: Number(grant?.total_options ?? 0) || 0,
+          strikePrice: Number(grant?.strike_price ?? 0) || 0,
+          vested: position.vested,
+          exercised: position.exercised,
+          exercisable: position.exercisable,
+          expiryDate: grant?.expiry_date ? String(grant.expiry_date) : null,
+          endedAt: grant?.ended_at ? String(grant.ended_at) : null,
+        })
+      }
     }
 
     const accountMarketValue = computeAssetValue(asset)
@@ -430,6 +457,9 @@ function buildFocusedPortfolioContext(query: string, assets: any[], tickers: any
         .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
         .slice(0, includeExtended ? 30 : 12),
       rsuGrants: accountGrants
+        .sort((a, b) => b.grantDate.localeCompare(a.grantDate))
+        .slice(0, includeExtended ? 12 : 6),
+      optionGrants: accountOptionGrants
         .sort((a, b) => b.grantDate.localeCompare(a.grantDate))
         .slice(0, includeExtended ? 12 : 6),
     })
@@ -1602,6 +1632,14 @@ function buildCompactAssetContext(assets: any[]): any[] {
           vest_end: g.vest_end,
           total_shares: g.total_shares,
         })),
+        esop_grants: (st.esop_grants ?? []).map((g: any) => ({
+          grant_date: g.grant_date,
+          total_options: g.total_options,
+          strike_price: g.strike_price,
+          vest_start: g.vest_start,
+          vest_end: g.vest_end,
+          expiry_date: g.expiry_date,
+        })),
       })),
     }
   })
@@ -1665,6 +1703,7 @@ Cryptocurrency holdings (BTC, ETH, SOL, QNT, ...) use add_crypto_transaction / a
 When you need to ask the user a follow-up question, reply with the question ONLY — never call a write tool in that same response, and never proceed on an assumed answer. Wait for their reply.
 When the user provides 2 or more non-stock assets and all details are present, use add_cash_assets with an assets array.
 If required details are missing in a multi-item request, ask follow-up questions for only the first unresolved item and wait for the user's answer before moving to the next item.
+Stock options (ESOP / employee stock options) are a different thing from RSUs: use add_esop_grant (options, strike_price, vesting dates) — NOT add_rsu_grant. Options count toward net worth at their vested, in-the-money spread (price - strike), and nothing before they vest. To convert vested options into shares use exercise_esop_options; cost_basis_per_share must come from the user (usually FMV on the exercise date) — never assume it. If the user doesn't say how the options vest, ask; do not guess a strike price.
 When the user provides 2 or more RSU grants in one message and all details are present, use add_rsu_grants (plural) with a grants array — do NOT call add_rsu_grant multiple times.
 RSU data from documents or user messages: Use add_rsu_grant / add_rsu_grants. Include the grant structure AND all vesting transactions that have already occurred in the transactions array for each grant. Do NOT call add_stock_transactions separately for RSU vests.
   Grant fields — infer from transaction history when not explicitly stated:
@@ -2217,6 +2256,51 @@ const tools = [
   {
     type: 'function' as const,
     function: {
+      name: 'add_esop_grant',
+      description: 'Record a stock option (ESOP) grant: the right to buy shares at a fixed strike price, vesting on a schedule. Options are valued at their vested, in-the-money spread (price - strike) until exercised. Use exercise_esop_options to convert vested options into shares.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          grant_date: { type: 'string', description: 'ISO date YYYY-MM-DD when the options were granted' },
+          total_options: { type: 'number', description: 'Total options granted' },
+          strike_price: { type: 'number', description: 'Exercise (strike) price per share in USD' },
+          vest_start: { type: 'string', description: 'ISO date when vesting begins' },
+          vest_end: { type: 'string', description: 'ISO date when vesting ends' },
+          cliff_date: { type: 'string', description: 'Optional cliff date ISO YYYY-MM-DD' },
+          vesting_frequency: { type: 'string', enum: ['monthly', 'quarterly', 'annually', 'continuous'], description: 'How the options vest after the cliff. Defaults to monthly if not stated.' },
+          expiry_date: { type: 'string', description: 'Optional ISO date after which unexercised options expire' },
+          asset_name: { type: 'string', description: 'Name for the position, defaults to "{SYMBOL} Stock"' },
+          location_name: { type: 'string', description: 'Brokerage or equity-plan account e.g. Carta, Fidelity, Schwab' },
+          account_type: { type: 'string', enum: ['Investment', 'Checking', 'Savings', 'Misc'] },
+          ownership: { type: 'string', enum: ['Individual', 'Joint'], description: 'Default Individual' },
+        },
+        required: ['symbol', 'grant_date', 'total_options', 'strike_price', 'vest_start', 'vest_end', 'location_name', 'account_type'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'exercise_esop_options',
+      description: 'Exercise (convert) vested stock options into shares: adds a regular share lot and reduces the grant\'s outstanding options. cost_basis_per_share is required and must come from the user (typically the fair market value on the exercise date) - never assume it.',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          symbol: { type: 'string', description: 'Ticker symbol e.g. AAPL' },
+          count: { type: 'number', description: 'Number of options to exercise' },
+          exercise_date: { type: 'string', description: 'ISO date YYYY-MM-DD of the exercise' },
+          cost_basis_per_share: { type: 'number', description: 'Cost basis per resulting share in USD' },
+          grant_date: { type: 'string', description: 'ISO date of the grant to exercise from. Required when the position has more than one option grant.' },
+          location_name: { type: 'string', description: 'Account the options are held in. Required when the symbol is held in more than one account.' },
+        },
+        required: ['symbol', 'count', 'exercise_date', 'cost_basis_per_share'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'sell_shares',
       description: 'Record a stock sale from one or more purchase-date lots in a specific account/location, with optional proceeds transfer. Not for cryptocurrency — use sell_crypto for coins.',
       parameters: {
@@ -2324,6 +2408,8 @@ const WRITE_TOOL_NAMES = new Set([
   'add_ticker_themes',
   'add_rsu_grant',
   'add_rsu_grants',
+  'add_esop_grant',
+  'exercise_esop_options',
   'sell_shares',
   'sell_crypto',
   'update_asset_value',
@@ -2583,6 +2669,44 @@ export function buildPreviewSectionsFor(toolName: string, input: any): Confirmat
     return sections
   }
 
+  if (toolName === 'add_esop_grant') {
+    const symbol = String(input?.symbol ?? '').toUpperCase() || '-'
+    return [{
+      title: 'Option Grant',
+      groupKey: symbol,
+      columns: ['Symbol', 'Options', 'Strike', 'Grant Date', 'Vest Start', 'Vest End', 'Cliff', 'Frequency', 'Expires', 'Location'],
+      rows: [[
+        symbol,
+        numberToText(input?.total_options),
+        moneyToText(input?.strike_price),
+        dateToText(input?.grant_date),
+        dateToText(input?.vest_start),
+        dateToText(input?.vest_end),
+        dateToText(input?.cliff_date),
+        String(input?.vesting_frequency ?? 'monthly'),
+        dateToText(input?.expiry_date),
+        String(input?.location_name ?? '').trim() || '-',
+      ]],
+    }]
+  }
+
+  if (toolName === 'exercise_esop_options') {
+    const symbol = String(input?.symbol ?? '').toUpperCase() || '-'
+    return [{
+      title: 'Option Exercise',
+      groupKey: symbol,
+      columns: ['Symbol', 'Options', 'Exercise Date', 'Cost Basis/Share', 'Grant', 'Location'],
+      rows: [[
+        symbol,
+        numberToText(input?.count),
+        dateToText(input?.exercise_date),
+        moneyToText(input?.cost_basis_per_share),
+        input?.grant_date ? dateToText(input.grant_date) : 'Only grant',
+        String(input?.location_name ?? '').trim() || '-',
+      ]],
+    }]
+  }
+
   return []
 }
 
@@ -2825,6 +2949,32 @@ export function validateWriteToolInput(toolName: string, input: any): string | n
     }
   }
 
+  if (toolName === 'add_esop_grant') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
+    if (!Number.isFinite(Number(input.total_options)) || Number(input.total_options) <= 0) return 'Total options must be a positive number'
+    if (!Number.isFinite(Number(input.strike_price)) || Number(input.strike_price) < 0) return 'Strike price must be zero or more'
+    if (!isValidIsoDate(input.grant_date)) return `Invalid grant date: "${input.grant_date}". Use YYYY-MM-DD format`
+    if (!isValidIsoDate(input.vest_start)) return `Invalid vest start: "${input.vest_start}". Use YYYY-MM-DD format`
+    if (!isValidIsoDate(input.vest_end)) return `Invalid vest end: "${input.vest_end}". Use YYYY-MM-DD format`
+    if (new Date(input.vest_start) >= new Date(input.vest_end)) return 'Vest start must be before vest end'
+    if (input.cliff_date != null && input.cliff_date !== '' && !isValidIsoDate(input.cliff_date)) return `Invalid cliff date: "${input.cliff_date}". Use YYYY-MM-DD format`
+    if (input.expiry_date != null && input.expiry_date !== '' && !isValidIsoDate(input.expiry_date)) return `Invalid expiry date: "${input.expiry_date}". Use YYYY-MM-DD format`
+    if (input.vesting_frequency && !['monthly', 'quarterly', 'annually', 'continuous'].includes(input.vesting_frequency)) {
+      return `Invalid vesting frequency: "${input.vesting_frequency}". Use monthly, quarterly, annually, or continuous`
+    }
+  }
+
+  if (toolName === 'exercise_esop_options') {
+    if (!input.symbol || !String(input.symbol).trim()) return 'Symbol is required'
+    if (!Number.isFinite(Number(input.count)) || Number(input.count) <= 0) return 'Options to exercise must be a positive number'
+    if (!isValidIsoDate(input.exercise_date)) return `Invalid exercise date: "${input.exercise_date}". Use YYYY-MM-DD format`
+    if (new Date(input.exercise_date) > new Date()) return 'Exercise date cannot be in the future'
+    if (input.cost_basis_per_share == null || !Number.isFinite(Number(input.cost_basis_per_share)) || Number(input.cost_basis_per_share) < 0) {
+      return 'Cost basis per share is required (usually the fair market value on the exercise date)'
+    }
+    if (input.grant_date != null && input.grant_date !== '' && !isValidIsoDate(input.grant_date)) return `Invalid grant date: "${input.grant_date}". Use YYYY-MM-DD format`
+  }
+
   if (toolName === 'update_asset_value') {
     if (!input.asset_name || !String(input.asset_name).trim()) return 'Asset name is required'
     if (!Number.isFinite(Number(input.price)) || Number(input.price) < 0) return 'Price must be a non-negative number'
@@ -2887,6 +3037,10 @@ export function confirmationMessageFor(toolName: string, input: any): string {
       const frequency: RsuVestingFrequency = input.vesting_frequency ?? 'quarterly'
       return `Record ${input.total_shares}-share RSU grant of ${input.symbol.toUpperCase()} on ${formatDateMDY(input.grant_date)} (vests ${formatDateMDY(input.vest_start)} → ${formatDateMDY(input.vest_end)}, ${frequency})`
     }
+    case 'add_esop_grant':
+      return `Record ${numberToText(input.total_options)}-option grant of ${input.symbol.toUpperCase()} at $${input.strike_price} strike on ${formatDateMDY(input.grant_date)} (vests ${formatDateMDY(input.vest_start)} → ${formatDateMDY(input.vest_end)}, ${input.vesting_frequency ?? 'monthly'})`
+    case 'exercise_esop_options':
+      return `Exercise ${numberToText(input.count)} ${input.symbol.toUpperCase()} options on ${formatDateMDY(input.exercise_date)} into shares at a $${input.cost_basis_per_share}/share cost basis`
     case 'sell_shares': {
       const multiLots = Array.isArray(input.lots) ? input.lots : []
       const normalizedLots = multiLots.length > 0
@@ -3451,6 +3605,99 @@ export async function executeTool(toolName: string, input: any, userId: string):
     }
   }
 
+  if (toolName === 'add_esop_grant') {
+    const symbol = input.symbol.toUpperCase()
+    const { data: existingTicker } = await supabase.from('tickers')
+      .select('id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
+    let tickerId: string
+    if (existingTicker) {
+      tickerId = existingTicker.id
+    } else {
+      const { data, error } = await supabase.from('tickers')
+        .insert({ user_id: userId, symbol }).select('id').single()
+      if (error) throw new Error(`Failed to create ticker: ${error.message}`)
+      tickerId = data.id
+      await fetchAndStorePrice(tickerId, symbol)
+      try {
+        await autoAssignThemesForTickerIfEnabled({ userId, tickerId, symbol, skipIfAlreadyTagged: true })
+      } catch (error) {
+        console.warn('Auto theme assignment failed for new option ticker', error)
+      }
+    }
+    await supabase.from('tickers').update({ watchlist_only: false }).eq('id', tickerId)
+
+    const locationId = await findOrCreateLocation(userId, input.location_name, input.account_type)
+    const { data: existingAsset } = await supabase.from('assets')
+      .select('id').eq('user_id', userId).eq('ticker_id', tickerId).eq('location_id', locationId).maybeSingle()
+    let assetId: string
+    if (existingAsset) {
+      assetId = existingAsset.id
+    } else {
+      const { data, error } = await supabase.from('assets').insert({
+        user_id: userId,
+        name: input.asset_name || `${symbol} Stock`,
+        asset_type: 'Stock',
+        location_id: locationId,
+        ownership: input.ownership || 'Individual',
+        ticker_id: tickerId,
+      }).select('id').single()
+      if (error) throw new Error(`Failed to create asset: ${error.message}`)
+      assetId = data.id
+    }
+
+    try {
+      await addEsopGrant(assetId, {
+        grant_date: input.grant_date,
+        total_options: Number(input.total_options),
+        strike_price: Number(input.strike_price),
+        vest_start: input.vest_start,
+        vest_end: input.vest_end,
+        cliff_date: input.cliff_date || null,
+        vesting_frequency: input.vesting_frequency ?? 'monthly',
+        expiry_date: input.expiry_date || null,
+      })
+    } catch (error: any) {
+      throw new Error(`Failed to create option grant: ${error.message}`)
+    }
+    return
+  }
+
+  if (toolName === 'exercise_esop_options') {
+    const symbol = input.symbol.toUpperCase()
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('id, location:locations(name), ticker:tickers!inner(symbol), stock_subtypes(subtype, esop_grants(*, esop_exercises(*)))')
+      .eq('user_id', userId)
+      .eq('ticker.symbol', symbol)
+    if (assetsError) throw new Error(`Failed to look up ${symbol}: ${assetsError.message}`)
+
+    let candidates = (assets ?? []).flatMap((asset: any) =>
+      (asset.stock_subtypes ?? [])
+        .filter((st: any) => st.subtype === 'ESOP')
+        .flatMap((st: any) => (st.esop_grants ?? []).map((grant: any) => ({ asset, grant }))))
+    if (candidates.length === 0) throw new Error(`No option grants found for ${symbol}. Add the grant first with add_esop_grant.`)
+
+    if (input.location_name) {
+      const wanted = String(input.location_name).trim().toLowerCase()
+      candidates = candidates.filter(c => String(c.asset.location?.name ?? '').trim().toLowerCase() === wanted)
+      if (candidates.length === 0) throw new Error(`No ${symbol} option grants found at ${input.location_name}`)
+    }
+    if (input.grant_date) {
+      candidates = candidates.filter(c => c.grant.grant_date === input.grant_date)
+      if (candidates.length === 0) throw new Error(`No ${symbol} option grant found with grant date ${input.grant_date}`)
+    }
+    if (candidates.length > 1) {
+      throw new Error(`${symbol} has ${candidates.length} option grants - say which one (grant date and account) to exercise from.`)
+    }
+    const { asset, grant } = candidates[0]
+    await exerciseOptions(asset.id, grant, {
+      count: Number(input.count),
+      exerciseDate: input.exercise_date,
+      costPrice: Number(input.cost_basis_per_share),
+    })
+    return
+  }
+
   if (toolName === 'sell_shares') {
     const symbol = input.symbol.toUpperCase()
 
@@ -3808,6 +4055,12 @@ async function executeDeleteAllData(userId: string): Promise<void> {
     if (subtypeIds.length > 0) {
       const { error: transactionsDeleteError } = await supabase.from('transactions').delete().in('subtype_id', subtypeIds)
       if (transactionsDeleteError) throw new Error(`Failed to delete transactions: ${transactionsDeleteError.message}`)
+
+      const { data: esopGrants } = await supabase.from('esop_grants').select('id').in('subtype_id', subtypeIds)
+      if (esopGrants?.length) {
+        await supabase.from('esop_exercises').delete().in('grant_id', esopGrants.map(g => g.id))
+        await supabase.from('esop_grants').delete().in('subtype_id', subtypeIds)
+      }
 
       const { error: grantsDeleteError } = await supabase.from('rsu_grants').delete().in('subtype_id', subtypeIds)
       if (grantsDeleteError) throw new Error(`Failed to delete RSU grants: ${grantsDeleteError.message}`)

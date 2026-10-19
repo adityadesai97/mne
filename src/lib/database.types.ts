@@ -260,6 +260,101 @@ export type Database = {
         }
         Relationships: []
       }
+      esop_exercises: {
+        Row: {
+          cost_price: number
+          count: number
+          exercise_date: string
+          grant_id: string
+          id: string
+          strike_price: number
+          transaction_id: string | null
+        }
+        Insert: {
+          cost_price: number
+          count: number
+          exercise_date: string
+          grant_id: string
+          id?: string
+          strike_price: number
+          transaction_id?: string | null
+        }
+        Update: {
+          cost_price?: number
+          count?: number
+          exercise_date?: string
+          grant_id?: string
+          id?: string
+          strike_price?: number
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "esop_exercises_grant_id_fkey"
+            columns: ["grant_id"]
+            isOneToOne: false
+            referencedRelation: "esop_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "esop_exercises_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      esop_grants: {
+        Row: {
+          cliff_date: string | null
+          ended_at: string | null
+          expiry_date: string | null
+          grant_date: string
+          id: string
+          strike_price: number
+          subtype_id: string
+          total_options: number
+          vest_end: string
+          vest_start: string
+          vesting_frequency: string
+        }
+        Insert: {
+          cliff_date?: string | null
+          ended_at?: string | null
+          expiry_date?: string | null
+          grant_date: string
+          id?: string
+          strike_price: number
+          subtype_id: string
+          total_options: number
+          vest_end: string
+          vest_start: string
+          vesting_frequency?: string
+        }
+        Update: {
+          cliff_date?: string | null
+          ended_at?: string | null
+          expiry_date?: string | null
+          grant_date?: string
+          id?: string
+          strike_price?: number
+          subtype_id?: string
+          total_options?: number
+          vest_end?: string
+          vest_start?: string
+          vesting_frequency?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "esop_grants_subtype_id_fkey"
+            columns: ["subtype_id"]
+            isOneToOne: false
+            referencedRelation: "stock_subtypes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fixed_income_lots: {
         Row: {
           asset_id: string

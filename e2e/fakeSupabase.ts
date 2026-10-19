@@ -30,6 +30,7 @@ export const STOCK_ASSET = {
     id: 'sub-1', asset_id: 'asset-1', subtype: 'Market',
     transactions: [{ id: 'tx-1', subtype_id: 'sub-1', count: 10, cost_price: 150, purchase_date: '2023-01-02', capital_gains_status: 'Long Term', sold_at_vest: 0, plaid_synced_positions: [] }],
     rsu_grants: [],
+    esop_grants: [],
   }],
   fixed_income_lots: [],
   plaid_synced_positions: [],

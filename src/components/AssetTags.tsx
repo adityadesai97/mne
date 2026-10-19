@@ -1,5 +1,5 @@
 import type { ElementType } from 'react'
-import { Award, Briefcase, Link2, User, Users } from 'lucide-react'
+import { Award, Briefcase, KeyRound, Link2, User, Users } from 'lucide-react'
 import { Tooltip } from '@/components/mne/Tooltip'
 import { getPlaidSyncInfo } from '@/lib/portfolio'
 
@@ -9,6 +9,7 @@ function stockPlanTypes(asset: any): string[] {
   const out = new Set<string>()
   for (const st of asset.stock_subtypes ?? []) {
     if ((st.subtype === 'RSU' || st.subtype === 'ESPP') && ((st.transactions?.length ?? 0) > 0 || (st.rsu_grants?.length ?? 0) > 0)) out.add(st.subtype)
+    if (st.subtype === 'ESOP' && (st.esop_grants?.length ?? 0) > 0) out.add('ESOP')
   }
   return Array.from(out)
 }
@@ -20,7 +21,7 @@ function assetTags(asset: any): Tag[] {
     tags.push({ key: 'synced', label: sync.institutionName ? `Synced via Plaid (${sync.institutionName})` : 'Synced via Plaid', icon: Link2, accent: true })
   }
   for (const t of stockPlanTypes(asset)) {
-    tags.push({ key: t, label: t === 'RSU' ? 'Includes RSUs' : 'Includes ESPP shares', icon: t === 'RSU' ? Briefcase : Award })
+    tags.push({ key: t, label: t === 'RSU' ? 'Includes RSUs' : t === 'ESOP' ? 'Includes stock options' : 'Includes ESPP shares', icon: t === 'RSU' ? Briefcase : t === 'ESOP' ? KeyRound : Award })
   }
   if (asset.ownership === 'Joint') tags.push({ key: 'joint', label: 'Joint account', icon: Users })
   else if (asset.ownership) tags.push({ key: 'individual', label: 'Individual account', icon: User })

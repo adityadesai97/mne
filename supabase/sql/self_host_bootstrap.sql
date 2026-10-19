@@ -250,6 +250,36 @@ begin
   end if;
 end $$;
 
+-- ESOP (stock option) grants: options to buy `total_options` shares at
+-- `strike_price`, vesting like an RSU grant (same cliff + cadence math) and
+-- exercisable until expiry_date. They live under a stock_subtypes row with
+-- subtype 'ESOP'. An exercise (esop_exercises) converts options into shares:
+-- it adds a Market tax lot (transaction_id) whose cost basis the user enters.
+create table if not exists public.esop_grants (
+  id uuid primary key default gen_random_uuid(),
+  subtype_id uuid not null references public.stock_subtypes(id) on delete cascade,
+  grant_date date not null,
+  total_options numeric(14,4) not null check (total_options > 0),
+  strike_price numeric(18,4) not null check (strike_price >= 0),
+  vest_start date not null,
+  vest_end date not null,
+  cliff_date date,
+  vesting_frequency text not null default 'monthly'
+    check (vesting_frequency in ('monthly', 'quarterly', 'annually', 'continuous')),
+  expiry_date date,
+  ended_at date
+);
+
+create table if not exists public.esop_exercises (
+  id uuid primary key default gen_random_uuid(),
+  grant_id uuid not null references public.esop_grants(id) on delete cascade,
+  exercise_date date not null,
+  count numeric(14,4) not null check (count > 0),
+  strike_price numeric(18,4) not null,
+  cost_price numeric(18,4) not null,
+  transaction_id uuid references public.transactions(id) on delete set null
+);
+
 -- Bonds and T-Bills are tradable: a Fixed Income asset of either subtype can
 -- be bought in multiple lots over time (like stock tax lots), each with its
 -- own quantity and cost per unit. CD/Deposit remain flat-balance accounts
@@ -554,6 +584,8 @@ alter table public.assets enable row level security;
 alter table public.stock_subtypes enable row level security;
 alter table public.transactions enable row level security;
 alter table public.rsu_grants enable row level security;
+alter table public.esop_grants enable row level security;
+alter table public.esop_exercises enable row level security;
 alter table public.fixed_income_lots enable row level security;
 alter table public.plaid_credentials enable row level security;
 alter table public.plaid_credential_secrets enable row level security;
@@ -750,6 +782,52 @@ create policy own_rsu_grants_via_subtype
       from public.stock_subtypes st
       join public.assets a on a.id = st.asset_id
       where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists own_esop_grants_via_subtype on public.esop_grants;
+create policy own_esop_grants_via_subtype
+  on public.esop_grants
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.stock_subtypes st
+      join public.assets a on a.id = st.asset_id
+      where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.stock_subtypes st
+      join public.assets a on a.id = st.asset_id
+      where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists own_esop_exercises_via_grant on public.esop_exercises;
+create policy own_esop_exercises_via_grant
+  on public.esop_exercises
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.esop_grants g
+      join public.stock_subtypes st on st.id = g.subtype_id
+      join public.assets a on a.id = st.asset_id
+      where g.id = grant_id and a.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.esop_grants g
+      join public.stock_subtypes st on st.id = g.subtype_id
+      join public.assets a on a.id = st.asset_id
+      where g.id = grant_id and a.user_id = auth.uid()
     )
   );
 
@@ -1218,7 +1296,13 @@ begin
       ), 0) as shares,
       (select count(*) from public.fixed_income_lots l where l.asset_id = a.id) as lot_count,
       coalesce((select sum(l.count * l.cost_price) from public.fixed_income_lots l where l.asset_id = a.id), 0) as lot_cost,
-      a.fixed_income_subtype
+      a.fixed_income_subtype,
+      exists (
+        select 1
+        from public.stock_subtypes ss
+        join public.esop_grants g on g.subtype_id = ss.id
+        where ss.asset_id = a.id
+      ) as has_options
     from public.assets a
     left join public.tickers t on t.id = a.ticker_id
   ),
@@ -1233,7 +1317,12 @@ begin
         else coalesce(price, 0)
       end as value,
       (asset_type in ('Stock', 'Crypto') and shares > 0
-        and (current_price is null or current_price <= 0)) as incomplete
+        and (current_price is null or current_price <= 0))
+        -- Option grants add vested-intrinsic value computed from the vesting
+        -- schedule in the app; the SQL job doesn't reimplement that, so it
+        -- writes nothing for a user holding options rather than a total that
+        -- leaves them out (the app's own snapshot on open fills the day).
+        or has_options as incomplete
     from per_asset
   ),
   totals as (
