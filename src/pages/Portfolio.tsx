@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAllAssets } from '@/lib/db/assets'
 import { config } from '@/store/config'
 import { PositionCard } from '@/components/PositionCard'
-import { LayoutGrid, List as ListIcon } from 'lucide-react'
+import { LayoutGrid, List as ListIcon, RefreshCw } from 'lucide-react'
 import { PageBody, PageHead } from '@/components/mne'
 import { Dropdown } from '@/components/mne/Dropdown'
 import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
-import { refreshPricesOncePerLoad, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
+import { refreshPricesOncePerLoad, refreshPricesNow, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
+import { listPlaidItems, syncPlaidNow } from '@/lib/db/plaid'
 import { showAppAlert } from '@/lib/appAlerts'
 import '@/styles/portfolio.css'
 
@@ -74,7 +75,8 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
-  const [pricesRefreshedAt] = useState<string | null>(
+  const [refreshing, setRefreshing] = useState(false)
+  const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
   )
   // Read once at mount for the initial render (Portfolio remounts on route
@@ -104,6 +106,25 @@ export default function Portfolio() {
     })
   }, [])
 
+  // Refreshes every price and syncs all connected Plaid accounts, then reloads
+  // the positions. The two are independent: one failing doesn't block the other.
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const plaidSync = listPlaidItems()
+        .then((items) => (items.length > 0 ? syncPlaidNow().then(() => undefined) : undefined))
+      const [, plaid] = await Promise.allSettled([refreshPricesNow(), plaidSync])
+      setPricesRefreshedAt(localStorage.getItem(PRICES_REFRESHED_AT_KEY))
+      setAssets(await getAllAssets())
+      if (plaid.status === 'rejected') {
+        showAppAlert('Prices updated, but syncing your Plaid accounts failed.', { variant: 'error' })
+      }
+    } catch {
+      showAppAlert('Failed to refresh. Please try again.', { variant: 'error' })
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
 
   const assetTypes = useMemo(() => {
     const types = new Set(assets.map((a) => a.asset_type as string))
@@ -180,6 +201,16 @@ export default function Portfolio() {
       <PageBody>
         <PageHead title="Portfolio">
           {updated && <span className="mne-live max-sm:!hidden"><i aria-hidden="true" />Prices {updated}</span>}
+          <button
+            type="button"
+            className="pf-iconbtn"
+            aria-label="Refresh prices and sync accounts"
+            title="Refresh prices and sync accounts"
+            disabled={refreshing}
+            onClick={() => void handleRefresh()}
+          >
+            <RefreshCw size={16} strokeWidth={1.5} className={refreshing ? 'animate-spin' : undefined} aria-hidden="true" />
+          </button>
         </PageHead>
 
         <div className="pf-toolbar">

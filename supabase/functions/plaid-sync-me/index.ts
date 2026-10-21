@@ -1296,10 +1296,22 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Plaid credentials not configured.' }, 400)
   }
 
-  const { data: items } = await supabase
+  // Optional body { plaid_item_id }: sync just that one connection. No body
+  // (the post-connect pull) syncs all of the caller's items.
+  let onlyItemId: string | null = null
+  try {
+    const body = await req.json()
+    if (typeof body?.plaid_item_id === 'string') onlyItemId = body.plaid_item_id
+  } catch {
+    // no body
+  }
+
+  let itemsQuery = supabase
     .from('plaid_items')
     .select('id, user_id, item_id, institution_name, txn_synced_through')
     .eq('user_id', user.id)
+  if (onlyItemId) itemsQuery = itemsQuery.eq('id', onlyItemId)
+  const { data: items } = await itemsQuery
 
   let pendingCount = 0
   for (const item of items ?? []) {

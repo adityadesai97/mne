@@ -67,7 +67,7 @@ export default function Settings() {
   const [plaidCredsError, setPlaidCredsError] = useState('')
   const [plaidItems, setPlaidItems] = useState<PlaidItem[]>([])
   const [plaidConnecting, setPlaidConnecting] = useState(false)
-  const [plaidSyncing, setPlaidSyncing] = useState(false)
+  const [plaidSyncingId, setPlaidSyncingId] = useState<string | null>(null)
   const [plaidRemovingId, setPlaidRemovingId] = useState<string | null>(null)
   const [plaidPendingCount, setPlaidPendingCount] = useState(0)
   const [plaidDrift, setPlaidDrift] = useState<PlaidDriftPosition[]>([])
@@ -253,17 +253,17 @@ export default function Settings() {
     }
   }
 
-  async function handleSyncPlaidNow() {
-    setPlaidSyncing(true)
+  async function handleSyncPlaidItem(itemId: string) {
+    setPlaidSyncingId(itemId)
     setPlaidError('')
     try {
-      const { pendingCount } = await syncPlaidNow()
+      const { pendingCount } = await syncPlaidNow(itemId)
       showAppAlert(pendingCount > 0 ? `${pendingCount} position${pendingCount !== 1 ? 's' : ''} to review` : 'Up to date', { variant: 'success' })
       await refreshPlaidData()
     } catch (e: any) {
       setPlaidError(e.message ?? 'Sync failed')
     } finally {
-      setPlaidSyncing(false)
+      setPlaidSyncingId(null)
     }
   }
 
@@ -759,14 +759,24 @@ export default function Settings() {
                           : 'Not yet synced'}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="mne-btn is-quiet is-sm"
-                    disabled={plaidRemovingId === item.id}
-                    onClick={() => void startDisconnectPlaidItem(item)}
-                  >
-                    {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="mne-btn is-ghost is-sm"
+                      disabled={plaidSyncingId !== null}
+                      onClick={() => void handleSyncPlaidItem(item.id)}
+                    >
+                      {plaidSyncingId === item.id ? 'Syncing…' : 'Sync'}
+                    </button>
+                    <button
+                      type="button"
+                      className="mne-btn is-quiet is-sm"
+                      disabled={plaidRemovingId === item.id}
+                      onClick={() => void startDisconnectPlaidItem(item)}
+                    >
+                      {plaidRemovingId === item.id ? 'Removing…' : 'Disconnect'}
+                    </button>
+                  </div>
                 </div>
               ))}
               <div className="mne-row">
@@ -776,14 +786,6 @@ export default function Settings() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    className="mne-btn is-ghost is-sm"
-                    disabled={plaidSyncing || plaidItems.length === 0}
-                    onClick={() => void handleSyncPlaidNow()}
-                  >
-                    {plaidSyncing ? 'Syncing…' : 'Sync now'}
-                  </button>
                   <button
                     type="button"
                     className="mne-btn is-ghost is-sm"

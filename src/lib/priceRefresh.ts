@@ -15,6 +15,20 @@ export const PRICES_REFRESHED_AT_KEY = 'mne_prices_refreshed_at'
 let inFlight: Promise<void> | null = null
 
 /**
+ * Manual refresh (Portfolio's refresh button): refetches every price now,
+ * regardless of the once-per-load guard, and replaces the shared promise so
+ * pages mounted afterwards see the fresh result.
+ */
+export function refreshPricesNow(): Promise<void> {
+  if (!config.hasFinnhubKey) return Promise.resolve()
+  inFlight = refreshAllPrices().then(
+    () => { localStorage.setItem(PRICES_REFRESHED_AT_KEY, new Date().toISOString()) },
+    () => undefined,
+  )
+  return inFlight
+}
+
+/**
  * Refreshes every ticker's price from Finnhub, at most once per page load.
  * Home and Portfolio both await this before their initial asset fetch, so
  * whichever one happens to be open on a fresh page load renders current
