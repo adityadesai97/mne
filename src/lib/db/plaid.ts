@@ -172,8 +172,11 @@ export async function exchangePlaidPublicToken(
   return { pendingCount: data.pendingCount ?? 0 }
 }
 
-export async function syncPlaidNow(): Promise<{ pendingCount: number }> {
-  const { data, error } = await getSupabaseClient().functions.invoke('plaid-sync-me')
+/** Syncs one connection when `plaidItemId` is given, otherwise all of the user's connections. */
+export async function syncPlaidNow(plaidItemId?: string): Promise<{ pendingCount: number }> {
+  const { data, error } = await getSupabaseClient().functions.invoke('plaid-sync-me', {
+    body: plaidItemId ? { plaid_item_id: plaidItemId } : {},
+  })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
   return { pendingCount: data.pendingCount ?? 0 }
