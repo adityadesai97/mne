@@ -628,3 +628,88 @@ test('RSU lots export sold-at-vest and net held count, and round-trip', () => {
   const parsed = parseWorkbookImport(buffer)
   expect(parsed.assets[0].stockSubtypes[0].transactions[0]).toMatchObject({ count: 100, soldAtVest: 35 })
 })
+
+test('option grants and their exercises round-trip through the workbook', () => {
+  const grantId = '55555555-5555-4555-8555-555555555555'
+  const lotId = '66666666-6666-4666-8666-666666666666'
+  const payload = serializeForExport({
+    assets: [{
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'ACME Stock',
+      asset_type: 'Stock',
+      location: { id: '22222222-2222-4222-8222-222222222222', name: 'Carta', account_type: 'Investment' },
+      ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'ACME', current_price: 10 },
+      stock_subtypes: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          subtype: 'ESOP',
+          transactions: [],
+          rsu_grants: [],
+          esop_grants: [{
+            id: grantId,
+            grant_date: '2024-01-01',
+            total_options: 1200,
+            strike_price: 4.5,
+            vest_start: '2024-01-01',
+            vest_end: '2028-01-01',
+            cliff_date: '2025-01-01',
+            vesting_frequency: 'monthly',
+            expiry_date: '2034-01-01',
+            ended_at: null,
+            esop_exercises: [{ id: '77777777-7777-4777-8777-777777777777', exercise_date: '2025-06-01', count: 100, strike_price: 4.5, cost_price: 20, transaction_id: lotId }],
+          }],
+        },
+        {
+          id: '88888888-8888-4888-8888-888888888888',
+          subtype: 'Market',
+          transactions: [{ id: lotId, count: 100, cost_price: 20, purchase_date: '2025-06-01', capital_gains_status: 'Short Term' }],
+          rsu_grants: [],
+        },
+      ],
+    }],
+    tickers: [],
+    themes: [],
+  } as any)
+
+  expect(payload.data.esopGrants[0]).toMatchObject({ totalOptions: 1200, strikePrice: 4.5, expiryDate: '2034-01-01', vestingFrequency: 'monthly' })
+  expect(payload.data.esopExercises[0]).toMatchObject({ grantId, count: 100, costPrice: 20, transactionId: lotId })
+
+  const buffer = XLSX.write(buildExportWorkbook(payload), { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const parsed = parseWorkbookImport(buffer)
+  const esop = parsed.assets[0].stockSubtypes.find((st: any) => st.subtype === 'ESOP')!
+  expect(esop.esopGrants).toHaveLength(1)
+  expect(esop.esopGrants[0]).toMatchObject({ totalOptions: 1200, strikePrice: 4.5, cliffDate: '2025-01-01', expiryDate: '2034-01-01' })
+  expect(esop.esopGrants[0].exercises).toEqual([
+    expect.objectContaining({ exerciseDate: '2025-06-01', count: 100, strikePrice: 4.5, costPrice: 20, transactionId: lotId }),
+  ])
+})
+
+test('private company price and option contracts round-trip through the workbook', () => {
+  const assetId = '99999999-9999-4999-8999-999999999999'
+  const contractId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const payload = serializeForExport({
+    assets: [
+      {
+        id: assetId, name: 'Acme Inc', asset_type: 'Stock', manual_price: 12.5, manual_price_date: '2026-09-01',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Carta', account_type: 'Investment' },
+        ticker: null, stock_subtypes: [],
+      },
+      {
+        id: '11111111-1111-4111-8111-111111111111', name: 'SPY', asset_type: 'Stock',
+        location: { id: '22222222-2222-4222-8222-222222222222', name: 'Carta', account_type: 'Investment' },
+        ticker: { id: '33333333-3333-4333-8333-333333333333', symbol: 'SPY', current_price: 500 },
+        stock_subtypes: [],
+        option_contracts: [{ id: contractId, option_type: 'put', strike_price: 480, expiry_date: '2027-01-15', contracts: 2, multiplier: 100, premium_per_share: 6.5, purchase_date: '2026-09-01', closed_date: null, close_premium_per_share: null }],
+      },
+    ],
+    tickers: [], themes: [],
+  } as any)
+  const buffer = XLSX.write(buildExportWorkbook(payload), { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const parsed = parseWorkbookImport(buffer)
+  const priv = parsed.assets.find((a: any) => a.name === 'Acme Inc')!
+  expect(priv).toMatchObject({ manualPrice: 12.5, manualPriceDate: '2026-09-01', tickerSymbol: null })
+  const spy = parsed.assets.find((a: any) => a.name === 'SPY')!
+  expect(spy.optionContracts).toEqual([
+    expect.objectContaining({ id: contractId, optionType: 'put', strikePrice: 480, expiryDate: '2027-01-15', contracts: 2, premiumPerShare: 6.5 }),
+  ])
+})

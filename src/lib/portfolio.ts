@@ -1,9 +1,11 @@
 import type { getAllAssets } from './db/assets'
+import { esopIntrinsicValue, type EsopGrant } from './esop'
+import { contractsCostBasis, contractsIntrinsicValue, type OptionContract } from './options'
 
 export type Asset = Awaited<ReturnType<typeof getAllAssets>>[number]
 
 type Transaction = { count: number | string; cost_price: number | string; sold_at_vest?: number | string | null; purchase_date?: string | null }
-type StockSubtype = { transactions: Transaction[] | null; rsu_grants: unknown[] | null }
+type StockSubtype = { subtype?: string; transactions: Transaction[] | null; rsu_grants: unknown[] | null; esop_grants?: EsopGrant[] | null }
 type FixedIncomeLot = { count: number | string; cost_price: number | string; purchase_date: string }
 
 export function netCount(t: Transaction): number {
@@ -21,6 +23,9 @@ export type AssetTyped = {
   maturity_date?: string | null
   face_value?: number | null
   fixed_income_lots?: FixedIncomeLot[] | null
+  /** Hand-set per-share value for a private company (a Stock with no ticker). */
+  manual_price?: number | string | null
+  option_contracts?: OptionContract[] | null
 }
 
 // Stock and Crypto share the same ticker-plus-tax-lots model (shares/units ×
@@ -85,11 +90,16 @@ export function computeFixedIncomeCostBasis(asset: AssetTyped): number {
   return Math.round(raw * 100) / 100
 }
 
-/** The ticker's live price as a number, or null when there is none (never
- *  refreshed, or not a finite number). The one place a position's price is
- *  read: every surface that needs "the price" goes through this. */
-export function getLivePrice(asset: { ticker?: { current_price?: number | string | null } | null }): number | null {
-  const raw = asset.ticker?.current_price
+/** The position's price per share as a number, or null when there is none
+ *  (never refreshed, or not a finite number). A ticker asset reads its
+ *  ticker's live price; a private company (no ticker) reads the hand-set
+ *  `manual_price`. The one place a position's price is read: every surface that
+ *  needs "the price" goes through this. */
+export function getLivePrice(asset: {
+  ticker?: { current_price?: number | string | null } | null
+  manual_price?: number | string | null
+}): number | null {
+  const raw = asset.ticker ? asset.ticker.current_price : asset.manual_price
   if (raw == null) return null
   const price = Number(raw)
   return Number.isFinite(price) ? price : null
@@ -100,23 +110,46 @@ export function valueAtPrice(price: number, units: number): number {
   return Math.round(price * units * 100) / 100
 }
 
+/** Intrinsic value of a ticker position's unexercised, vested, in-the-money
+ *  options (ESOP grants), restricted to `subtypes` when given. Zero without a
+ *  live price: an option's worth is its spread over the strike. */
+export function computeOptionValue(asset: AssetTyped, subtypes?: ReadonlySet<string>, asOf: Date = new Date()): number {
+  const price = getLivePrice(asset)
+  if (price == null) return 0
+  const grants = (asset.stock_subtypes ?? [])
+    .filter((st) => !subtypes || subtypes.has(st.subtype ?? ''))
+    .flatMap((st) => st.esop_grants ?? [])
+  if (grants.length === 0) return 0
+  return Math.round(esopIntrinsicValue(grants, price, asOf) * 100) / 100
+}
+
+/** Intrinsic value of a position's open exchange-traded option contracts
+ *  (calls and puts), rounded to cents. */
+export function computeContractValue(asset: AssetTyped, asOf: Date = new Date()): number {
+  const price = getLivePrice(asset)
+  if (price == null) return 0
+  return Math.round(contractsIntrinsicValue(asset.option_contracts ?? [], price, asOf) * 100) / 100
+}
+
 /** Value of just some of a ticker position's subtypes (e.g. the Charts
  *  subtype filter). With every subtype active this equals computeAssetValue. */
 export function computeSubtypeValue(asset: AssetTyped, subtypes: ReadonlySet<string>): number {
   const price = getLivePrice(asset)
   if (price == null) return 0
   const units = (asset.stock_subtypes ?? [])
-    .filter((st) => subtypes.has((st as { subtype?: string }).subtype ?? ''))
+    .filter((st) => subtypes.has(st.subtype ?? ''))
     .flatMap((st) => st.transactions ?? [])
     .reduce((sum, t) => sum + netCount(t), 0)
-  return valueAtPrice(price, units)
+  // Exchange-traded contracts have no subtype; they ride on the pseudo-subtype "Options".
+  const contracts = subtypes.has('Options') ? computeContractValue(asset) : 0
+  return valueAtPrice(price, units) + computeOptionValue(asset, subtypes) + contracts
 }
 
 export function computeAssetValue(asset: AssetTyped): number {
   if (isTickerAsset(asset)) {
     const price = getLivePrice(asset)
     if (price == null) return 0
-    return valueAtPrice(price, computeShareCount(asset))
+    return valueAtPrice(price, computeShareCount(asset)) + computeOptionValue(asset) + computeContractValue(asset)
   }
   if (isTradableFixedIncome(asset) && (asset.fixed_income_lots?.length ?? 0) > 0) {
     return computeFixedIncomeCostBasis(asset)
@@ -127,7 +160,8 @@ export function computeAssetValue(asset: AssetTyped): number {
 export function computeCostBasis(asset: AssetTyped): number {
   const raw = asset.stock_subtypes?.flatMap((st) => st.transactions ?? [])
     .reduce((sum, t) => sum + netCount(t) * Number(t.cost_price), 0) ?? 0
-  return Math.round(raw * 100) / 100
+  // Premium paid for open option contracts is cost, so their value isn't all gain.
+  return Math.round((raw + contractsCostBasis(asset.option_contracts ?? [])) * 100) / 100
 }
 
 export function computeShareCount(asset: AssetTyped): number {

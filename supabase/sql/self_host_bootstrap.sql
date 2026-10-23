@@ -250,6 +250,58 @@ begin
   end if;
 end $$;
 
+-- ESOP (stock option) grants: options to buy `total_options` shares at
+-- `strike_price`, vesting like an RSU grant (same cliff + cadence math) and
+-- exercisable until expiry_date. They live under a stock_subtypes row with
+-- subtype 'ESOP'. An exercise (esop_exercises) converts options into shares:
+-- it adds a Market tax lot (transaction_id) whose cost basis the user enters.
+create table if not exists public.esop_grants (
+  id uuid primary key default gen_random_uuid(),
+  subtype_id uuid not null references public.stock_subtypes(id) on delete cascade,
+  grant_date date not null,
+  total_options numeric(14,4) not null check (total_options > 0),
+  strike_price numeric(18,4) not null check (strike_price >= 0),
+  vest_start date not null,
+  vest_end date not null,
+  cliff_date date,
+  vesting_frequency text not null default 'monthly'
+    check (vesting_frequency in ('monthly', 'quarterly', 'annually', 'continuous')),
+  expiry_date date,
+  ended_at date
+);
+
+create table if not exists public.esop_exercises (
+  id uuid primary key default gen_random_uuid(),
+  grant_id uuid not null references public.esop_grants(id) on delete cascade,
+  exercise_date date not null,
+  count numeric(14,4) not null check (count > 0),
+  strike_price numeric(18,4) not null,
+  cost_price numeric(18,4) not null,
+  transaction_id uuid references public.transactions(id) on delete set null
+);
+
+-- Private companies: a Stock asset with no ticker is priced by hand. The
+-- per-share value (409A / last round) and the date it was set live on the asset.
+alter table public.assets add column if not exists manual_price numeric(18,4);
+alter table public.assets add column if not exists manual_price_date date;
+
+-- Exchange-traded options (calls and puts) on a Stock asset's underlying.
+-- Long positions only: premium_per_share is what was paid, closed_date /
+-- close_premium_per_share record a sale (or expiry/exercise) of the contracts.
+create table if not exists public.option_contracts (
+  id uuid primary key default gen_random_uuid(),
+  asset_id uuid not null references public.assets(id) on delete cascade,
+  option_type text not null check (option_type in ('call', 'put')),
+  strike_price numeric(18,4) not null check (strike_price >= 0),
+  expiry_date date not null,
+  contracts numeric(14,4) not null check (contracts > 0),
+  multiplier numeric(10,2) not null default 100 check (multiplier > 0),
+  premium_per_share numeric(18,4) not null check (premium_per_share >= 0),
+  purchase_date date not null,
+  closed_date date,
+  close_premium_per_share numeric(18,4)
+);
+
 -- Bonds and T-Bills are tradable: a Fixed Income asset of either subtype can
 -- be bought in multiple lots over time (like stock tax lots), each with its
 -- own quantity and cost per unit. CD/Deposit remain flat-balance accounts
@@ -554,6 +606,9 @@ alter table public.assets enable row level security;
 alter table public.stock_subtypes enable row level security;
 alter table public.transactions enable row level security;
 alter table public.rsu_grants enable row level security;
+alter table public.esop_grants enable row level security;
+alter table public.esop_exercises enable row level security;
+alter table public.option_contracts enable row level security;
 alter table public.fixed_income_lots enable row level security;
 alter table public.plaid_credentials enable row level security;
 alter table public.plaid_credential_secrets enable row level security;
@@ -752,6 +807,60 @@ create policy own_rsu_grants_via_subtype
       where st.id = subtype_id and a.user_id = auth.uid()
     )
   );
+
+drop policy if exists own_esop_grants_via_subtype on public.esop_grants;
+create policy own_esop_grants_via_subtype
+  on public.esop_grants
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.stock_subtypes st
+      join public.assets a on a.id = st.asset_id
+      where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.stock_subtypes st
+      join public.assets a on a.id = st.asset_id
+      where st.id = subtype_id and a.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists own_esop_exercises_via_grant on public.esop_exercises;
+create policy own_esop_exercises_via_grant
+  on public.esop_exercises
+  for all
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.esop_grants g
+      join public.stock_subtypes st on st.id = g.subtype_id
+      join public.assets a on a.id = st.asset_id
+      where g.id = grant_id and a.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.esop_grants g
+      join public.stock_subtypes st on st.id = g.subtype_id
+      join public.assets a on a.id = st.asset_id
+      where g.id = grant_id and a.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists own_option_contracts_via_asset on public.option_contracts;
+create policy own_option_contracts_via_asset
+  on public.option_contracts
+  for all
+  to authenticated
+  using (exists (select 1 from public.assets a where a.id = asset_id and a.user_id = auth.uid()))
+  with check (exists (select 1 from public.assets a where a.id = asset_id and a.user_id = auth.uid()));
 
 drop policy if exists own_fixed_income_lots_via_asset on public.fixed_income_lots;
 create policy own_fixed_income_lots_via_asset
@@ -1209,7 +1318,7 @@ begin
       a.user_id,
       a.asset_type,
       a.price,
-      t.current_price,
+      coalesce(t.current_price, a.manual_price) as current_price,
       coalesce((
         select sum(greatest(0, tr.count - coalesce(tr.sold_at_vest, 0)))
         from public.stock_subtypes ss
@@ -1218,7 +1327,25 @@ begin
       ), 0) as shares,
       (select count(*) from public.fixed_income_lots l where l.asset_id = a.id) as lot_count,
       coalesce((select sum(l.count * l.cost_price) from public.fixed_income_lots l where l.asset_id = a.id), 0) as lot_cost,
-      a.fixed_income_subtype
+      a.fixed_income_subtype,
+      (select count(*) from public.option_contracts c
+        where c.asset_id = a.id and c.closed_date is null and c.expiry_date >= p_date) as contract_count,
+      -- Intrinsic value of open, unexpired long calls/puts (no time value).
+      coalesce((
+        select sum(
+          case when c.option_type = 'call'
+            then greatest(0, coalesce(t.current_price, a.manual_price) - c.strike_price)
+            else greatest(0, c.strike_price - coalesce(t.current_price, a.manual_price))
+          end * c.contracts * c.multiplier)
+        from public.option_contracts c
+        where c.asset_id = a.id and c.closed_date is null and c.expiry_date >= p_date
+      ), 0) as contract_value,
+      exists (
+        select 1
+        from public.stock_subtypes ss
+        join public.esop_grants g on g.subtype_id = ss.id
+        where ss.asset_id = a.id
+      ) as has_options
     from public.assets a
     left join public.tickers t on t.id = a.ticker_id
   ),
@@ -1227,13 +1354,18 @@ begin
       user_id,
       case
         when asset_type in ('Stock', 'Crypto') then
-          case when current_price is null then 0 else round(current_price * shares, 2) end
+          case when current_price is null then 0 else round(current_price * shares, 2) + round(contract_value, 2) end
         when asset_type = 'Fixed Income' and fixed_income_subtype in ('Bond', 'T-Bill') and lot_count > 0 then
           round(lot_cost, 2)
         else coalesce(price, 0)
       end as value,
-      (asset_type in ('Stock', 'Crypto') and shares > 0
-        and (current_price is null or current_price <= 0)) as incomplete
+      (asset_type in ('Stock', 'Crypto') and (shares > 0 or contract_count > 0)
+        and (current_price is null or current_price <= 0))
+        -- Option grants add vested-intrinsic value computed from the vesting
+        -- schedule in the app; the SQL job doesn't reimplement that, so it
+        -- writes nothing for a user holding options rather than a total that
+        -- leaves them out (the app's own snapshot on open fills the day).
+        or has_options as incomplete
     from per_asset
   ),
   totals as (

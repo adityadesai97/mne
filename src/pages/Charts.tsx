@@ -41,8 +41,8 @@ const CHART_CARDS: readonly CardDef[] = [
   { id: 'rsu-vesting', label: 'RSU vesting progress', span: 2 },
 ]
 
-type Subtype = 'Market' | 'ESPP' | 'RSU'
-const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU']
+type Subtype = 'Market' | 'ESPP' | 'RSU' | 'ESOP' | 'Options'
+const ALL_SUBTYPES: Subtype[] = ['Market', 'ESPP', 'RSU', 'ESOP', 'Options']
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)

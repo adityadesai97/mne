@@ -5,7 +5,7 @@ import { bootstrappedDb, createUser } from './testDb'
 import { computeAssetValue, computeTotalNetWorth } from '../../lib/portfolio'
 
 let db: PGlite
-let full: string, noPrice: string, empty: string, zero: string, existing: string
+let full: string, noPrice: string, empty: string, zero: string, existing: string, options: string, derivs: string
 
 const D = '2026-10-16'
 
@@ -53,6 +53,8 @@ beforeAll(async () => {
   empty = await createUser(db, 'empty@example.com')
   zero = await createUser(db, 'zero@example.com')
   existing = await createUser(db, 'existing@example.com')
+  options = await createUser(db, 'options@example.com')
+  derivs = await createUser(db, 'derivs@example.com')
 
   const seedFull = async (u: string) => {
     const aapl = await ticker(u, 'AAPL', 123.4567)
@@ -78,6 +80,32 @@ beforeAll(async () => {
   await lot(s, 'Market', 5, 100)
   await asset(noPrice, 'Cash', 'Cash', { price: 1000 })
 
+  // a user holding stock options: their value comes from the vesting schedule,
+  // which the SQL job doesn't reimplement, so nothing is written for them
+  const acme = await ticker(options, 'ACME', 50)
+  const optionStock = await asset(options, 'ACME', 'Stock', { ticker: acme })
+  await lot(optionStock, 'Market', 5, 10)
+  const esop = await one(
+    `insert into public.stock_subtypes (asset_id, subtype) values ($1, 'ESOP') returning id`, [optionStock])
+  await db.query(
+    `insert into public.esop_grants (subtype_id, grant_date, total_options, strike_price, vest_start, vest_end)
+     values ($1, '2024-01-01', 100, 10, '2024-01-01', '2026-01-01')`, [esop])
+
+  // a private company (priced by hand) plus calls/puts on a listed stock
+  const priv = await one(
+    `insert into public.assets (user_id, name, asset_type, manual_price) values ($1, 'Acme Inc', 'Stock', 12.5) returning id`, [derivs])
+  await lot(priv, 'Market', 100, 5)
+  const spy = await ticker(derivs, 'SPY', 130)
+  const spyAsset = await asset(derivs, 'SPY', 'Stock', { ticker: spy })
+  await lot(spyAsset, 'Market', 10, 100)
+  await db.query(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'call', 100, '2030-01-01', 2, 5, '2026-01-01'),
+            ($1, 'put', 150, '2030-01-01', 1, 3, '2026-01-01'),
+            ($1, 'call', 10, '2025-01-01', 5, 1, '2024-01-01'),
+            ($1, 'call', 10, '2030-01-01', 5, 1, '2024-01-01')`, [spyAsset])
+  await db.query(`update public.option_contracts set closed_date = '2026-02-01', close_premium_per_share = 1 where asset_id = $1 and strike_price = 10 and expiry_date = '2030-01-01'`, [spyAsset])
+
   // a user whose only assets total zero
   await asset(zero, 'Empty cash', 'Cash', { price: 0 })
 
@@ -88,8 +116,8 @@ afterAll(async () => { await db.close() })
 
 test('writes the same net worth as the TS valuation, and skips incomplete / empty users', async () => {
   const { rows } = await db.query<{ n: number }>('select public.record_net_worth_snapshots($1::date) as n', [D])
-  // full is written; existing already had a row (not counted); noPrice, zero, empty skipped
-  expect(rows[0].n).toBe(1)
+  // full and derivs are written; existing already had a row (not counted); noPrice, zero, empty, options skipped
+  expect(rows[0].n).toBe(2)
 
   const expected = computeTotalNetWorth(expectedAssets)
   const per = expectedAssets.map(computeAssetValue)
@@ -102,6 +130,27 @@ test('writes the same net worth as the TS valuation, and skips incomplete / empt
   expect(await snapshots(noPrice)).toEqual([])
   expect(await snapshots(zero)).toEqual([])
   expect(await snapshots(empty)).toEqual([])
+  expect(await snapshots(options)).toEqual([])
+})
+
+test('values private companies and open option contracts like the TS valuation', async () => {
+  const got = await snapshots(derivs)
+  expect(got).toHaveLength(1)
+  const expected = computeTotalNetWorth([
+    { asset_type: 'Stock', price: null, ticker: null, manual_price: 12.5,
+      stock_subtypes: [{ subtype: 'Market', transactions: [{ count: 100, cost_price: 5 }], rsu_grants: [] }] },
+    { asset_type: 'Stock', price: null, ticker: { current_price: 130 },
+      stock_subtypes: [{ subtype: 'Market', transactions: [{ count: 10, cost_price: 100 }], rsu_grants: [] }],
+      option_contracts: [
+        { option_type: 'call', strike_price: 100, expiry_date: '2030-01-01', contracts: 2, multiplier: 100, premium_per_share: 5 },
+        { option_type: 'put', strike_price: 150, expiry_date: '2030-01-01', contracts: 1, multiplier: 100, premium_per_share: 3 },
+        { option_type: 'call', strike_price: 10, expiry_date: '2025-01-01', contracts: 5, multiplier: 100, premium_per_share: 1 },
+        { option_type: 'call', strike_price: 10, expiry_date: '2030-01-01', contracts: 5, multiplier: 100, premium_per_share: 1, closed_date: '2026-02-01' },
+      ] },
+  ] as any[])
+  // 1250 + 1300 + 30*200 + 20*100 (expired and closed contracts add nothing)
+  expect(expected).toBe(1250 + 1300 + 6000 + 2000)
+  expect(Number(got[0].value)).toBeCloseTo(expected, 2)
 })
 
 test('never overwrites an existing row for the date (the app live value wins)', async () => {
@@ -113,7 +162,7 @@ test('never overwrites an existing row for the date (the app live value wins)', 
 
 test('fills a different date without touching earlier rows', async () => {
   const { rows } = await db.query<{ n: number }>("select public.record_net_worth_snapshots('2026-10-17'::date) as n")
-  expect(rows[0].n).toBe(2) // full and existing
+  expect(rows[0].n).toBe(3) // full, derivs and existing
   expect((await snapshots(existing)).map(r => r.date)).toEqual([D, '2026-10-17'])
 })
 

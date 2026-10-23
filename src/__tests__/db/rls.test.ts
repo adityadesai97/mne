@@ -69,3 +69,44 @@ test('anon cannot call the save functions', async () => {
     await tx.query("select public.save_llm_key('x')")
   })).rejects.toThrow()
 })
+
+test('option grants and exercises are private to their owner', async () => {
+  const sub = await db.query<{ id: string }>(
+    `with a as (insert into public.assets (user_id, name, asset_type) values ($1, 'ACME', 'Stock') returning id)
+     insert into public.stock_subtypes (asset_id, subtype) select id, 'ESOP' from a returning id`, [alice])
+  const subtypeId = sub.rows[0].id
+  const grant = await asUser(db, alice, q => q(
+    `insert into public.esop_grants (subtype_id, grant_date, total_options, strike_price, vest_start, vest_end)
+     values ($1, '2024-01-01', 100, 5, '2024-01-01', '2027-01-01') returning id`, [subtypeId]))
+  const grantId = grant.rows[0].id
+  await asUser(db, alice, q => q(
+    `insert into public.esop_exercises (grant_id, exercise_date, count, strike_price, cost_price)
+     values ($1, '2025-01-01', 10, 5, 20)`, [grantId]))
+
+  expect((await asUser(db, alice, q => q('select 1 from public.esop_grants'))).rows).toHaveLength(1)
+  expect((await asUser(db, bob, q => q('select 1 from public.esop_grants'))).rows).toHaveLength(0)
+  expect((await asUser(db, bob, q => q('select 1 from public.esop_exercises'))).rows).toHaveLength(0)
+  await expect(asUser(db, bob, q => q(
+    `insert into public.esop_grants (subtype_id, grant_date, total_options, strike_price, vest_start, vest_end)
+     values ($1, '2024-01-01', 1, 1, '2024-01-01', '2025-01-01')`, [subtypeId]))).rejects.toThrow()
+  await expect(asUser(db, bob, q => q(
+    `insert into public.esop_exercises (grant_id, exercise_date, count, strike_price, cost_price)
+     values ($1, '2025-01-01', 1, 1, 1)`, [grantId]))).rejects.toThrow()
+})
+
+test('option contracts and a private company price are private to their owner', async () => {
+  const asset = await db.query<{ id: string }>(
+    "insert into public.assets (user_id, name, asset_type, manual_price) values ($1, 'Acme', 'Stock', 10) returning id", [alice])
+  const assetId = asset.rows[0].id
+  await asUser(db, alice, q => q(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'call', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId]))
+  expect((await asUser(db, alice, q => q('select 1 from public.option_contracts'))).rows).toHaveLength(1)
+  expect((await asUser(db, bob, q => q('select 1 from public.option_contracts'))).rows).toHaveLength(0)
+  await expect(asUser(db, bob, q => q(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'put', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId]))).rejects.toThrow()
+  await expect(db.query(
+    `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
+     values ($1, 'straddle', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId])).rejects.toThrow()
+})
