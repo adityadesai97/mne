@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useId, Fragment, useCallback } from 'react
 import '@/styles/cmdbar.css'
 import { createPortal } from 'react-dom'
 import { AiMark } from '@/components/mne/AiMark'
-import { X, Paperclip, MessageSquare, SquarePen, ArrowUp, History, ChevronLeft, Trash2 } from 'lucide-react'
+import { X, Paperclip, MessageSquare, SquarePen, ArrowUp, History, ChevronLeft, Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ThinkingOrb } from 'thinking-orbs'
 import { runCommand, type AgentTrace, type AgentTraceUsage, type Message } from '@/lib/claude'
@@ -393,6 +393,10 @@ interface Props {
   contextLabel?: string
   /** DOM id of the panel (the header pill's aria-controls points at it). */
   panelId?: string
+  /** Docked panel only: stretched to the sidebar's right edge instead of its normal width. */
+  expanded?: boolean
+  /** Toggles `expanded`; when given, the docked header shows an expand/collapse button. */
+  onToggleExpanded?: () => void
 }
 
 type Detent = 'half' | 'full'
@@ -410,7 +414,7 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textar
 
 /** The command bar: a docked right-hand panel beside the page on wide screens (>= 1024px), a bottom sheet
  *  with Half/Full detents below that. It is a re-container of one conversation; the logic is the same in both. */
-export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled, contextLabel, panelId = 'cmdk-panel' }: Props) {
+export function CommandBar({ open, onClose, resumeConversationId, onResumeHandled, startExplanationRequest, onExplanationRequestHandled, prefillQuery, onPrefillHandled, contextLabel, panelId = 'cmdk-panel', expanded = false, onToggleExpanded }: Props) {
   const docked = useDockedViewport()
   const [query, setQuery] = useState('')
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([])
@@ -954,6 +958,17 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
               <SquarePen />
             </button>
           )}
+          {docked && onToggleExpanded && (
+            <button
+              type="button"
+              className="cmdk-ibtn"
+              onClick={onToggleExpanded}
+              aria-label={expanded ? 'Collapse command bar' : 'Expand command bar'}
+              title={expanded ? 'Collapse' : 'Expand'}
+            >
+              {expanded ? <Minimize2 /> : <Maximize2 />}
+            </button>
+          )}
           <button type="button" className="cmdk-ibtn" onClick={handleClose} aria-label="Close" title="Close">
             <X />
           </button>
@@ -1093,10 +1108,11 @@ export function CommandBar({ open, onClose, resumeConversationId, onResumeHandle
             data-mode="dock"
             aria-label="Ask mne"
             className="mne-cmd cmdk-panel cmdk-dock shadow-lg"
-            style={{ width: DOCK_WIDTH_PX }}
-            initial={{ x: DOCK_WIDTH_PX }}
+            data-expanded={expanded ? 'true' : undefined}
+            style={{ width: expanded ? 'calc(100vw - var(--sidebar-w, 240px))' : DOCK_WIDTH_PX }}
+            initial={{ x: '100%' }}
             animate={{ x: 0 }}
-            exit={{ x: DOCK_WIDTH_PX }}
+            exit={{ x: '100%' }}
             transition={LAYOUT_TRANSITION}
             onKeyDown={handleKeyDown}
           >

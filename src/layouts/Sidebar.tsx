@@ -46,7 +46,7 @@ export function sidebarWidthPx(isCollapsed: boolean) {
 
 // Desktop navigation: labelled 240px sidebar, collapsible to a 72px icon rail. Account and Settings are icons pinned to the bottom.
 // NavLink sets aria-current="page" on the active item, which .mne-nav styles.
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { hasAssets } = useHasAssets()
   const isCollapsed = useSidebarCollapsed()
   const items = NAV_ITEMS.filter(item => item.to !== '/settings' && (!item.requiresAssets || hasAssets))
@@ -66,7 +66,7 @@ export default function Sidebar() {
       <nav className="mne-nav is-side" aria-label="Main">
         {items.map(({ to, icon: Icon, label }) => (
           <SideTip key={to} label={label} show={isCollapsed}>
-            <NavLink to={to} end={to === '/'} aria-label={label}>
+            <NavLink to={to} end={to === '/'} aria-label={label} onClick={onNavigate}>
               <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
               <span className="mne-side-label">{label}</span>
             </NavLink>
@@ -86,7 +86,7 @@ export default function Sidebar() {
           </button>
         </Tooltip>
         <Tooltip content="Settings" side="right">
-          <NavLink to="/settings" className="mne-side-btn" aria-label="Settings">
+          <NavLink to="/settings" className="mne-side-btn" aria-label="Settings" onClick={onNavigate}>
             <Settings size={20} strokeWidth={1.5} aria-hidden="true" />
           </NavLink>
         </Tooltip>

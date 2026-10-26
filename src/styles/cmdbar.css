@@ -23,7 +23,7 @@
    screens (.cmdk-dock, >= 1024px) and a bottom sheet with Half/Full detents below that (.cmdk-sheet).
    Both are .mne-cmd surfaces; content keeps the design's 12px rhythm. Standard moves 180ms, layout moves 430ms. */
 .mne-cmd.cmdk-panel { padding: 0; gap: 0; min-width: 0; }
-.cmdk-dock { position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; max-width: 100vw; border-radius: 0; border-width: 0 0 0 1px; overflow: hidden; }
+.cmdk-dock { position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; max-width: 100vw; border-radius: 0; border-width: 0 0 0 1px; overflow: hidden; transition: width var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
 .cmdk-sheet-wrap { position: fixed; left: 0; right: 0; top: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
 .cmdk-sheet { pointer-events: auto; width: 100%; max-width: 640px; height: 58%; border-radius: var(--mne-radius-lg) var(--mne-radius-lg) 0 0; border-bottom-width: 0; overflow: hidden; padding-bottom: env(safe-area-inset-bottom, 0px); transition: height var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
 .cmdk-sheet[data-detent="full"] { height: calc(100% - env(safe-area-inset-top, 0px) - 8px); }
@@ -71,7 +71,7 @@
   .mne-with-side.mne-with-dock { transition: margin-left var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)), margin-right var(--mne-dur-layout, 430ms) var(--mne-ease, cubic-bezier(.4, 0, .2, 1)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mne-with-side.mne-with-dock, .cmdk-sheet { transition: none; }
+  .mne-with-side.mne-with-dock, .cmdk-sheet, .cmdk-dock { transition: none; }
 }
 
 .cmdk-ibtn { flex: none; display: grid; place-content: center; width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--mne-ink-muted); cursor: pointer; transition: background var(--mne-dur) linear, color var(--mne-dur) linear; }

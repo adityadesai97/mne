@@ -73,6 +73,8 @@ export default function AppLayout() {
   const sidebarCollapsed = useSidebarCollapsed()
   const [cgAlert, setCgAlert] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  // Docked command bar stretched across the page up to the sidebar; any sidebar navigation (or closing) undoes it.
+  const [cmdExpanded, setCmdExpanded] = useState(false)
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null)
   const [pendingExplanationSlot, setPendingExplanationSlot] = useState<PortfolioInsightSlot | null>(null)
   const [pendingPrefill, setPendingPrefill] = useState<string | null>(null)
@@ -84,6 +86,7 @@ export default function AppLayout() {
   const docked = useDockedViewport()
   useNoBottomOverscroll()
   const dockOffset = cmdOpen && docked ? DOCK_WIDTH_PX : 0
+  useEffect(() => { if (!cmdOpen) setCmdExpanded(false) }, [cmdOpen])
 
   const refreshPlaidPendingCount = async () => {
     try {
@@ -257,7 +260,7 @@ export default function AppLayout() {
         ['--sidebar-w' as string]: `${sidebarWidthPx(sidebarCollapsed)}px`,
       }}
     >
-      <Sidebar />
+      <Sidebar onNavigate={() => setCmdExpanded(false)} />
 
       {/* Main content — offset by sidebar on desktop */}
       <div
@@ -313,6 +316,8 @@ export default function AppLayout() {
         onPrefillHandled={() => setPendingPrefill(null)}
         contextLabel={pageContextLabel(location.pathname)}
         panelId={CMDK_PANEL_ID}
+        expanded={cmdExpanded && docked}
+        onToggleExpanded={() => setCmdExpanded(v => !v)}
       />
       {cgAlert && (
         <div
