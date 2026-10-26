@@ -198,3 +198,11 @@ export function groupConversationsByDay(items: ConversationSummary[], now: Date 
   }
   return buckets.filter(b => b.items.length > 0)
 }
+
+/** Deletes every saved command bar conversation of the signed-in user. */
+export async function clearAllConversations(): Promise<void> {
+  const { data: { user } } = await getSupabaseClient().auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { error } = await getSupabaseClient().from('command_conversations').delete().eq('user_id', user.id)
+  if (error) throw error
+}

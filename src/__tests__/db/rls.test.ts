@@ -110,3 +110,13 @@ test('option contracts and a private company price are private to their owner', 
     `insert into public.option_contracts (asset_id, option_type, strike_price, expiry_date, contracts, premium_per_share, purchase_date)
      values ($1, 'straddle', 10, '2030-01-01', 1, 1, '2026-01-01')`, [assetId])).rejects.toThrow()
 })
+
+test('delete_my_data wipes only the caller\'s portfolio rows and keeps their keys', async () => {
+  const carol = await createUser(db, 'carol@example.com')
+  await asUser(db, carol, q => q("insert into public.locations (user_id, name, account_type) values (auth.uid(), 'Carol Bank', 'Bank')"))
+  await asUser(db, carol, q => q("select public.save_llm_key('sk-ant-carol')"))
+  await asUser(db, carol, q => q('select public.delete_my_data()'))
+  expect((await asUser(db, carol, q => q('select 1 from public.locations'))).rows).toHaveLength(0)
+  expect((await asUser(db, carol, q => q('select secret_set from public.llm_credentials'))).rows).toHaveLength(1)
+  expect((await asUser(db, bob, q => q('select 1 from public.locations'))).rows).toHaveLength(1)
+})

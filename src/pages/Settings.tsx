@@ -36,6 +36,8 @@ import {
 } from '@/lib/db/plaid'
 import { openPlaidLink } from '@/lib/plaidLink'
 import { showAppAlert } from '@/lib/appAlerts'
+import { clearAllConversations } from '@/lib/db/conversations'
+import { deleteMyData, deleteMyAccount } from '@/lib/account'
 import { PlaidReviewModal } from '@/components/PlaidReviewModal'
 import { PlaidLotSellModal } from '@/components/PlaidLotSellModal'
 import { PlaidDisconnectDialog } from '@/components/PlaidDisconnectDialog'
@@ -86,6 +88,32 @@ export default function Settings() {
 
   const [importLoading, setImportLoading] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [danger, setDanger] = useState<'history' | 'data' | 'account' | null>(null)
+  const [dangerText, setDangerText] = useState('')
+  const [dangerBusy, setDangerBusy] = useState(false)
+  const [dangerError, setDangerError] = useState('')
+
+  const runDanger = async () => {
+    if (!danger) return
+    setDangerBusy(true)
+    setDangerError('')
+    try {
+      if (danger === 'history') {
+        await clearAllConversations()
+        setDanger(null)
+        showAppAlert('Conversation history cleared', { variant: 'success' })
+      } else if (danger === 'data') {
+        await deleteMyData()
+        window.location.href = '/'
+      } else {
+        await deleteMyAccount()
+      }
+    } catch (e: any) {
+      setDangerError(e?.message || 'Something went wrong')
+    } finally {
+      setDangerBusy(false)
+    }
+  }
   const [exportingScope, setExportingScope] = useState<ExportScope | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importAbortRef = useRef<AbortController | null>(null)
@@ -874,6 +902,68 @@ export default function Settings() {
                   <span className="mne-help">{o.hint}</span>
                 </button>
               ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Danger zone */}
+        <section className="mne-card" aria-labelledby="settings-danger">
+          <h2 id="settings-danger" className="mne-section-title">Danger zone</h2>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {([
+              { id: 'history' as const, label: 'Clear conversation history', hint: 'Deletes every saved Ask mne conversation.' },
+              { id: 'data' as const, label: 'Delete data', hint: 'Deletes all assets, accounts, watchlist, net worth history, conversations and connected accounts. Your login and API keys stay.' },
+              { id: 'account' as const, label: 'Delete account', hint: 'Permanently deletes your account and everything in it.' },
+            ]).map(o => (
+              <div key={o.id} style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div className="t">{o.label}</div>
+                  <div className="mne-help">{o.hint}</div>
+                </div>
+                <button type="button" className="mne-btn is-ghost" onClick={() => { setDangerError(''); setDangerText(''); setDanger(o.id) }}>{o.label.split(' ')[0]}</button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <Dialog open={danger !== null} onOpenChange={(open) => { if (!open && !dangerBusy) setDanger(null) }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>
+                {danger === 'history' ? 'Clear conversation history?' : danger === 'data' ? 'Delete all data?' : 'Delete account?'}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="mne-muted" style={{ margin: 0 }}>
+              {danger === 'history'
+                ? 'All saved Ask mne conversations will be deleted. This cannot be undone.'
+                : danger === 'data'
+                  ? 'Everything you have added (assets, accounts, watchlist, history, connected accounts) will be permanently deleted. Your login and API keys are kept. This cannot be undone.'
+                  : 'Your account and all of its data will be permanently deleted, and you will be signed out. This cannot be undone.'}
+            </p>
+            {danger !== 'history' && (
+              <label className="mne-field" style={{ display: 'grid', gap: 4 }}>
+                <span className="mne-help">Type DELETE to confirm</span>
+                <input
+                  className="mne-input"
+                  value={dangerText}
+                  onChange={e => setDangerText(e.target.value)}
+                  autoComplete="off"
+                  autoFocus
+                  aria-label="Type DELETE to confirm"
+                />
+              </label>
+            )}
+            {dangerError && <span className="mne-help is-error" role="alert">▼ {dangerError}</span>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="mne-btn is-ghost" disabled={dangerBusy} onClick={() => setDanger(null)}>Cancel</button>
+              <button
+                type="button"
+                className="mne-btn"
+                disabled={dangerBusy || (danger !== 'history' && dangerText !== 'DELETE')}
+                onClick={() => void runDanger()}
+              >
+                {dangerBusy ? 'Working…' : danger === 'history' ? 'Clear history' : danger === 'data' ? 'Delete data' : 'Delete account'}
+              </button>
             </div>
           </DialogContent>
         </Dialog>

@@ -1377,6 +1377,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_my_data: { Args: never; Returns: undefined }
       is_allowed_email_admin: { Args: never; Returns: boolean }
       record_net_worth_snapshots: { Args: { p_date?: string }; Returns: number }
       save_llm_key: { Args: { p_key: string }; Returns: undefined }
