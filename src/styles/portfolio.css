@@ -85,3 +85,9 @@ button.mne-chip[aria-pressed="true"].is-accent { background: var(--mne-accent); 
 @media (max-width: 640px) { .pf-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
 /* List rows: icon tags are secondary on phones (the row is already tall). */
 @media (max-width: 640px) { .pf-rowtext .pf-tags { display: none; } }
+
+/* Sortable list column headers */
+.mne-table th .pf-sort { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font: inherit; color: inherit; border-radius: 4px; }
+.mne-table th .pf-sort:hover, .mne-table th[aria-sort="ascending"] .pf-sort, .mne-table th[aria-sort="descending"] .pf-sort { color: var(--mne-ink); }
+.mne-table th .pf-sort:focus-visible { outline: 2px solid var(--mne-accent, currentColor); outline-offset: 2px; }
+.mne-table th .pf-sort-ind { display: inline-block; width: 10px; font-size: 12px; line-height: 1; }

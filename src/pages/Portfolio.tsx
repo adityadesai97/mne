@@ -5,7 +5,10 @@ import { PositionCard } from '@/components/PositionCard'
 import { LayoutGrid, List as ListIcon, RefreshCw } from 'lucide-react'
 import { PageBody, PageHead } from '@/components/mne'
 import { Dropdown } from '@/components/mne/Dropdown'
-import { computeAssetValue, computeCostBasis, computeUnrealizedGain } from '@/lib/portfolio'
+import {
+  computeAssetValue, computeCostBasis, computeUnrealizedGain, computeShareCount,
+  computeFixedIncomeLotCount, isTickerAsset, isTradableFixedIncome,
+} from '@/lib/portfolio'
 import { refreshPricesOncePerLoad, refreshPricesNow, PRICES_REFRESHED_AT_KEY } from '@/lib/priceRefresh'
 import { listPlaidItems, syncPlaidNow } from '@/lib/db/plaid'
 import { showAppAlert } from '@/lib/appAlerts'
@@ -22,29 +25,28 @@ function formatRelativeTime(isoString: string | null): string | null {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-type SortOption = 'name' | 'value' | 'gain' | 'gainPct'
+type SortOption = 'name' | 'qty' | 'value' | 'gain'
+type SortDir = 'asc' | 'desc'
 type AssetView = 'grid' | 'list'
 
 const key = (k: string, v: string) => (<><span className="pf-dd-k">{k}</span>{v}</>)
 
-const SORT_OPTIONS = [
-  { value: 'name' as const, label: key('Sort', 'Name') },
-  { value: 'value' as const, label: key('Sort', 'Value') },
-  { value: 'gain' as const, label: key('Sort', 'Gain $') },
-  { value: 'gainPct' as const, label: key('Sort', 'Gain %') },
-]
+/** Quantity held (shares/units); assets without one sort last. */
+function quantity(asset: any): number {
+  if (isTickerAsset(asset)) return computeShareCount(asset)
+  if (isTradableFixedIncome(asset)) return computeFixedIncomeLotCount(asset)
+  return -Infinity
+}
+
+/** Unrealized gain in dollars; assets without one sort last. */
+function gainValue(asset: any): number {
+  return isTickerAsset(asset) && computeCostBasis(asset) > 0 ? computeUnrealizedGain(asset) : -Infinity
+}
 
 const VIEW_OPTIONS = [
   { value: 'grid' as const, label: <span className="pf-dd-v"><LayoutGrid size={16} strokeWidth={1.5} aria-hidden="true" />Grid</span> },
   { value: 'list' as const, label: <span className="pf-dd-v"><ListIcon size={16} strokeWidth={1.5} aria-hidden="true" />List</span> },
 ]
-
-/** Unrealized gain as a percent of cost basis; assets with no basis sort last. */
-function gainPct(asset: any): number {
-  const basis = computeCostBasis(asset)
-  if (basis <= 0) return -Infinity
-  return (computeUnrealizedGain(asset) / basis) * 100
-}
 
 function PortfolioSkeleton() {
   return (
@@ -75,6 +77,7 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<string>('All')
   const [sort, setSort] = useState<SortOption>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [refreshing, setRefreshing] = useState(false)
   const [pricesRefreshedAt, setPricesRefreshedAt] = useState<string | null>(
     () => localStorage.getItem(PRICES_REFRESHED_AT_KEY)
@@ -154,24 +157,39 @@ export default function Portfolio() {
       result = result.filter((a) => a.asset_type === activeType)
     }
 
+    const dir = sortDir === 'asc' ? 1 : -1
     result = [...result].sort((a, b) => {
-      if (sort === 'name') {
-        return (a.name ?? '').localeCompare(b.name ?? '')
-      }
-      if (sort === 'value') {
-        return computeAssetValue(b) - computeAssetValue(a)
-      }
-      if (sort === 'gain') {
-        return computeUnrealizedGain(b) - computeUnrealizedGain(a)
-      }
-      if (sort === 'gainPct') {
-        return gainPct(b) - gainPct(a)
-      }
-      return 0
+      if (sort === 'name') return dir * (a.name ?? '').localeCompare(b.name ?? '')
+      const metric = sort === 'value' ? computeAssetValue : sort === 'qty' ? quantity : gainValue
+      const av = metric(a)
+      const bv = metric(b)
+      // Assets with no figure (-Infinity) stay at the bottom in either direction.
+      if (av === bv) return 0
+      if (av === -Infinity) return 1
+      if (bv === -Infinity) return -1
+      return dir * (av - bv)
     })
 
     return result
-  }, [assets, search, activeType, sort])
+  }, [assets, search, activeType, sort, sortDir])
+
+  const handleSort = useCallback((next: SortOption) => {
+    if (next === sort) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSort(next)
+      setSortDir(next === 'name' ? 'asc' : 'desc')
+    }
+  }, [sort])
+
+  const sortHeader = (col: SortOption, label: string, className?: string) => (
+    <th className={className} aria-sort={sort === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className="pf-sort" onClick={() => handleSort(col)}>
+        {label}
+        <span className="pf-sort-ind" aria-hidden="true">{sort === col ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+      </button>
+    </th>
+  )
 
   if (!assetsLoaded) {
     return <PortfolioSkeleton />
@@ -226,8 +244,7 @@ export default function Portfolio() {
             <button type="button" className="clear" aria-label="Clear search" tabIndex={search ? 0 : -1} onClick={() => setSearch('')}>✕</button>
           </div>
           <Dropdown<AssetView> label="Asset view" value={assetView} options={VIEW_OPTIONS} onChange={handleAssetViewChange} />
-          <Dropdown<string> label="Filter by type" value={activeType} options={typeOptions} onChange={setActiveType} />
-          <Dropdown<SortOption> label="Sort by" value={sort} options={SORT_OPTIONS} onChange={setSort} alignRight />
+          <Dropdown<string> label="Filter by type" value={activeType} options={typeOptions} onChange={setActiveType} alignRight />
         </div>
 
         {isListView ? (
@@ -236,11 +253,10 @@ export default function Portfolio() {
               <table className="mne-table">
                 <thead>
                   <tr>
-                    <th>Position</th>
-                    <th className="r pf-hide-sm">Qty</th>
-                    <th className="r">Value</th>
-                    <th className="r pf-hide-sm">Gain</th>
-                    <th className="r">Today</th>
+                    {sortHeader('name', 'Position')}
+                    {sortHeader('qty', 'Qty', 'r pf-hide-sm')}
+                    {sortHeader('value', 'Value', 'r')}
+                    {sortHeader('gain', 'Gain', 'r pf-hide-sm')}
                   </tr>
                 </thead>
                 <tbody>

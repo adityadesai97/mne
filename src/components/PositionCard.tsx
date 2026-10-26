@@ -63,7 +63,6 @@ export function PositionCard({ asset, layout = 'grid' }: { asset: any; index?: n
             ? <span className={hiddenValueClass(hideValues)}><Delta value={gain} format={abs => fmt(abs)} /></span>
             : <span className="mne-muted">—</span>}
         </td>
-        <td className="r">{pct != null ? <Delta value={pct} digits={1} /> : <span className="mne-muted">—</span>}</td>
       </tr>
     )
   }
