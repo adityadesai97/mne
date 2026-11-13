@@ -79,7 +79,8 @@
 .cmdk-ibtn:focus-visible { outline: 2px solid var(--mne-focus); outline-offset: 2px; }
 .cmdk-ibtn svg { width: 16px; height: 16px; }
 /* Pill field that hosts the textarea (design: pill .mne-input in .mne-cmd-row). */
-.cmdk-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-pill); padding: 4px 4px 4px 16px; transition: border-color var(--mne-dur) linear; }
+/* Fixed radius (= half the one-line height) so it reads as a pill on one line but doesn't clip text once the textarea grows; buttons stay pinned to the bottom. */
+.cmdk-field { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 4px; background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: 22px; padding: 4px 4px 4px 18px; transition: border-color var(--mne-dur) linear; }
 .cmdk-field:hover { border-color: var(--mne-ink-muted); }
 .cmdk-field:focus-within { border-color: var(--mne-accent); }
 .cmdk-field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; resize: none; color: var(--mne-ink); padding: 6px 0; font: 400 15px/22px var(--mne-font-sans); max-height: 144px; }
