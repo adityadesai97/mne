@@ -10,6 +10,8 @@ import { AssetLogo } from '@/components/AssetLogo'
 import { AssetTags } from '@/components/AssetTags'
 import { addMarketLot } from '@/lib/db/marketLots'
 import { getAssetById, deleteAsset, upsertAsset } from '@/lib/db/assets'
+import { getAllLocations, findOrCreateLocation } from '@/lib/db/locations'
+import { LocationField } from '@/components/mne/LocationField'
 import { deleteTransaction, deleteTransactions, updateTransaction } from '@/lib/db/transactions'
 import { endGrant, deleteGrant } from '@/lib/db/grants'
 import { addEsopGrant, exerciseOptions, endEsopGrant, deleteEsopGrant, type ExerciseInput, type NewEsopGrant } from '@/lib/db/esop'
@@ -39,6 +41,8 @@ interface EditAssetValues {
   maturityDate: string
   faceValue: string
   manualPrice: string
+  locationName: string
+  accountType: string
 }
 
 export default function AssetDetail() {
@@ -59,7 +63,10 @@ export default function AssetDetail() {
     maturityDate: '',
     faceValue: '',
     manualPrice: '',
+    locationName: '',
+    accountType: '',
   })
+  const [locations, setLocations] = useState<{ id: string; name: string; account_type: string }[]>([])
 
   useEffect(() => {
     if (!id) return
@@ -275,6 +282,11 @@ export default function AssetDetail() {
   async function handleSaveAsset() {
     try {
       const isFixedIncome = asset.asset_type === 'Fixed Income'
+      let locationId = asset.location_id
+      const newName = editValues.locationName.trim()
+      if (newName && (newName !== asset.location?.name || editValues.accountType !== asset.location?.account_type)) {
+        locationId = await findOrCreateLocation(asset.user_id, newName, editValues.accountType || 'Investment')
+      }
       await upsertAsset({
         id: asset.id,
         user_id: asset.user_id,
@@ -282,7 +294,7 @@ export default function AssetDetail() {
         ownership: editValues.ownership,
         notes: editValues.notes || null,
         price: editValues.price ? Number(editValues.price) : null,
-        location_id: asset.location_id,
+        location_id: locationId,
         asset_type: asset.asset_type,
         ticker_id: asset.ticker_id ?? null,
         fixed_income_subtype: isFixedIncome ? (editValues.fixedIncomeSubtype || null) : asset.fixed_income_subtype ?? null,
@@ -398,6 +410,7 @@ export default function AssetDetail() {
   ].filter(Boolean).join(' · ')
 
   function startEditing() {
+    getAllLocations().then((l) => setLocations((l ?? []) as any)).catch(() => setLocations([]))
     setEditing(true)
     setEditValues({
       name: asset.name,
@@ -409,6 +422,8 @@ export default function AssetDetail() {
       maturityDate: asset.maturity_date ?? '',
       faceValue: asset.face_value != null ? String(asset.face_value) : '',
       manualPrice: asset.manual_price != null ? String(asset.manual_price) : '',
+      locationName: asset.location?.name ?? '',
+      accountType: asset.location?.account_type ?? '',
     })
   }
 
@@ -432,6 +447,17 @@ export default function AssetDetail() {
               <input id="asset-name" className="mne-input" value={editValues.name}
                 onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))} />
             </div>
+            {locations.length > 0 && (
+              <LocationField
+                label="Account"
+                idBase="asset-location"
+                locations={locations}
+                name={editValues.locationName}
+                accountType={editValues.accountType}
+                fixedType={asset.asset_type === 'Crypto' ? 'Crypto' : undefined}
+                onChange={(n, t) => setEditValues(v => ({ ...v, locationName: n, accountType: t }))}
+              />
+            )}
             <div className="mne-field">
               <label htmlFor="asset-ownership">Ownership</label>
               <div className="mne-select-wrap">
