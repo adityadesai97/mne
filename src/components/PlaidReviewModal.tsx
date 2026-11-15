@@ -352,7 +352,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         }
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[85vh] max-h-[85dvh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
         <DialogHeader>
           <DialogTitle>Review synced positions</DialogTitle>
         </DialogHeader>
