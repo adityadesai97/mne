@@ -29,7 +29,7 @@ export function LocationField({ label, idBase, locations, name, accountType, fix
   }, [])
 
   const options = [
-    ...visible.map((l) => ({ value: l.id, label: l.name, description: l.account_type })),
+    ...visible.map((l) => ({ value: l.id, label: `${l.name} (${l.account_type})` })),
     { value: NEW_ACCOUNT, label: '+ Add a new account' },
   ]
 
