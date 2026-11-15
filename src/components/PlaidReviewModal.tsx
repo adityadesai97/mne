@@ -3,6 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { getSupabaseClient } from '@/lib/supabase'
 import { executeTool, validateWriteToolInput } from '@/lib/claude'
 import { getAllAssets } from '@/lib/db/assets'
+import { getAllLocations } from '@/lib/db/locations'
+import { Dropdown } from '@/components/mne/Dropdown'
 import { notifyPlaidPendingChanged } from '@/lib/plaidEvents'
 import {
   listPendingPositions,
@@ -192,6 +194,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   const [rows, setRows] = useState<PendingPlaidPosition[]>([])
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({})
   const [allAssets, setAllAssets] = useState<any[]>([])
+  const [locations, setLocations] = useState<{ id: string; name: string; account_type: string }[]>([])
   const [manualMatchedAssetId, setManualMatchedAssetId] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -210,8 +213,13 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   async function load() {
     setLoading(true)
     try {
-      const [pending, assets] = await Promise.all([listPendingPositions(), getAllAssets()])
+      const [pending, assets, locs] = await Promise.all([
+        listPendingPositions(),
+        getAllAssets(),
+        getAllLocations().catch(() => []),
+      ])
       setRows(pending)
+      setLocations((locs ?? []) as any)
       const initialEdits: Record<string, Record<string, unknown>> = {}
       for (const row of pending) initialEdits[row.id] = { ...row.payload }
       setEdits(initialEdits)
@@ -344,7 +352,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         }
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
         <DialogHeader>
           <DialogTitle>Review synced positions</DialogTitle>
         </DialogHeader>
@@ -381,6 +389,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
                       return next
                     })
                   }
+                  locations={locations}
                   error={errors[row.id]}
                   busy={busyId === row.id}
                   lotPlan={
@@ -411,6 +420,82 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
   )
 }
 
+const ACCOUNT_TYPES = ['Investment', 'Checking', 'Savings', 'Misc'] as const
+const NEW_ACCOUNT = '__new__'
+
+/** Account (location) picker: choose one you already have, or add a new one with its type. */
+function LocationField({ label, idBase, locations, name, accountType, fixedType, onChange }: {
+  label: string
+  idBase: string
+  locations: { id: string; name: string; account_type: string }[]
+  name: string
+  accountType: string
+  fixedType?: string
+  onChange: (name: string, accountType: string) => void
+}) {
+  const visible = fixedType ? locations.filter((l) => l.account_type === fixedType) : locations
+  const initial = visible.find((l) => l.name === name && l.account_type === accountType)
+    ?? visible.find((l) => l.name.toLowerCase() === name.toLowerCase())
+  const [selected, setSelected] = useState<string>(initial?.id ?? NEW_ACCOUNT)
+  const type = fixedType ?? (accountType || 'Investment')
+
+  // Adopt a matched existing account once on mount, so the stored edit agrees with what's shown.
+  useEffect(() => {
+    if (initial && (initial.name !== name || initial.account_type !== accountType)) onChange(initial.name, initial.account_type)
+    else if (!initial && accountType !== type) onChange(name, type)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const options = [
+    ...visible.map((l) => ({ value: l.id, label: l.name, description: l.account_type })),
+    { value: NEW_ACCOUNT, label: '+ Add a new account' },
+  ]
+
+  return (
+    <div className="mne-field" style={{ gridColumn: '1 / -1' }}>
+      <label id={`${idBase}-label`}>{label} *</label>
+      <Dropdown
+        label={label}
+        className="is-block"
+        options={options}
+        value={selected}
+        onChange={(v) => {
+          setSelected(v)
+          const loc = visible.find((l) => l.id === v)
+          if (loc) onChange(loc.name, loc.account_type)
+          else onChange(name, type)
+        }}
+      />
+      {selected === NEW_ACCOUNT && (
+        <div className="mne-form-grid" style={{ marginTop: 8 }}>
+          <div className="mne-field">
+            <label htmlFor={`${idBase}-name`}>Account name *</label>
+            <input
+              id={`${idBase}-name`}
+              className="mne-input"
+              type="text"
+              value={name}
+              onChange={(e) => onChange(e.target.value, type)}
+            />
+          </div>
+          {!fixedType && (
+            <div className="mne-field">
+              <label id={`${idBase}-type-label`}>Account type</label>
+              <Dropdown
+                label="Account type"
+                className="is-block"
+                options={ACCOUNT_TYPES.map((t) => ({ value: t, label: t }))}
+                value={ACCOUNT_TYPES.includes(type as any) ? (type as (typeof ACCOUNT_TYPES)[number]) : 'Investment'}
+                onChange={(v) => onChange(name, v)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PendingRow({
   row,
   edit,
@@ -419,6 +504,7 @@ function PendingRow({
   candidates,
   selectedCandidateId,
   onManualMatchChange,
+  locations,
   error,
   busy,
   lotPlan,
@@ -439,6 +525,7 @@ function PendingRow({
   candidates: ManualMatchCandidate[]
   selectedCandidateId: string
   onManualMatchChange: (assetId: string | null) => void
+  locations: { id: string; name: string; account_type: string }[]
   error?: string
   busy: boolean
   lotPlan: RowLotPlan | null
@@ -583,7 +670,21 @@ function PendingRow({
         </div>
       )}
       <div className="mne-form-grid">
-        {visibleFields.map((field) => (
+        {visibleFields.map((field) => field.key === 'location_name' ? (
+          <LocationField
+            key={field.key}
+            label={field.label}
+            idBase={rid('location')}
+            locations={locations}
+            name={String(edit.location_name ?? '')}
+            accountType={String(edit.account_type ?? '')}
+            fixedType={isCrypto ? 'Crypto' : undefined}
+            onChange={(name, type) => {
+              onFieldChange('location_name', name)
+              onFieldChange('account_type', type)
+            }}
+          />
+        ) : (
           <div key={field.key} className="mne-field">
             <label htmlFor={rid(field.key)}>
               {field.label}
