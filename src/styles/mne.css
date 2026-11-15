@@ -287,3 +287,11 @@ textarea.mne-input { resize: vertical; min-height: 88px; }
 .mne-hero-landing p { font-size: 18px; line-height: 28px; color: var(--mne-ink-muted); max-width: 46ch; margin: 0; }
 .mne-features { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .mne-spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--mne-accent); border-top-color: transparent; animation: mne-spin 900ms linear infinite; display: inline-block; }
+
+/* iOS Safari sizes a native date input from its intrinsic width, so it overflowed its
+   column and centred its text. Pin it to the column like every other .mne-input. */
+.mne-input[type="date"] { box-sizing: border-box; min-width: 0; max-width: 100%; display: block; -webkit-appearance: none; appearance: none; text-align: left; min-height: 46px; }
+.mne-input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+.mne-input { box-sizing: border-box; }
+/* Keep Skip / Confirm reachable while a long review form scrolls (and above mobile browser chrome). */
+.mne-item > .mne-dialog-actions { position: sticky; bottom: 0; background: var(--mne-surface-300); padding-top: 8px; margin-top: 4px; }
