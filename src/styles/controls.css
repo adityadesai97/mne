@@ -53,3 +53,7 @@
 .mne-list > .mne-row:nth-child(odd) { padding-left: 12px; padding-right: 12px; }
 
 .mne-dd.is-block { display: block; width: 100%; }
+/* Full-width form variant: looks like the .mne-input fields it sits among. */
+.mne-dd.is-block .mne-dd-trigger { justify-content: space-between; text-align: left; font: 400 15px/22px var(--mne-font-sans); background: var(--mne-surface-200); border: 1px solid var(--mne-line-strong); border-radius: var(--mne-radius-sm); padding: 10px 12px; min-height: 46px; }
+.mne-dd.is-block .mne-dd-trigger:hover { border-color: var(--mne-ink-muted); background: var(--mne-surface-200); }
+.mne-dd.is-block .mne-dd-value { text-align: left; flex: 1 1 auto; }

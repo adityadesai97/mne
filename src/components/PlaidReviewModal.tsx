@@ -352,7 +352,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         }
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
+      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain grid-cols-[minmax(0,1fr)] max-sm:w-[calc(100vw-1.5rem)] max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
         <DialogHeader>
           <DialogTitle>Review synced positions</DialogTitle>
         </DialogHeader>
@@ -365,7 +365,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         ) : rows.length === 0 ? (
           <p className="mne-muted" style={{ margin: 0 }}>Nothing left to review.</p>
         ) : (
-          <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
             {rows.map((row) => {
               const manualId = manualMatchedAssetId[row.id]
               const effectiveMatchedId = row.matched_asset_id ?? manualId ?? null
