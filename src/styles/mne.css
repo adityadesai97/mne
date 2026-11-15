@@ -293,5 +293,5 @@ textarea.mne-input { resize: vertical; min-height: 88px; }
 .mne-input[type="date"] { box-sizing: border-box; min-width: 0; max-width: 100%; display: block; -webkit-appearance: none; appearance: none; text-align: left; min-height: 46px; }
 .mne-input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 .mne-input { box-sizing: border-box; }
-/* Keep Skip / Confirm reachable while a long review form scrolls (and above mobile browser chrome). */
-.mne-item > .mne-dialog-actions { position: sticky; bottom: 0; background: var(--mne-surface-300); padding-top: 8px; margin-top: 4px; }
+/* Grid/flex children default to min-width:auto, so one wide control (a native date input) stretched the whole dialog past the screen. */
+.mne-item, .mne-item > *, .mne-form-grid > * { min-width: 0; }

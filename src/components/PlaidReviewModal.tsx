@@ -4,7 +4,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { executeTool, validateWriteToolInput } from '@/lib/claude'
 import { getAllAssets } from '@/lib/db/assets'
 import { getAllLocations } from '@/lib/db/locations'
-import { Dropdown } from '@/components/mne/Dropdown'
+import { LocationField } from '@/components/mne/LocationField'
 import { notifyPlaidPendingChanged } from '@/lib/plaidEvents'
 import {
   listPendingPositions,
@@ -352,7 +352,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         }
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
+      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain grid-cols-[minmax(0,1fr)] max-sm:w-[calc(100vw-1.5rem)] max-sm:top-4 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-7rem)] max-sm:pb-8">
         <DialogHeader>
           <DialogTitle>Review synced positions</DialogTitle>
         </DialogHeader>
@@ -365,7 +365,7 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         ) : rows.length === 0 ? (
           <p className="mne-muted" style={{ margin: 0 }}>Nothing left to review.</p>
         ) : (
-          <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
             {rows.map((row) => {
               const manualId = manualMatchedAssetId[row.id]
               const effectiveMatchedId = row.matched_asset_id ?? manualId ?? null
@@ -417,82 +417,6 @@ export function PlaidReviewModal({ open, onClose, onChanged }: Props) {
         )}
       </DialogContent>
     </Dialog>
-  )
-}
-
-const ACCOUNT_TYPES = ['Investment', 'Checking', 'Savings', 'Misc'] as const
-const NEW_ACCOUNT = '__new__'
-
-/** Account (location) picker: choose one you already have, or add a new one with its type. */
-function LocationField({ label, idBase, locations, name, accountType, fixedType, onChange }: {
-  label: string
-  idBase: string
-  locations: { id: string; name: string; account_type: string }[]
-  name: string
-  accountType: string
-  fixedType?: string
-  onChange: (name: string, accountType: string) => void
-}) {
-  const visible = fixedType ? locations.filter((l) => l.account_type === fixedType) : locations
-  const initial = visible.find((l) => l.name === name && l.account_type === accountType)
-    ?? visible.find((l) => l.name.toLowerCase() === name.toLowerCase())
-  const [selected, setSelected] = useState<string>(initial?.id ?? NEW_ACCOUNT)
-  const type = fixedType ?? (accountType || 'Investment')
-
-  // Adopt a matched existing account once on mount, so the stored edit agrees with what's shown.
-  useEffect(() => {
-    if (initial && (initial.name !== name || initial.account_type !== accountType)) onChange(initial.name, initial.account_type)
-    else if (!initial && accountType !== type) onChange(name, type)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const options = [
-    ...visible.map((l) => ({ value: l.id, label: l.name, description: l.account_type })),
-    { value: NEW_ACCOUNT, label: '+ Add a new account' },
-  ]
-
-  return (
-    <div className="mne-field" style={{ gridColumn: '1 / -1' }}>
-      <label id={`${idBase}-label`}>{label} *</label>
-      <Dropdown
-        label={label}
-        className="is-block"
-        options={options}
-        value={selected}
-        onChange={(v) => {
-          setSelected(v)
-          const loc = visible.find((l) => l.id === v)
-          if (loc) onChange(loc.name, loc.account_type)
-          else onChange(name, type)
-        }}
-      />
-      {selected === NEW_ACCOUNT && (
-        <div className="mne-form-grid" style={{ marginTop: 8 }}>
-          <div className="mne-field">
-            <label htmlFor={`${idBase}-name`}>Account name *</label>
-            <input
-              id={`${idBase}-name`}
-              className="mne-input"
-              type="text"
-              value={name}
-              onChange={(e) => onChange(e.target.value, type)}
-            />
-          </div>
-          {!fixedType && (
-            <div className="mne-field">
-              <label id={`${idBase}-type-label`}>Account type</label>
-              <Dropdown
-                label="Account type"
-                className="is-block"
-                options={ACCOUNT_TYPES.map((t) => ({ value: t, label: t }))}
-                value={ACCOUNT_TYPES.includes(type as any) ? (type as (typeof ACCOUNT_TYPES)[number]) : 'Investment'}
-                onChange={(v) => onChange(name, v)}
-              />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 
